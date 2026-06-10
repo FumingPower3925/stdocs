@@ -16,34 +16,34 @@ stdocs convierte un `net/http.ServeMux` de la biblioteca estándar en una API au
 ```go
 mux := stdocs.New(stdocs.WithTitle("Mi API"))
 mux.HandleFunc("GET /users/{id}", getUser)
-mux.Mount() // interfaz de docs en /docs/, spec en /docs/openapi.json
+mux.Mount() // UI de docs en /docs/, spec en /docs/openapi.json
 log.Fatal(http.ListenAndServe(":8080", mux))
 ```
 
-Eso es todo. `stdocs` recorre tus rutas registradas, genera un spec OpenAPI a partir de tus tipos Go y sirve una interfaz de documentación en `/docs/`.
+Eso es todo. `stdocs` recorre tus rutas registradas, genera un spec OpenAPI a partir de tus tipos Go y sirve una UI de documentación en `/docs/`.
 
-![Las cuatro interfaces enriquecidas — Scalar, Swagger UI, Redoc y Stoplight Elements — mostrando el mismo spec generado](.github/uis.png)
+![Las cuatro UI completas — Scalar, Swagger UI, Redoc y Stoplight Elements — mostrando el mismo spec generado](.github/uis.png)
 
-El mismo documento generado, mostrado por cada una de las cuatro interfaces enriquecidas incluidas — todas disponibles con CDN fijado o totalmente incrustadas para compilaciones sin conexión.
+El mismo documento generado, mostrado por cada una de las cuatro UI incluidas — todas disponibles desde CDN con versión fijada o totalmente embebidas para builds air-gapped.
 
 ## Tabla de contenidos
 
 - [Características](#características)
 - [Instalación](#instalación)
 - [Uso](#uso)
-- [Interfaces de documentación](#interfaces-de-documentación)
+- [UIs](#uis)
 - [Cómo funciona](#cómo-funciona)
 - [Contribuir](#contribuir)
 - [Licencia](#licencia)
 
 ## Características
 
-- **Cinco interfaces** — una por defecto, diminuta y sin dependencias (~1.6 KB, solo JS inline), más Scalar, Swagger UI, Redoc y Stoplight Elements — cada una disponible como subpaquete CDN (con versión fijada y hashes de integridad SRI) o como subpaquete embebido aislado de la red.
+- **Cinco UI** — una por defecto, diminuta y sin dependencias (~1.6 KB, solo JS inline), más Scalar, Swagger UI, Redoc y Stoplight Elements — cada una disponible como subpaquete CDN (con versión fijada y hashes de integridad SRI) o como subpaquete embebido air-gapped.
 - **Tres versiones de OpenAPI** — 3.0.4 (por defecto), 3.1.2 y 3.2.0, todas probadas.
-- **Reflexión** — los tipos Go se convierten en JSON Schemas: punteros, slices, mapas, genéricos, structs embebidos, tipos recursivos vía `$ref`, etiquetas `json` (incluidas `omitempty`, `omitzero` y `,string`), y reconocimiento de `json.Marshaler`/`encoding.TextMarshaler`.
+- **Reflexión** — los tipos Go se convierten en JSON Schemas: punteros, slices, mapas, genéricos, structs embebidos, tipos recursivos vía `$ref`, tags `json` (incluidos `omitempty`, `omitzero` y `,string`), y reconocimiento de `json.Marshaler`/`encoding.TextMarshaler`.
 - **Valores por defecto inteligentes** — los nombres de funciones se convierten en resúmenes, el primer segmento de la ruta se convierte en el tag y los parámetros de ruta se incluyen automáticamente.
 - **Seguridad** — bearer, basic, API key, OAuth 2.0 (incluido el device flow de 3.2). Los nombres de esquemas no registrados se reportan como errores.
-- **Conmutación por entorno** — `mux.Docs(enabled)` y `WithDisabled(true)` activan o desactivan la documentación según el entorno sin cambiar las rutas registradas.
+- **Activación por entorno** — `mux.Docs(enabled)` y `WithDisabled(true)` activan o desactivan la documentación según el entorno sin cambiar las rutas registradas.
 - **Seguro frente a XSS** — el HTML de la documentación se renderiza con `html/template`.
 - **Cero dependencias** — solo la biblioteca estándar de Go en tiempo de ejecución.
 
@@ -94,7 +94,7 @@ mux.HandleFunc("POST /users", createUser,
 )
 ```
 
-Para funcionalidades que stdocs no expone directamente, usa el mecanismo de escape:
+Para funcionalidades que stdocs no expone directamente, usa el escape hatch:
 
 ```go
 mux := stdocs.New(
@@ -132,7 +132,7 @@ La lista completa de opciones está en [pkg.go.dev](https://pkg.go.dev/github.co
 
 `mux.Mount()` es una abreviatura de registrar el handler que devuelve `mux.Docs()` en el propio mux, bajo el prefijo de documentación configurado: hay un único handler de documentación y dos formas de colocarlo. Usa `Mount()` salvo que necesites el handler directamente (para envolverlo en un middleware de autenticación o montarlo en otro mux). Ambos aceptan el mismo bool opcional con la misma regla: un valor explícito por llamada gana a `WithDisabled` en ambos sentidos.
 
-La interfaz de documentación y los endpoints del spec (`openapi.json`, `openapi.yaml`) se pueden desactivar sin anular el registro de rutas. La decisión se toma cuando se llama a `Mount()`/`Docs()` (envuelve el handler tú mismo si necesitas un conmutador por petición):
+La UI de documentación y los endpoints del spec (`openapi.json`, `openapi.yaml`) se pueden desactivar sin anular el registro de rutas. La decisión se toma cuando se llama a `Mount()`/`Docs()` (envuelve el handler tú mismo si necesitas decidirlo por petición):
 
 ```go
 // 1) Por mux: WithDisabled(true) hace que Mount no haga nada y que
@@ -153,11 +153,11 @@ mux.HandleFunc("GET /users", listUsers)
 mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
-Cuando está desactivada, toda petición bajo el prefijo de documentación recibe un 404. El spec sigue pudiéndose construir con `mux.JSON()` y `mux.YAML()` — desactivar la interfaz no detiene la generación del spec. Las rutas registradas bajo el prefijo de documentación (la propia página de docs, los handlers de recursos) nunca aparecen en el spec generado.
+Cuando está desactivada, toda petición bajo el prefijo de documentación recibe un 404. El spec sigue pudiéndose construir con `mux.JSON()` y `mux.YAML()` — desactivar la UI no detiene la generación del spec. Las rutas registradas bajo el prefijo de documentación (la propia página de docs, los handlers de recursos) nunca aparecen en el spec generado.
 
 ### Ocultar rutas individuales
 
-La visibilidad por ruta se combina con los conmutadores anteriores: `Hidden()` excluye una ruta del documento en todas partes, e `Internal()` la excluye salvo que el mux se haya construido con `WithInternal(true)` (cuando se muestra, la operación lleva `x-internal: true`, la extensión que entienden las herramientas de filtrado de specs). Una configuración completa por entorno:
+La visibilidad por ruta se combina con los mecanismos anteriores: `Hidden()` excluye una ruta del documento en todas partes, e `Internal()` la excluye salvo que el mux se haya construido con `WithInternal(true)` (cuando se muestra, la operación lleva `x-internal: true`, la extensión que entienden las herramientas de filtrado de specs). Una configuración completa por entorno:
 
 ```go
 env := os.Getenv("ENV")
@@ -172,7 +172,7 @@ mux.HandleFunc("GET /healthz", healthCheck, stdocs.Hidden())      // nunca docum
 mux.Mount()
 ```
 
-Las rutas excluidas no dejan rastro en el documento: ni rutas, ni esquemas, ni identificadores de operación. La visibilidad solo da forma a la documentación publicada: las rutas ocultas e internas **siguen sirviendo tráfico en todos los entornos**. No es control de acceso; protege los endpoints sensibles con autenticación real.
+Las rutas excluidas no dejan rastro en el documento: ni rutas, ni esquemas, ni operationIds. La visibilidad solo da forma a la documentación publicada: las rutas ocultas e internas **siguen sirviendo tráfico en todos los entornos**. No es control de acceso; protege los endpoints sensibles con autenticación real.
 
 Si tienes un documento OpenAPI escrito a mano en lugar de rutas generadas, sírvelo con `DocsHandler` + `WithSpec`:
 
@@ -184,9 +184,9 @@ http.Handle("GET /docs/", stdocs.DocsHandler(
 ))
 ```
 
-## Interfaces de documentación
+## UIs
 
-La interfaz por defecto es una pequeña página HTML sin dependencias (~1.6 KB, solo JS inline, sin recursos externos). Para usar una interfaz más rica, importa un subpaquete y pasa su opción `WithUI()`:
+La UI por defecto es una pequeña página HTML sin dependencias (~1.6 KB, solo JS inline, sin recursos externos). Para usar una UI más completa, importa un subpaquete y pasa su opción `WithUI()`:
 
 ```go
 import "github.com/FumingPower3925/stdocs/ui/scalar"
@@ -194,7 +194,7 @@ import "github.com/FumingPower3925/stdocs/ui/scalar"
 mux := stdocs.New(stdocs.WithTitle("Mi API"), scalar.WithUI())
 ```
 
-Para una compilación aislada de la red (sin CDN), importa el subpaquete `*emb` correspondiente y monta su `AssetHandler()`:
+Para un build air-gapped (sin CDN), importa el subpaquete `*emb` correspondiente y monta su `AssetHandler()`:
 
 ```go
 import "github.com/FumingPower3925/stdocs/ui/scalaremb"
@@ -205,15 +205,15 @@ mux.Handle("GET /docs/_assets/",
     http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
 ```
 
-Cada interfaz rica viene en dos variantes:
+Cada UI completa viene en dos variantes:
 
-| Interfaz        | Subpaquete CDN | Subpaquete embebido | Tamaño embebido |
-| --------------- | -------------- | ------------------- | --------------- |
-| _(por defecto)_ | —              | — (inline, ~1.6 KB) | —               |
-| Scalar          | `ui/scalar`    | `ui/scalaremb`      | ~3.6 MB         |
-| Swagger UI      | `ui/swaggerui` | `ui/swaggeruiemb`   | ~1.7 MB         |
-| Redoc           | `ui/redoc`     | `ui/redocemb`       | ~1.1 MB         |
-| Stoplight       | `ui/stoplight` | `ui/stoplightemb`   | ~2.4 MB         |
+| UI                                  | Subpaquete CDN                          | Subpaquete embebido                          |
+| ----------------------------------- | --------------------------------------- | -------------------------------------------- |
+| _(por defecto)_ (integrada, ~1.6 KB) | —                                       | —                                            |
+| Scalar                              | `ui/scalar` (~3.6 MB desde el CDN)      | `ui/scalaremb` (~3.6 MB en tu binario)       |
+| Swagger UI                          | `ui/swaggerui` (~1.7 MB desde el CDN)   | `ui/swaggeruiemb` (~1.7 MB en tu binario)    |
+| Redoc                               | `ui/redoc` (~1.1 MB desde el CDN)       | `ui/redocemb` (~1.1 MB en tu binario)        |
+| Stoplight                           | `ui/stoplight` (~2.4 MB desde el CDN)   | `ui/stoplightemb` (~2.4 MB en tu binario)    |
 
 Todas las URL del CDN están fijadas a versiones exactas con hashes de integridad SRI sha384. Los subpaquetes no se enlazan en tu binario a menos que los importes.
 
