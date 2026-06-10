@@ -26,6 +26,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 - [Install](#install)
 - [Usage](#usage)
 - [UIs](#uis)
+- [Using the spec downstream](#using-the-spec-downstream)
 - [How it works](#how-it-works)
 - [Contributing](#contributing)
 - [License](#license)
@@ -259,6 +260,42 @@ Each rich UI comes in two flavors:
 | Stoplight                         | `ui/stoplight` (~2.4 MB from the CDN)  | `ui/stoplightemb` (~2.4 MB in your binary)  |
 
 All CDN URLs are pinned to exact versions with sha384 SRI integrity hashes. Sub-packages are not linked into your binary unless imported.
+
+## Using the spec downstream
+
+The generated document is not just for the docs page: `mux.JSON()` and `mux.YAML()` hand you the exact bytes served at the spec endpoints, and the output is **deterministic by construction** — keys are sorted and operationIds and component names are stable across rebuilds — so it works as a committed artifact.
+
+The recommended pattern is a golden-file test:
+
+```go
+var update = flag.Bool("update", false, "rewrite openapi.json")
+
+func TestOpenAPIGolden(t *testing.T) {
+    got, err := NewAPI().JSON() // your mux constructor
+    if err != nil {
+        t.Fatal(err)
+    }
+    const golden = "openapi.json"
+    if *update {
+        if err := os.WriteFile(golden, got, 0o644); err != nil {
+            t.Fatal(err)
+        }
+    }
+    want, err := os.ReadFile(golden)
+    if err != nil {
+        t.Fatalf("%v (run: go test -run TestOpenAPIGolden -update)", err)
+    }
+    if !bytes.Equal(got, want) {
+        t.Fatalf("openapi.json is stale; run: go test -run TestOpenAPIGolden -update")
+    }
+}
+```
+
+Every API change now shows up as a reviewable diff to `openapi.json` in the PR, and the committed file feeds the rest of the toolchain without running the server:
+
+- **Contract diffing** — e.g. `oasdiff breaking old.json openapi.json` in CI flags breaking changes.
+- **Linting** — `spectral lint openapi.json` (or Redocly CLI) enforces API style rules.
+- **Client generation** — point `openapi-generator`, `oapi-codegen`, or your SDK pipeline at the committed file to produce typed clients in any language.
 
 ## How it works
 
