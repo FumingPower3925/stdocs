@@ -16,6 +16,10 @@ log.Fatal(http.ListenAndServe(":8080", mux))
 
 That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from your Go types, and serves a docs UI at `/docs/`.
 
+![The four rich UIs — Scalar, Swagger UI, Redoc, and Stoplight Elements — rendering the same generated spec](.github/uis.png)
+
+The same generated document, rendered by each of the four bundled rich UIs — every one available CDN-pinned or fully embedded for air-gapped builds.
+
 ## Table of contents
 
 - [Features](#features)
