@@ -220,9 +220,16 @@ func validateSecurity(doc map[string]any) error {
 // packages get distinct components (User, User_2) with matching $ref
 // strings at every use site.
 func (m *Mux) buildDoc() map[string]any {
-	m.reg.finalize(m.cfg)
+	// Visibility is decided before anything else: routes excluded by
+	// Hidden/Internal never reach the reflector (their schemas cannot
+	// leak into components), never get finalize defaults, and never
+	// participate in operation-id disambiguation — the emitted
+	// document is identical to one from a mux where they were never
+	// registered.
+	visible := &registry{routes: m.visibleRoutes()}
+	visible.finalize(m.cfg)
 	ref := schema.NewReflector()
-	for _, rt := range m.reg.routes {
+	for _, rt := range visible.routes {
 		if rb := rt.op.RequestBody; rb != nil && rb.BodyValue != nil {
 			rb.Schema = ref.Reflect(rb.BodyValue)
 		}
@@ -238,7 +245,7 @@ func (m *Mux) buildDoc() map[string]any {
 		Info:            m.cfg.Info,
 		Servers:         m.cfg.Servers,
 		Tags:            m.cfg.Tags,
-		Paths:           m.reg.toPathItems(),
+		Paths:           visible.toPathItems(),
 		Version:         m.cfg.Version,
 		SecuritySchemes: m.cfg.Security,
 		GlobalSecurity:  m.cfg.GlobalSecurity,
@@ -253,6 +260,31 @@ func (m *Mux) buildDoc() map[string]any {
 	default:
 		return spec.BuildRoot30(in)
 	}
+}
+
+// visibleRoutes returns the routes that the current visibility policy
+// documents: Hidden routes never appear; Internal routes appear only
+// when WithInternal(true) was set, and then carry the conventional
+// "x-internal": true extension so spec-filtering tools can recognise
+// them.
+func (m *Mux) visibleRoutes() []*route {
+	out := make([]*route, 0, len(m.reg.routes))
+	for _, rt := range m.reg.routes {
+		if rt.op.Hidden {
+			continue
+		}
+		if rt.op.Internal {
+			if !m.cfg.ShowInternal {
+				continue
+			}
+			if rt.op.Extensions == nil {
+				rt.op.Extensions = map[string]any{}
+			}
+			rt.op.Extensions["x-internal"] = true
+		}
+		out = append(out, rt)
+	}
+	return out
 }
 
 // reflectWebhooks returns the configured webhooks with every BodyValue

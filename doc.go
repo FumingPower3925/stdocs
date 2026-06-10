@@ -53,7 +53,8 @@
 // [WithDocsPrefix], [WithDisabled]). Per-route documentation uses
 // [RouteOpt] values passed to [Mux.HandleFunc] / [Mux.Handle]:
 // bare-named opts set simple operation metadata ([Summary],
-// [Description], [Tags], [Deprecated], [OperationID], [Optional]),
+// [Description], [Tags], [Deprecated], [OperationID], [Optional],
+// [Hidden], [Internal]),
 // while opts that attach bodies, responses, parameters, or security
 // are named With* ([WithBody], [WithResponse], [WithParam],
 // [WithSecurity], ...).

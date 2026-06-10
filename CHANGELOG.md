@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `Mux.Mount` accepts the same optional bool as `Mux.Docs`, with the
   same rule: an explicit per-call value wins over `WithDisabled` in
   both directions (`mux.Mount(env != "prod")`).
+- Per-route visibility: the `Hidden()` route opt excludes a route
+  from the generated document everywhere; `Internal()` excludes it
+  unless the mux is configured with the new `WithInternal(true)`
+  option (default false — internal routes never leak by accident).
+  Shown internal operations carry the conventional `x-internal:
+  true` extension. Excluded routes leave no trace in the document
+  (no paths, schemas, or operation-id effects) and still serve
+  traffic — visibility is documentation shaping, not access
+  control.
 
 ## [0.1.0] - 2026-06-10
 
