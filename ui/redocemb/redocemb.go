@@ -2,7 +2,7 @@
 // stdocs.
 //
 // Unlike the sibling ui/redoc package, which loads Redoc from a
-// CDN at page-load time, ui/redoc/emb vendors the Redoc JavaScript
+// CDN at page-load time, ui/redocemb vendors the Redoc JavaScript
 // bundle in your binary so the docs UI works without an internet
 // connection.
 //
@@ -19,6 +19,7 @@
 //
 //	mux := stdocs.New(stdocs.WithTitle("My API"), redocemb.WithUI())
 //	mux.HandleFunc("GET /x", h)
+//	mux.Mount()
 //	mux.Handle("GET /docs/_assets/", http.StripPrefix(
 //	    "/docs/_assets/", redocemb.AssetHandler()))
 //
@@ -30,18 +31,32 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/FumingPower3925/stdocs"
 )
 
-//go:embed assets*
+// Maintainer-only: re-vendors the pinned Redoc bundle into assets/.
+// Consumers never need to run this; the bundle ships in-repo (and
+// `go generate` cannot run inside the module cache anyway). Bumping
+// the version requires updating redocVersion, the URL below, the
+// SRI hash in ui/redoc, and the hash pin in the tests.
+//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/redoc@2.5.3/bundles/redoc.standalone.js -o assets/redoc.standalone.js"
+
+// redocVersion is the version of redoc vendored under assets/. It
+// must match the devDependencies entry in the repo-root
+// package.json.
+const redocVersion = "2.5.3"
+
+//go:embed assets/*
 var assetsFS embed.FS
 
 // assetsSubFS is the assets/ subdirectory as a rooted fs.FS.
 var assetsSubFS, _ = fs.Sub(assetsFS, "assets")
 
-// WithUI returns a stdocs.Option that replaces the default zero-JS
-// docs page with the embedded Redoc UI.
+// WithUI returns a stdocs.Option that replaces the default docs
+// page with the embedded Redoc UI.
 func WithUI() stdocs.Option {
 	return func(c *stdocs.Config) {
 		c.UIDoc = html
@@ -49,14 +64,33 @@ func WithUI() stdocs.Option {
 }
 
 // AssetHandler returns an http.Handler that serves the embedded
-// Redoc JavaScript bundle at the root. Mount it on your mux with
-// a path strip, e.g.:
+// Redoc JavaScript bundle at the root. File responses carry an
+// immutable Cache-Control header; directory requests return 404.
+// Mount it on your mux with a path strip, e.g.:
 //
 //	mux.Handle("GET /docs/_assets/", http.StripPrefix("/docs/_assets/", redocemb.AssetHandler()))
 func AssetHandler() http.Handler {
-	return http.FileServer(http.FS(assetsSubFS))
+	fileServer := http.FileServer(http.FS(assetsSubFS))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if name == "" || name == "." || strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		info, err := fs.Stat(assetsSubFS, name)
+		if err != nil || info.IsDir() {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
+// html uses relative asset URLs so the page works under any docs
+// prefix (stdocs.WithDocsPrefix) or reverse proxy: the docs page is
+// always served at <prefix>/, so "_assets/..." resolves to
+// <prefix>/_assets/... in the browser.
 const html = `<!doctype html>
 <html>
 <head>
@@ -67,6 +101,6 @@ const html = `<!doctype html>
 </head>
 <body>
 <redoc spec-url='{{.SpecURL}}'></redoc>
-<script src="/docs/_assets/redoc.standalone.js"></script>
+<script src="_assets/redoc.standalone.js"></script>
 </body>
 </html>`

@@ -10,9 +10,6 @@ import (
 )
 
 // PatternKind classifies a parsed stdlib ServeMux pattern segment.
-//
-// Deprecated: kept for API compatibility with early users; new code should
-// use the Segment struct fields directly.
 type PatternKind uint8
 
 const (
@@ -25,9 +22,6 @@ const (
 	// KindTrailing is the literal "/" used in /foo/{$} for the exact-trailing-slash anchor.
 	KindTrailing
 )
-
-// Note: SpecVersion and the OpenAPI30 / OpenAPI31 constants live in
-// version.go so they can be referenced from both this file and schema.go.
 
 // Segment is one piece of a parsed path.
 type Segment struct {
@@ -349,9 +343,11 @@ var openAPIMethods = map[string]bool{
 	"trace":   true,
 }
 
-// IsOpenAPIMethod reports whether s is a legal OpenAPI method key.
-// The set is the eight methods listed in the OpenAPI 3.x Paths
-// Object definition. The "head" key is a special case: it is
+// IsOpenAPIMethod reports whether s is one of the eight fixed Path
+// Item operation keys shared by OpenAPI 3.0 and 3.1. (OpenAPI 3.2
+// additionally allows "query" and arbitrary methods via
+// additionalOperations; that version-specific logic lives in the
+// emitter.) The "head" key is a special case: it is
 // allowed in OpenAPI but is *also* implicitly registered by
 // registering "get" (per RFC 7231); stdocs emits "head" only if
 // the user registered it explicitly.

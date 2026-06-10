@@ -42,6 +42,11 @@ type OAuthFlows struct {
 	Password          *OAuthFlow
 	ClientCredentials *OAuthFlow
 	AuthorizationCode *OAuthFlow
+	// DeviceAuthorization is the RFC 8628 device flow added in
+	// OpenAPI 3.2. It is emitted for every version (3.0/3.1
+	// validators will flag it), so only set it on a 3.2 mux. Its
+	// flow object requires DeviceAuthorizationURL and TokenURL.
+	DeviceAuthorization *OAuthFlow
 }
 
 // OAuthFlow describes one OAuth flow.
@@ -49,7 +54,10 @@ type OAuthFlow struct {
 	AuthorizationURL string
 	TokenURL         string
 	RefreshURL       string
-	Scopes           map[string]string
+	// DeviceAuthorizationURL is required for (and only meaningful
+	// on) the OpenAPI 3.2 deviceAuthorization flow.
+	DeviceAuthorizationURL string
+	Scopes                 map[string]string
 }
 
 // SecurityRequirement is a single entry in the operation's "security"
@@ -66,8 +74,8 @@ type NamedSecurityScheme struct {
 
 // Webhook describes an OpenAPI 3.1 webhook. A webhook is a path-and-
 // method pair (like a regular operation) but is documented under
-// "webhooks" rather than "paths". Webhooks are 3.1-only and ignored
-// when the mux's Version is 3.0.3.
+// "webhooks" rather than "paths". Webhooks are emitted for 3.1 and
+// 3.2, and ignored when the mux's Version is 3.0.
 type Webhook struct {
 	// Method is the HTTP method (POST, GET, etc.) used to deliver
 	// the webhook payload. Required.

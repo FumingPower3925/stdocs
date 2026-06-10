@@ -11,12 +11,33 @@ import (
 // internal sub-package. These are type aliases (not new types), so
 // values are interchangeable between stdocs.X and internal/spec.X.
 type (
-	SecuritySchemeType  = spec.SecuritySchemeType
-	SecurityScheme      = spec.SecurityScheme
-	OAuthFlows          = spec.OAuthFlows
-	OAuthFlow           = spec.OAuthFlow
+	// SecuritySchemeType is the "type" of a security scheme:
+	// SecurityHTTP, SecurityAPIKey, SecurityOAuth2, or
+	// SecurityOpenIDConnect.
+	SecuritySchemeType = spec.SecuritySchemeType
+	// SecurityScheme describes one components.securitySchemes entry.
+	// Set Type plus the type-specific fields: Scheme/BearerFormat
+	// for http, In/Name for apiKey, Flows for oauth2, and
+	// OpenIDConnectURL for openIdConnect. Description is optional.
+	SecurityScheme = spec.SecurityScheme
+	// OAuthFlows groups the OAuth 2.0 flows of a scheme: Implicit,
+	// Password, ClientCredentials, AuthorizationCode, and (OpenAPI
+	// 3.2 only) DeviceAuthorization — each an optional *OAuthFlow.
+	OAuthFlows = spec.OAuthFlows
+	// OAuthFlow describes one OAuth 2.0 flow. Fields:
+	// AuthorizationURL, TokenURL, RefreshURL,
+	// DeviceAuthorizationURL (3.2 device flow only), and Scopes
+	// (scope name -> description; always emitted, required by the
+	// spec).
+	OAuthFlow = spec.OAuthFlow
+	// SecurityRequirement is one entry of a "security" array: scheme
+	// name -> required scopes (empty for non-OAuth schemes).
 	SecurityRequirement = spec.SecurityRequirement
-	Webhook             = spec.Webhook
+	// Webhook describes one OpenAPI 3.1/3.2 webhook. Fields: Method,
+	// Summary, Description, OperationID, RequestBody, Responses.
+	// Describe payloads by setting BodyValue on the request body or
+	// responses; schemas are reflected at document-build time.
+	Webhook = spec.Webhook
 )
 
 const (
@@ -107,15 +128,25 @@ func WithOAuth2Auth(name string, flows OAuthFlows) Option {
 }
 
 // WithWebhooks registers one or more webhooks under their given names.
-// Webhooks are 3.1-only; on 3.0.3 they are silently ignored.
+// Webhooks require OpenAPI 3.1 or 3.2; on 3.0 they are silently
+// ignored (the field does not exist in that version).
+//
+// Webhook payloads are described the same way route bodies are: set
+// RequestBody.BodyValue (or Response.BodyValue) to a zero value of
+// the Go type and its JSON Schema is reflected when the document is
+// built.
 //
 // Example:
 //
+//	type UserPayload struct {
+//	    ID string `json:"id"`
+//	}
+//
 //	stdocs.WithWebhooks(map[string]stdocs.Webhook{
 //	    "newUser": {
-//	        Method:  "POST",
-//	        Summary: "New user created",
-//	        RequestBody: &stdocs.RequestBody{Schema: ...},
+//	        Method:      "POST",
+//	        Summary:     "New user created",
+//	        RequestBody: &stdocs.RequestBody{Required: true, BodyValue: UserPayload{}},
 //	        Responses: map[string]*stdocs.Response{
 //	            "200": {Description: "OK"},
 //	        },

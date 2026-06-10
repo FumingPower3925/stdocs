@@ -1,9 +1,10 @@
-// Package spec builds OpenAPI 3.0.3 and 3.1.0 documents from
-// internal *spec.SpecInput values. The two emitters (BuildRoot30
-// and BuildRoot31) share a single emitter struct that handles
-// info, servers, tags, paths, components, security, and
-// webhooks; only the schema builder and version string differ
-// between versions.
+// Package spec builds OpenAPI 3.0, 3.1, and 3.2 documents from
+// internal *spec.SpecInput values. The three emitters (BuildRoot30,
+// BuildRoot31, and BuildRoot32) share a single emitter struct that
+// handles info, servers, tags, paths, components, security, and
+// webhooks; only the schema builder, the version string, and a few
+// version-gated fields ($self, additionalOperations, webhooks)
+// differ between versions.
 //
 // The input types (Operation, PathItem, Param, RequestBody,
 // Response, Info, etc.) are version-agnostic. The package also
@@ -12,6 +13,8 @@
 package spec
 
 import (
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -19,18 +22,21 @@ import (
 )
 
 // emitter groups the version-specific bits of OpenAPI emission. The
-// shape of an OpenAPI 3.0.3 spec and a 3.1.0 spec is the same for
-// everything except schema and webhooks; this struct lets us share
-// the bulk of the build code between versions without resorting to
-// copy-paste.
+// document shape is the same across the supported versions for
+// everything except schemas, webhooks, $self, and custom-method
+// placement; this struct lets us share the bulk of the build code
+// between versions without resorting to copy-paste.
 type emitter struct {
 	openapi     string
 	buildSchema func(*schema.Schema) map[string]any
 }
 
+// is32 reports whether the emitter targets OpenAPI 3.2.x.
+func (e *emitter) is32() bool { return strings.HasPrefix(e.openapi, "3.2") }
+
 // buildRoot assembles the top-level OpenAPI object. Webhooks are
-// only emitted for 3.1; on 3.0.3 they are silently dropped because
-// the field is not part of the 3.0.3 spec. The caller does not need
+// emitted for 3.1 and 3.2; on 3.0 they are silently dropped because
+// the field is not part of the 3.0 spec. The caller does not need
 // to filter in.Webhooks.
 func (e *emitter) buildRoot(in SpecInput) map[string]any {
 	doc := map[string]any{
@@ -143,6 +149,22 @@ func (e *emitter) buildPaths(paths []PathItem) map[string]any {
 	return out
 }
 
+// standardOperationKeys are the fixed operation fields of the Path
+// Item Object in OpenAPI 3.0 and 3.1. OpenAPI 3.2 adds "query".
+var standardOperationKeys = map[string]bool{
+	"get": true, "put": true, "post": true, "delete": true,
+	"options": true, "head": true, "patch": true, "trace": true,
+}
+
+// isStandardOperationKey reports whether the lowercased method is a
+// fixed Path Item operation key for this emitter's version.
+func (e *emitter) isStandardOperationKey(method string) bool {
+	if standardOperationKeys[method] {
+		return true
+	}
+	return e.is32() && method == "query"
+}
+
 func (e *emitter) buildPathItem(p PathItem) map[string]any {
 	m := make(map[string]any)
 	if len(p.Parameters) > 0 {
@@ -152,13 +174,34 @@ func (e *emitter) buildPathItem(p PathItem) map[string]any {
 		}
 		m["parameters"] = params
 	}
-	methods := make([]string, 0, len(p.Operations))
-	for k := range p.Operations {
-		methods = append(methods, k)
+	// Standard methods become fixed Path Item keys. Custom methods
+	// (PURGE, ...) are not legal as top-level keys: OpenAPI 3.2 added
+	// additionalOperations exactly for them (keyed by the method with
+	// request capitalization); for 3.0/3.1 we use the always-legal
+	// x-stdocs-additionalOperations extension instead, so one exotic
+	// route cannot invalidate the whole document.
+	var additional map[string]any
+	for _, method := range slices.Sorted(maps.Keys(p.Operations)) {
+		op := p.Operations[method]
+		if e.isStandardOperationKey(method) {
+			m[method] = e.buildOperation(op)
+			continue
+		}
+		if additional == nil {
+			additional = make(map[string]any)
+		}
+		key := op.Method
+		if key == "" {
+			key = strings.ToUpper(method)
+		}
+		additional[key] = e.buildOperation(op)
 	}
-	sort.Strings(methods)
-	for _, method := range methods {
-		m[method] = e.buildOperation(p.Operations[method])
+	if additional != nil {
+		if e.is32() {
+			m["additionalOperations"] = additional
+		} else {
+			m["x-stdocs-additionalOperations"] = additional
+		}
 	}
 	return m
 }
@@ -246,8 +289,12 @@ func (e *emitter) buildRequestBody(rb *RequestBody) map[string]any {
 	if ct == "" {
 		ct = "application/json"
 	}
-	contentEntry := map[string]any{
-		"schema": e.buildSchema(rb.Schema),
+	contentEntry := map[string]any{}
+	// A Schema Object must be an object or boolean; never emit a JSON
+	// null for a body whose schema is absent (e.g. a webhook body the
+	// user declared without a BodyValue).
+	if rb.Schema != nil {
+		contentEntry["schema"] = e.buildSchema(rb.Schema)
 	}
 	if rb.Example != nil {
 		contentEntry["example"] = rb.Example
@@ -337,9 +384,9 @@ func (e *emitter) buildComponentsWithSecurity(components map[string]*schema.Sche
 	return out
 }
 
-// buildWebhooks turns the Webhooks map into the OpenAPI 3.1 "webhooks"
-// object. (3.0.3 does not have webhooks; the caller decides whether
-// to invoke this method by checking in.Webhooks.)
+// buildWebhooks turns the Webhooks map into the "webhooks" object
+// shared by OpenAPI 3.1 and 3.2. (3.0 does not have webhooks; the
+// caller gates on the version.)
 func (e *emitter) buildWebhooks(hooks map[string]Webhook) map[string]any {
 	out := make(map[string]any, len(hooks))
 	names := make([]string, 0, len(hooks))
@@ -462,12 +509,15 @@ func buildOAuthFlows(f OAuthFlows) map[string]any {
 	if f.AuthorizationCode != nil {
 		out["authorizationCode"] = buildOAuthFlow(*f.AuthorizationCode)
 	}
+	if f.DeviceAuthorization != nil {
+		out["deviceAuthorization"] = buildOAuthFlow(*f.DeviceAuthorization)
+	}
 	return out
 }
 
 func buildOAuthFlow(f OAuthFlow) map[string]any {
 	m := map[string]any{}
-	// Per the OpenAPI 3.0.3 spec, `scopes` is a required field
+	// Per the OpenAPI 3.x specs, `scopes` is a required field
 	// on every flow object (it may be empty but must be present).
 	// The `authorizationUrl` and `tokenUrl` fields are required on
 	// specific flows, but only when the flow type requires them;
@@ -491,6 +541,9 @@ func buildOAuthFlow(f OAuthFlow) map[string]any {
 	}
 	if f.RefreshURL != "" {
 		m["refreshUrl"] = f.RefreshURL
+	}
+	if f.DeviceAuthorizationURL != "" {
+		m["deviceAuthorizationUrl"] = f.DeviceAuthorizationURL
 	}
 	return m
 }

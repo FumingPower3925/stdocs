@@ -29,7 +29,7 @@ func TestEmitOpenAPI31_NullableBecomesTypeArray(t *testing.T) {
 	type T struct {
 		Name *string `json:"name"`
 	}
-	_, comps := schema.ReflectSchema(T{}, version.OpenAPI31)
+	_, comps := schema.ReflectSchema(T{})
 	in := SpecInput{
 		Info:       Info{Title: "T", Version: "0.0.0"},
 		Components: comps,
@@ -59,7 +59,7 @@ func TestEmitOpenAPI31_PlainTypeStillString(t *testing.T) {
 	type T struct {
 		Name string `json:"name"`
 	}
-	_, comps := schema.ReflectSchema(T{}, version.OpenAPI31)
+	_, comps := schema.ReflectSchema(T{})
 	in := SpecInput{
 		Info:       Info{Title: "T", Version: "0.0.0"},
 		Components: comps,
@@ -226,7 +226,7 @@ func TestEmitOpenAPI31_31HasNoNullableField(t *testing.T) {
 	type T struct {
 		X *string `json:"x"`
 	}
-	_, comps := schema.ReflectSchema(T{}, version.OpenAPI31)
+	_, comps := schema.ReflectSchema(T{})
 	in := SpecInput{
 		Info:       Info{Title: "T", Version: "0.0.0"},
 		Components: comps,
@@ -244,13 +244,13 @@ func TestEmitOpenAPI31_CrossVersionDifferences(t *testing.T) {
 	type T struct {
 		Field *int `json:"field"`
 	}
-	_, comps := schema.ReflectSchema(T{}, version.OpenAPI30)
+	_, comps := schema.ReflectSchema(T{})
 	in30 := SpecInput{
 		Info:       Info{Title: "T", Version: "0.0.0"},
 		Components: comps,
 		Version:    version.OpenAPI30,
 	}
-	_, comps31 := schema.ReflectSchema(T{}, version.OpenAPI31)
+	_, comps31 := schema.ReflectSchema(T{})
 	in31 := SpecInput{
 		Info:       Info{Title: "T", Version: "0.0.0"},
 		Components: comps31,

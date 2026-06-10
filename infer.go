@@ -19,7 +19,17 @@ func summaryFromFuncName(name string) string {
 	if name == "" {
 		return ""
 	}
+	// Method values get a "-fm" suffix from the runtime
+	// ("pkg.(*svc).GetUser-fm"); strip it before extracting the
+	// trailing identifier.
+	name = strings.TrimSuffix(name, "-fm")
 	name = stripPackageQualifier(name)
+	if isAnonymousFuncName(name) {
+		// Closures are named func1, func2, ... by the runtime;
+		// "Func1" is not a useful summary. Return "" so the caller
+		// falls through to WithDefaultSummary or a blank summary.
+		return ""
+	}
 	name = stripHandlerPrefix(name)
 	if name == "" {
 		return ""
@@ -27,6 +37,23 @@ func summaryFromFuncName(name string) string {
 	out, spans := splitOnCaseBoundaries(name)
 	out = restoreAcronyms(out, spans)
 	return capitalizeFirst(out)
+}
+
+// isAnonymousFuncName reports whether name is a runtime-generated
+// anonymous function identifier: "func" followed by digits ("func1"),
+// or — for nested closures, whose qualified name ends in ".2" — a
+// bare digit run.
+func isAnonymousFuncName(name string) bool {
+	rest := strings.TrimPrefix(name, "func")
+	if rest == "" {
+		return false
+	}
+	for _, r := range rest {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // stripPackageQualifier returns the trailing identifier of a

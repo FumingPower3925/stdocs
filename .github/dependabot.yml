@@ -4,21 +4,26 @@
 # PR per push so the queue stays at one entry.
 #
 # Ecosystems covered:
-#   - gomod: weekly Go module updates (including toolchain bumps).
+#   - gomod: weekly Go module updates for the root module (currently
+#     zero-dependency) and the nested YAML round-trip test module
+#     (which depends on gopkg.in/yaml.v3). Dependabot does not bump
+#     the Go toolchain itself.
 #   - github-actions: weekly updates to the actions/* versions
 #     used in .github/workflows/ci.yml.
 #   - npm: weekly updates to the UI bundle versions. The
 #     /package.json at the repo root is a *dev-only* manifest
 #     used by Dependabot to track upstream versions. The Go
 #     source in ui/*/*.go is the source of truth for the version
-#     that ships. When a Dependabot PR lands, a human must:
-#       1. Update the version string in the relevant ui/*/*.go
-#       2. Re-fetch the bundle and update the embedded copy
-#          (only for *emb sub-packages)
-#       3. Re-compute the SRI hash and update the integrity=
-#          attribute (only for non-emb sub-packages)
-#       4. Update the corresponding *_pinning_test.go expected
-#          value
+#     that ships. Every UI package has a parity test comparing its
+#     pinned version constant against package.json, so a Dependabot
+#     npm PR fails CI until a human:
+#       1. Updates the version constant in the relevant ui/*/*.go
+#       2. Re-fetches the bundle and updates the embedded copy
+#          (*emb sub-packages; see the //go:generate directives)
+#       3. Re-computes the SRI hashes and updates the integrity=
+#          attributes (CDN sub-packages)
+#       4. Updates the corresponding *_pinning_test.go expected
+#          values
 #
 # OpenAPI spec versions: Dependabot cannot track the OAI spec
 # releases directly. The OpenAPI Initiative publishes new
@@ -31,7 +36,9 @@ version: 2
 
 updates:
   - package-ecosystem: "gomod"
-    directory: "/"
+    directories:
+      - "/"
+      - "/internal/spec/yaml/roundtrip_test"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 1
