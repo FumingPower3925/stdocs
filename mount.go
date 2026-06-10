@@ -30,8 +30,14 @@ import (
 //	    stdocs.WithDescription("Hand-written spec follows"),
 //	))
 //	mux.HandleFunc("GET /users", listUsers)
+//
+// If WithDisabled(true) is passed, the returned handler responds with
+// 404 on every request. Equivalent to Mux.Docs(false).
 func DocsHandler(opts ...Option) http.Handler {
 	cfg := applyOptions(opts)
+	if cfg.Disabled {
+		return http.NotFoundHandler()
+	}
 	// Pre-compute the placeholder YAML once. The JSON is "{}"
 	// trivially; we keep the bytes for symmetry with the
 	// dynamic path.

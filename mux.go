@@ -238,8 +238,12 @@ func (m *Mux) Config() *Config {
 //
 //	m.ServeMux.Handle("GET "+m.cfg.DocsPrefix+"/", m.Docs())
 //
-// Call this after registering all routes.
+// If the mux has been disabled via WithDisabled, Mount is a no-op
+// and registers nothing. Call this after registering all routes.
 func (m *Mux) Mount() {
+	if m.cfg.Disabled {
+		return
+	}
 	prefix := m.cfg.DocsPrefix
 	m.ServeMux.Handle("GET "+prefix+"/", m.Docs())
 }
@@ -255,7 +259,27 @@ func (m *Mux) Mount() {
 // Mount it on a parent mux with mux.Handle("GET "+cfg.DocsPrefix+"/", m.Docs()).
 // The docs prefix defaults to "/docs" but can be changed via
 // WithDocsPrefix.
-func (m *Mux) Docs() http.Handler {
+//
+// The optional bool argument enables per-call toggling: pass false to
+// get a 404 handler, or omit it (or pass true) to get the normal docs
+// handler. This is useful for runtime conditions the config doesn't
+// capture:
+//
+//	if os.Getenv("ENV") == "prod" {
+//	    mux.Handle("GET /docs/", mux.Docs(false))
+//	} else {
+//	    mux.Handle("GET /docs/", mux.Docs())
+//	}
+//
+// The per-call bool overrides any WithDisabled option: passing false
+// always returns a 404 handler, regardless of config.
+func (m *Mux) Docs(enabled ...bool) http.Handler {
+	if len(enabled) > 0 && !enabled[0] {
+		return http.NotFoundHandler()
+	}
+	if m.cfg.Disabled {
+		return http.NotFoundHandler()
+	}
 	core, err := newDocsCore(m.cfg, func() ([]byte, []byte, error) {
 		jb, err := m.JSON()
 		if err != nil {

@@ -41,6 +41,7 @@ Eso es todo. `stdocs` recorre las rutas registradas, genera un documento OpenAPI
 - **Valores predeterminados inteligentes** — los nombres de las funciones se convierten en resúmenes, el primer segmento de la ruta se convierte en el tag, los parámetros de path se incluyen automáticamente.
 - **Seguridad** — bearer, basic, API key, OAuth 2.0. Los nombres de esquemas no registrados se reportan como errores.
 - **Ocho interfaces** — HTML sin JS por defecto; Scalar, Swagger UI, Redoc, Stoplight como sub-paquetes opcionales con CDN, cada una con una variante "air-gapped" (embebida) en un sub-paquete separado.
+- **Conmutación en tiempo de ejecución** — `mux.Docs(false)` y `WithDisabled(true)` permiten activar o desactivar la interfaz de documentación según el entorno, la llamada o un feature flag, sin cambiar las rutas registradas.
 - **Seguro frente a XSS** — el HTML de la documentación se renderiza con `html/template`.
 
 ## Instalación
@@ -115,6 +116,34 @@ mux := stdocs.New(
 ```
 
 La lista completa de opciones está en [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs).
+
+### Desactivar la interfaz de documentación
+
+La interfaz de documentación y los endpoints del spec (`openapi.json`, `openapi.yaml`) se pueden desactivar sin desregistrar rutas ni cambiar el punto de llamada. Se admiten dos patrones:
+
+```go
+// 1) Por llamada: pasa false a mux.Docs en el punto de uso.
+mux := stdocs.New(stdocs.WithTitle("Mi API"))
+mux.HandleFunc("GET /users", listUsers)
+
+if os.Getenv("ENV") == "prod" {
+    mux.Handle("GET /docs/", mux.Docs(false))  // responde 404
+} else {
+    mux.Handle("GET /docs/", mux.Docs())        // sirve la interfaz
+}
+```
+
+```go
+// 2) Por mux: WithDisabled() hace que Mount y Docs no registren nada.
+mux := stdocs.New(
+    stdocs.WithTitle("Mi API"),
+    stdocs.WithDisabled(os.Getenv("ENV") == "prod"),
+)
+mux.HandleFunc("GET /users", listUsers)
+mux.Mount()  // no registra nada cuando está desactivado
+```
+
+Ambos patrones devuelven `http.NotFoundHandler()` para cada petición al prefijo de documentación. El spec sigue siendo construible con `mux.JSON()` y `mux.YAML()` — desactivar la interfaz no detiene la generación del spec. `DocsHandler` (el placeholder de Tier 1) respeta `WithDisabled` de la misma forma.
 
 ## Interfaces de documentación
 
