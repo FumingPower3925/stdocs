@@ -22,6 +22,10 @@ log.Fatal(http.ListenAndServe(":8080", mux))
 
 Eso es todo. `stdocs` recorre tus rutas registradas, genera un spec OpenAPI a partir de tus tipos Go y sirve una interfaz de documentación en `/docs/`.
 
+![Las cuatro interfaces enriquecidas — Scalar, Swagger UI, Redoc y Stoplight Elements — mostrando el mismo spec generado](.github/uis.png)
+
+El mismo documento generado, mostrado por cada una de las cuatro interfaces enriquecidas incluidas — todas disponibles con CDN fijado o totalmente incrustadas para compilaciones sin conexión.
+
 ## Tabla de contenidos
 
 - [Características](#características)
