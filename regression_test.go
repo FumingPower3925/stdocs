@@ -608,3 +608,61 @@ func TestOptsCombinator(t *testing.T) {
 		t.Errorf("nested bundle: summary=%v deprecated=%v", op["summary"], op["deprecated"])
 	}
 }
+
+// Mux-level default responses appear on every operation, lose to
+// per-route declarations, and survive rebuilds unchanged.
+func TestDefaultResponses(t *testing.T) {
+	type APIError struct {
+		Message string `json:"message"`
+	}
+	type Custom struct {
+		Code int `json:"code"`
+	}
+	mux := New(
+		WithTitle("T"),
+		WithDefaultResponse(500, APIError{}),
+		WithDefaultResponse(0, APIError{}),
+	)
+	mux.HandleFunc("GET /tasks", noop)
+	mux.HandleFunc("POST /tasks", noop, WithResponse(201, Custom{}), WithResponse(500, Custom{}))
+
+	check := func(doc map[string]any) {
+		get := doc["paths"].(map[string]any)["/tasks"].(map[string]any)["get"].(map[string]any)
+		resps := get["responses"].(map[string]any)
+		for _, key := range []string{"200", "500", "default"} {
+			if _, ok := resps[key]; !ok {
+				t.Errorf("GET /tasks missing %s response; got keys %v", key, mapKeysOf(resps))
+			}
+		}
+		ref := resps["500"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"]
+		if ref != "#/components/schemas/APIError" {
+			t.Errorf("GET /tasks 500 schema = %v, want APIError ref", ref)
+		}
+		post := doc["paths"].(map[string]any)["/tasks"].(map[string]any)["post"].(map[string]any)
+		postRef := post["responses"].(map[string]any)["500"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"]
+		if postRef != "#/components/schemas/Custom" {
+			t.Errorf("POST /tasks 500 schema = %v; the per-route declaration must win", postRef)
+		}
+		if _, ok := post["responses"].(map[string]any)["200"]; ok {
+			t.Errorf("POST /tasks must not gain an auto-200 when it declares responses")
+		}
+	}
+	check(buildDocMap(t, mux))
+	mux.Refresh()
+	check(buildDocMap(t, mux)) // identical after a rebuild
+
+	defer func() {
+		if recover() == nil {
+			t.Errorf("invalid status should panic")
+		}
+	}()
+	WithDefaultResponse(42, nil)
+}
+
+func mapKeysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
