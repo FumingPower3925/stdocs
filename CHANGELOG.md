@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.1] - 2026-06-10
+
 ### Added
 
 - `Mux.Mount` accepts the same optional bool as `Mux.Docs`, with the
@@ -94,5 +98,6 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/FumingPower3925/stdocs/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/FumingPower3925/stdocs/releases/tag/v0.1.0
