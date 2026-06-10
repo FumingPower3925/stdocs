@@ -1,7 +1,3 @@
-// mount.go implements the Tier-1 docs handler (DocsHandler). It
-// serves the docs UI and a placeholder spec at a configurable URL
-// prefix. For route enumeration and a populated spec, use *Mux
-// (mux.go).
 package stdocs
 
 import (

@@ -157,17 +157,6 @@ func TestReflectSchema_Map(t *testing.T) {
 }
 
 func TestReflectSchema_Interface(t *testing.T) {
-	// any(nil) is an untyped nil; reflect.TypeOf gives nil. We test the
-	// interface path with a typed nil interface value.
-	var v any = (*int)(nil) // this is an interface holding a typed nil
-	_ = v
-	// Use a fresh variable to make the type clear.
-	var w any = any(nil)
-	_ = w
-	type Any = any
-	var x Any = nil
-	_ = x
-
 	// The real test: a field of type any in a struct should produce a
 	// schema with no type and the x-stdocs-type extension.
 	type Holder struct {
@@ -311,8 +300,8 @@ func TestReflectSchema_JsonSkip(t *testing.T) {
 
 func TestReflectSchema_UnexportedField(t *testing.T) {
 	type T struct {
-		Exported   string `json:"exp"`
-		unexported string
+		Exported string `json:"exp"`
+		_        string // unexported placeholder
 	}
 	_, out := schema30(t, T{})
 	comp := out["T"]
@@ -498,9 +487,10 @@ func TestReflectSchema_ComponentsAreJSONSerializable(t *testing.T) {
 	type T struct {
 		Field string `json:"field"`
 	}
+	_ = T{}
 	_, out := schema30(t, T{})
 	for name, s := range out {
-		b, err := json.Marshal(s)
+		b, err := json.Marshal(s) //nolint:musttag // Schema is a runtime type, not a wire DTO
 		if err != nil {
 			t.Errorf("marshal %q: %v", name, err)
 		}

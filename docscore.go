@@ -21,11 +21,6 @@ type docsCore struct {
 	specFn func() (json []byte, yaml []byte, err error)
 }
 
-type docsSpec struct {
-	JSON string
-	YAML string
-}
-
 type docsHTML struct {
 	Title   string
 	SpecURL string
@@ -45,8 +40,8 @@ func newDocsCore(cfg *Config, specFn func() (json []byte, yaml []byte, err error
 
 func (d *docsCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, d.cfg.DocsPrefix)
-	switch {
-	case path == "" || path == "/":
+	switch path {
+	case "", "/":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		var b strings.Builder
 		// The spec URL is relative: the browser is already at
@@ -62,7 +57,7 @@ func (d *docsCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_, _ = w.Write([]byte(b.String()))
-	case path == "/openapi.json":
+	case "/openapi.json":
 		b, _, err := d.specFn()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -70,7 +65,7 @@ func (d *docsCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = w.Write(b)
-	case path == "/openapi.yaml":
+	case "/openapi.yaml":
 		_, b, err := d.specFn()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

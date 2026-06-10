@@ -245,7 +245,7 @@ func lastResponse(op *Operation) (*Response, bool) {
 	if op == nil || len(op.Responses) == 0 {
 		return nil, false
 	}
-	if op.ResponseOrder == nil || len(op.ResponseOrder) == 0 {
+	if len(op.ResponseOrder) == 0 {
 		for _, resp := range op.Responses {
 			return resp, true
 		}
@@ -276,7 +276,7 @@ func encodeExample(value any) (any, error) {
 // Multiple WithParam calls accumulate.
 func WithParam(name, in, typ, description string) RouteOpt {
 	return func(r *route) {
-		s := schemaForType(typ, r.version)
+		s := schemaForType(typ)
 		r.op.Parameters = append(r.op.Parameters, Param{
 			Name:        name,
 			In:          in,
@@ -298,7 +298,7 @@ func CookieParam(name, typ, desc string) RouteOpt { return WithParam(name, "cook
 
 // schemaForType builds a Schema for one of the supported primitive types.
 // For arrays, pass "array" and a follow-up element type via []string.
-func schemaForType(typ string, version SpecVersion) *schema.Schema {
+func schemaForType(typ string) *schema.Schema {
 	switch typ {
 	case "string":
 		return &schema.Schema{Type: "string"}

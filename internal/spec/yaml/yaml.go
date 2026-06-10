@@ -1,3 +1,10 @@
+// Package yaml converts JSON documents (the form produced by the
+// OpenAPI emitters) to YAML. It is a minimal, hand-rolled
+// converter that supports only the values the emitters produce:
+// objects, arrays, strings, numbers, booleans, and null.
+//
+// For round-trip verification, see the test in the parent
+// package which parses the YAML output with gopkg.in/yaml.v3.
 package yaml
 
 import (

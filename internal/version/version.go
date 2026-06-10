@@ -1,3 +1,6 @@
+// Package version defines the OpenAPI spec-version identifiers
+// (3.0.3 and 3.1.0) used by the emitters. The constants are
+// re-exported at the root stdocs package as OpenAPI30 / OpenAPI31.
 package version
 
 // SpecVersion identifies which OpenAPI version a spec is emitted as.

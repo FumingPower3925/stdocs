@@ -142,121 +142,166 @@ func (p *Pattern) HasMethod() bool { return p.Method != "" }
 // The original stdlib parsePattern lives in src/net/http/pattern.go. This is a
 // from-scratch implementation that produces a Pattern value suitable for
 // OpenAPI spec generation.
+// ParsePattern parses a Go 1.22+ http.ServeMux pattern. See the
+// package-level comment for the supported subset.
 func ParsePattern(s string) (*Pattern, error) {
 	if len(s) == 0 {
 		return nil, errors.New("stdocs: empty pattern")
 	}
 	p := &Pattern{Original: s}
-
-	rest := s
-	// Split off the optional method.
-	if i := strings.IndexAny(rest, " \t"); i >= 0 {
-		method := rest[:i]
-		rest = strings.TrimLeft(rest[i+1:], " \t")
-		if !isValidMethod(method) {
-			return nil, fmt.Errorf("stdocs: invalid method %q in pattern %q", method, s)
-		}
-		p.Method = strings.ToUpper(method)
+	rest, err := splitMethod(s, p)
+	if err != nil {
+		return nil, err
 	}
+	rest, err = splitHost(s, rest, p)
+	if err != nil {
+		return nil, err
+	}
+	return parsePath(s, rest, p)
+}
 
-	// Split off the optional host. The host is everything before the first slash.
+// splitMethod extracts the optional HTTP method prefix ("GET /foo")
+// from the pattern. The remainder is returned.
+func splitMethod(s string, p *Pattern) (string, error) {
+	i := strings.IndexAny(s, " \t")
+	if i < 0 {
+		return s, nil
+	}
+	method := s[:i]
+	rest := strings.TrimLeft(s[i+1:], " \t")
+	if !isValidMethod(method) {
+		return "", fmt.Errorf("stdocs: invalid method %q in pattern %q", method, s)
+	}
+	p.Method = strings.ToUpper(method)
+	return rest, nil
+}
+
+// splitHost extracts the optional host prefix ("example.com/foo")
+// from the pattern. The remainder is the path.
+func splitHost(orig, rest string, p *Pattern) (string, error) {
 	i := strings.IndexByte(rest, '/')
 	if i < 0 {
-		return nil, fmt.Errorf("stdocs: pattern %q missing path (no '/' found)", s)
+		return "", fmt.Errorf("stdocs: pattern %q missing path (no '/' found)", orig)
 	}
 	host := rest[:i]
 	rest = rest[i:]
 	if strings.ContainsRune(host, '{') {
-		return nil, fmt.Errorf("stdocs: pattern %q has '{' in host (missing initial '/'?)", s)
+		return "", fmt.Errorf("stdocs: pattern %q has '{' in host (missing initial '/'?)", orig)
 	}
 	if host != "" {
 		p.Host = host
 	}
-
-	// At this point, rest is the path. It must start with "/".
 	if rest == "" || rest[0] != '/' {
-		return nil, fmt.Errorf("stdocs: pattern %q has empty path", s)
+		return "", fmt.Errorf("stdocs: pattern %q has empty path", orig)
 	}
-	// stdlib disallows non-CONNECT patterns with unclean paths; we don't replicate
-	// that check (it does not affect OpenAPI generation), but we do unescape literal
-	// segments so the emitted path is human-readable.
+	return rest, nil
+}
 
+// parsePath walks the path portion of the pattern, producing
+// Segments. The rest argument is the path with a leading '/'.
+func parsePath(orig, rest string, p *Pattern) (*Pattern, error) {
 	seenNames := make(map[string]bool)
-
-	// Walk segments. rest[0] is always '/'.
-	off := len(rest) - 1 // offset of the current '/' in the original string
-	_ = off              // currently unused; reserved for richer error messages later
 	for len(rest) > 0 {
-		rest = rest[1:] // consume the leading '/'
+		// Consume the leading '/'.
+		rest = rest[1:]
 		if len(rest) == 0 {
-			// Trailing slash with no segment after it -> prefix match.
-			// We represent it as an anonymous multi wildcard.
+			// Trailing '/' with no segment after it -> prefix
+			// match, represented as an anonymous multi wildcard.
 			p.Segments = append(p.Segments, Segment{Kind: KindMulti, Value: ""})
 			p.IsPrefix = true
-			break
+			return p, nil
 		}
-		i := strings.IndexByte(rest, '/')
-		var seg string
-		if i < 0 {
-			seg = rest
-			rest = ""
-		} else {
-			seg = rest[:i]
-			rest = rest[i:]
+		seg, after := takeSegment(rest)
+		rest = after
+		if err := parseSegment(orig, seg, rest, seenNames, p); err != nil {
+			return nil, err
 		}
-
-		j := strings.IndexByte(seg, '{')
-		if j < 0 {
-			// Literal segment. Unescape per RFC 3986 (matches stdlib behaviour).
-			if strings.ContainsRune(seg, '}') {
-				return nil, fmt.Errorf("stdocs: pattern %q has orphan '}' in literal segment %q", s, seg)
-			}
-			unsegged, _ := url.PathUnescape(seg)
-			if unsegged == "" {
-				unsegged = seg
-			}
-			p.Segments = append(p.Segments, Segment{Kind: KindLiteral, Value: unsegged})
-			continue
-		}
-
-		// Wildcard segment. Must start with '{' and end with '}'.
-		if j != 0 {
-			return nil, fmt.Errorf("stdocs: pattern %q has '{{{ ' in middle of segment %q", s, seg)
-		}
-		if seg[len(seg)-1] != '}' {
-			return nil, fmt.Errorf("stdocs: pattern %q has wildcard segment %q missing closing '}'", s, seg)
-		}
-		inner := seg[1 : len(seg)-1]
-		if inner == "$" {
-			// {$} trailing-slash anchor. Must be the last segment.
-			if len(rest) != 0 {
-				return nil, fmt.Errorf("stdocs: pattern %q has '{$}' not at end of path", s)
-			}
-			p.Segments = append(p.Segments, Segment{Kind: KindTrailing, Value: "/"})
-			break
-		}
-		name, multi := strings.CutSuffix(inner, "...")
-		if multi && len(rest) != 0 {
-			return nil, fmt.Errorf("stdocs: pattern %q has multi wildcard %q not at end of path", s, seg)
-		}
-		if name == "" {
-			return nil, fmt.Errorf("stdocs: pattern %q has empty wildcard", s)
-		}
-		if !isValidWildcardName(name) {
-			return nil, fmt.Errorf("stdocs: pattern %q has invalid wildcard name %q", s, name)
-		}
-		if seenNames[name] {
-			return nil, fmt.Errorf("stdocs: pattern %q has duplicate wildcard name %q", s, name)
-		}
-		seenNames[name] = true
-		if multi {
-			p.Segments = append(p.Segments, Segment{Kind: KindMulti, Value: name})
-		} else {
-			p.Segments = append(p.Segments, Segment{Kind: KindWildcard, Value: name})
+		if isLastSegment(p) {
+			return p, nil
 		}
 	}
-
 	return p, nil
+}
+
+// takeSegment splits the next path segment from rest. Returns
+// seg and the remainder (still starting with '/' for any
+// segment that wasn't the last, or empty if it was).
+func takeSegment(rest string) (seg, after string) {
+	i := strings.IndexByte(rest, '/')
+	if i < 0 {
+		return rest, ""
+	}
+	return rest[:i], rest[i:]
+}
+
+// parseSegment classifies a single path segment as a literal
+// or wildcard and appends it to p. Updates seenNames for
+// duplicate detection.
+func parseSegment(orig, seg, rest string, seenNames map[string]bool, p *Pattern) error {
+	j := strings.IndexByte(seg, '{')
+	if j < 0 {
+		return appendLiteral(orig, seg, p)
+	}
+	return appendWildcard(orig, seg, rest, j, seenNames, p)
+}
+
+func appendLiteral(orig, seg string, p *Pattern) error {
+	if strings.ContainsRune(seg, '}') {
+		return fmt.Errorf("stdocs: pattern %q has orphan '}' in literal segment %q", orig, seg)
+	}
+	unsegged, _ := url.PathUnescape(seg)
+	if unsegged == "" {
+		unsegged = seg
+	}
+	p.Segments = append(p.Segments, Segment{Kind: KindLiteral, Value: unsegged})
+	return nil
+}
+
+func appendWildcard(orig, seg, rest string, j int, seenNames map[string]bool, p *Pattern) error {
+	if j != 0 {
+		return fmt.Errorf("stdocs: pattern %q has '{' in middle of segment %q", orig, seg)
+	}
+	if seg[len(seg)-1] != '}' {
+		return fmt.Errorf("stdocs: pattern %q has wildcard segment %q missing closing '}'", orig, seg)
+	}
+	inner := seg[1 : len(seg)-1]
+	if inner == "$" {
+		if len(rest) != 0 {
+			return fmt.Errorf("stdocs: pattern %q has '{$}' not at end of path", orig)
+		}
+		p.Segments = append(p.Segments, Segment{Kind: KindTrailing, Value: "/"})
+		return nil
+	}
+	name, multi := strings.CutSuffix(inner, "...")
+	if multi && len(rest) != 0 {
+		return fmt.Errorf("stdocs: pattern %q has multi wildcard %q not at end of path", orig, seg)
+	}
+	if name == "" {
+		return fmt.Errorf("stdocs: pattern %q has empty wildcard", orig)
+	}
+	if !isValidWildcardName(name) {
+		return fmt.Errorf("stdocs: pattern %q has invalid wildcard name %q", orig, name)
+	}
+	if seenNames[name] {
+		return fmt.Errorf("stdocs: pattern %q has duplicate wildcard name %q", orig, name)
+	}
+	seenNames[name] = true
+	if multi {
+		p.Segments = append(p.Segments, Segment{Kind: KindMulti, Value: name})
+	} else {
+		p.Segments = append(p.Segments, Segment{Kind: KindWildcard, Value: name})
+	}
+	return nil
+}
+
+// isLastSegment reports whether the most recently appended
+// segment terminates the pattern (e.g. {$}).
+func isLastSegment(p *Pattern) bool {
+	if len(p.Segments) == 0 {
+		return false
+	}
+	last := p.Segments[len(p.Segments)-1]
+	return last.Kind == KindTrailing || last.Kind == KindMulti
 }
 
 // MustParsePattern is like ParsePattern but panics on error.

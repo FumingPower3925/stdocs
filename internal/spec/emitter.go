@@ -1,3 +1,14 @@
+// Package spec builds OpenAPI 3.0.3 and 3.1.0 documents from
+// internal *spec.SpecInput values. The two emitters (BuildRoot30
+// and BuildRoot31) share a single emitter struct that handles
+// info, servers, tags, paths, components, security, and
+// webhooks; only the schema builder and version string differ
+// between versions.
+//
+// The input types (Operation, PathItem, Param, RequestBody,
+// Response, Info, etc.) are version-agnostic. The package also
+// re-exports the security-related types so callers can build a
+// complete spec from a single import.
 package spec
 
 import (
