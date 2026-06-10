@@ -244,10 +244,6 @@ func TestEmitOpenAPI31_CrossVersionDifferences(t *testing.T) {
 	type T struct {
 		Field *int `json:"field"`
 	}
-	type Path struct {
-		Path       string
-		Operations map[string]*Operation
-	}
 	_, comps := schema.ReflectSchema(T{}, version.OpenAPI30)
 	in30 := SpecInput{
 		Info:       Info{Title: "T", Version: "0.0.0"},

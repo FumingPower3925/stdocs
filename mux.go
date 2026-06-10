@@ -114,18 +114,15 @@ func (m *Mux) cachedJSON() ([]byte, error) {
 	if m.specJSON != nil {
 		return m.specJSON, nil
 	}
-	doc, err := m.buildDoc()
-	if err != nil {
-		return nil, err
-	}
+	doc := m.buildDoc()
 	// Run user hooks (WithOpenAPI escape hatch) before marshalling
 	// and before validation — hook-added schemes count as
 	// registered, so their use sites are valid.
 	for _, h := range m.cfg.Hooks {
 		h(doc)
 	}
-	if err := validateSecurity(doc); err != nil {
-		return nil, err
+	if vErr := validateSecurity(doc); vErr != nil {
+		return nil, vErr
 	}
 	b, err := jsonMarshalIndent(doc)
 	if err != nil {
@@ -181,7 +178,7 @@ func validateSecurity(doc map[string]any) error {
 
 // buildDoc assembles the OpenAPI document as a map[string]any. The
 // returned map is owned by the caller and may be mutated.
-func (m *Mux) buildDoc() (map[string]any, error) {
+func (m *Mux) buildDoc() map[string]any {
 	m.reg.finalize(m.cfg)
 	in := SpecInput{
 		Info:            m.cfg.Info,
@@ -212,9 +209,9 @@ func (m *Mux) buildDoc() (map[string]any, error) {
 	}
 	in.Components = comps
 	if m.cfg.Version == OpenAPI31 {
-		return spec.BuildRoot31(in), nil
+		return spec.BuildRoot31(in)
 	}
-	return spec.BuildRoot30(in), nil
+	return spec.BuildRoot30(in)
 }
 
 // Refresh invalidates the spec cache, forcing the next call to JSON or
