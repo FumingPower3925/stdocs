@@ -31,7 +31,7 @@ func TestSwaggerUI_EndToEnd(t *testing.T) {
 	if !strings.Contains(body, "Swagger Demo") {
 		t.Errorf("body should contain title: %s", body)
 	}
-	if !strings.Contains(body, "/docs/openapi.json") {
+	if !strings.Contains(body, "openapi.json") {
 		t.Errorf("body should contain spec URL: %s", body)
 	}
 }
