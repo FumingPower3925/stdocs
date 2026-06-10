@@ -125,9 +125,12 @@ func WithPathPrefix(prefix string) Option {
 			c.PathPrefix = ""
 			return
 		}
+		if strings.ContainsAny(prefix, "{}? \t") {
+			panic("stdocs: WithPathPrefix(" + strconv.Quote(prefix) + ") must be a literal path prefix without wildcards, query strings, or whitespace")
+		}
 		normalized := "/" + strings.Trim(prefix, "/")
 		if normalized == "/" {
-			panic(`stdocs: WithPathPrefix("/") is not supported; use no prefix instead`)
+			panic("stdocs: WithPathPrefix(" + strconv.Quote(prefix) + ") resolves to the root prefix, which is not supported; use no prefix instead")
 		}
 		c.PathPrefix = normalized
 	}
@@ -139,7 +142,9 @@ func WithPathPrefix(prefix string) Option {
 // and not opted out with WithNoSecurity — documents a 401
 // ("Unauthorized") response, since an authenticated endpoint can
 // always reject the credentials. A per-route WithResponse(401, ...)
-// or a WithDefaultResponse(401, ...) body wins over the bare entry.
+// or a WithDefaultResponse(401, ...) body wins over the bare entry —
+// note that WithDefaultResponse(401, ...) documents the 401 on every
+// operation, including unsecured ones, per its own contract.
 // Pass false to suppress the automatic 401 mux-wide.
 func WithAutoUnauthorized(enabled bool) Option {
 	return func(c *Config) {
@@ -158,8 +163,11 @@ func WithAutoUnauthorized(enabled bool) Option {
 //
 // A per-route WithResponse (or response-decorating opt) for the same
 // status wins. Pass status 0 for the OpenAPI "default" response and
-// nil for a body-less entry. Multiple calls accumulate; repeating a
-// status panics, as does a status outside 100-599 (other than 0).
+// nil for a body-less entry. The entry applies to every operation —
+// to document a 401 only on secured routes, rely on the automatic
+// 401 instead (see WithAutoUnauthorized). Multiple calls accumulate;
+// repeating a status panics, as does a status outside 100-599
+// (other than 0).
 func WithDefaultResponse(status int, body any) Option {
 	if status != 0 && (status < 100 || status > 599) {
 		panic("stdocs: WithDefaultResponse status must be 0 (default) or 100-599, got " + itoa(status))

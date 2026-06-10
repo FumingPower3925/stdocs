@@ -513,6 +513,12 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 	}
 
 	if fieldSchema.Ref != "" {
+		// An example may decorate a $ref use site (the emitters wrap
+		// or sibling it per version); constraints cannot — they
+		// belong on the referenced struct's own fields.
+		if ex := tag.Get("example"); ex != "" && fieldSchema.Example == nil {
+			fieldSchema.Example = ex
+		}
 		for _, name := range constraintTags {
 			if _, ok := tag.Lookup(name); ok {
 				panic("stdocs: constraint tag " + name + " on field " + fieldName +
@@ -522,27 +528,23 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 		return
 	}
 
+	rejectStringEncodedNumericBounds(fieldSchema, tag, fieldName)
+
 	if ex := tag.Get("example"); ex != "" && fieldSchema.Example == nil {
+		requireScalar(fieldSchema.Type, "example", fieldName)
 		fieldSchema.Example = parseScalar(ex, fieldSchema.Type, "example", fieldName)
 	}
 	if def := tag.Get("default"); def != "" {
+		requireScalar(fieldSchema.Type, "default", fieldName)
 		fieldSchema.Default = parseScalar(def, fieldSchema.Type, "default", fieldName)
 	}
 	if format := tag.Get("format"); format != "" {
+		requireScalar(fieldSchema.Type, "format", fieldName)
 		fieldSchema.Format = format
 	}
 	if enum := tag.Get("enum"); enum != "" {
-		switch fieldSchema.Type {
-		case "string", "integer", "number", "boolean":
-		default:
-			panic("stdocs: enum tag on field " + fieldName + " requires a scalar field, not " + describeType(fieldSchema.Type))
-		}
-		parts := strings.Split(enum, ",")
-		values := make([]any, len(parts))
-		for i, p := range parts {
-			values[i] = parseScalar(p, fieldSchema.Type, "enum", fieldName)
-		}
-		fieldSchema.Enum = values
+		requireScalar(fieldSchema.Type, "enum", fieldName)
+		fieldSchema.Enum = parseEnumTag(enum, fieldSchema.Type, fieldName)
 	}
 
 	fieldSchema.Minimum = numericConstraint(tag, "minimum", fieldSchema.Type, fieldName)
@@ -589,8 +591,8 @@ func numericConstraint(tag reflect.StructTag, name, schemaType, fieldName string
 	if schemaType != "integer" && schemaType != "number" {
 		panic("stdocs: " + name + " tag on field " + fieldName + " requires a numeric field, not " + describeType(schemaType))
 	}
-	if _, err := strconv.ParseFloat(v, 64); err != nil {
-		panic("stdocs: " + name + " tag " + strconv.Quote(v) + " on field " + fieldName + " is not a valid number")
+	if !validJSONNumber(v) {
+		panic("stdocs: " + name + " tag " + strconv.Quote(v) + " on field " + fieldName + " is not a valid JSON number")
 	}
 	return json.Number(v)
 }
@@ -616,10 +618,65 @@ func lengthConstraint(tag reflect.StructTag, name, wantType, schemaType, fieldNa
 	return &n
 }
 
+// rejectStringEncodedNumericBounds panics when a numeric bound tag
+// sits on a json ",string"-encoded numeric field: the wire form is a
+// JSON string, so the generic "requires a numeric field, not string"
+// message would name the wrong culprit.
+func rejectStringEncodedNumericBounds(fieldSchema *Schema, tag reflect.StructTag, fieldName string) {
+	enc, ok := fieldSchema.Extensions["x-stdocs-type"].(string)
+	if !ok || !strings.HasPrefix(enc, "json-string-encoded") {
+		return
+	}
+	for _, name := range [...]string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"} {
+		if _, set := tag.Lookup(name); set {
+			panic("stdocs: field " + fieldName + " is " + strings.TrimPrefix(enc, "json-string-encoded ") +
+				` on the wire as a JSON string (json ",string"); numeric constraints are not supported on string-encoded fields`)
+		}
+	}
+}
+
+// parseEnumTag splits a comma-separated enum tag, trims each member,
+// rejects empty members, and parses members per the schema type.
+func parseEnumTag(enum, schemaType, fieldName string) []any {
+	parts := strings.Split(enum, ",")
+	values := make([]any, len(parts))
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			panic("stdocs: enum tag on field " + fieldName + " has an empty member")
+		}
+		values[i] = parseScalar(p, schemaType, "enum", fieldName)
+	}
+	return values
+}
+
+// requireScalar panics unless the schema type is a scalar. The
+// json-string-encoded case gets its own message: the Go field is
+// numeric, but the ,string option makes its wire form a JSON string,
+// so typed constraints cannot apply.
+func requireScalar(schemaType, tagName, fieldName string) {
+	switch schemaType {
+	case "string", "integer", "number", "boolean":
+		return
+	}
+	panic("stdocs: " + tagName + " tag on field " + fieldName + " requires a scalar field, not " + describeType(schemaType))
+}
+
+// validJSONNumber reports whether v satisfies the JSON number
+// grammar. Go's ParseFloat is looser (it accepts ".5", "+5", "1.",
+// "NaN", "Inf", hex floats, and underscores), and any such literal
+// stored in a json.Number makes json.Marshal fail at emission — an
+// HTTP 500 on the docs endpoints instead of the promised fail-fast
+// panic.
+func validJSONNumber(v string) bool {
+	var n json.Number
+	return json.Unmarshal([]byte(v), &n) == nil
+}
+
 // describeType renders a schema type for panic messages.
 func describeType(schemaType string) string {
 	if schemaType == "" {
-		return "an untyped schema"
+		return "an untyped schema (interface, json.RawMessage, or custom marshaler)"
 	}
 	return schemaType
 }
