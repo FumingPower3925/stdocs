@@ -11,7 +11,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/FumingPower3925/stdocs.svg)](https://pkg.go.dev/github.com/FumingPower3925/stdocs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Generació d'OpenAPI 3.0.4, 3.1.2 i 3.2.0 per al `net/http.ServeMux` de la biblioteca estàndard (sintaxi de patrons de Go 1.22+). Sense dependències en temps d'execució.
+stdocs converteix un `net/http.ServeMux` de la biblioteca estàndard en una API autodocumentada: registra les rutes com sempre i stdocs en serveix la documentació interactiva — Scalar, Swagger UI, Redoc o Stoplight Elements a `/docs` — basada en un document OpenAPI 3.0/3.1/3.2 generat. Zero dependències i sense generació de codi: els patrons que ja escrius són la font de la veritat.
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("La meva API"))
@@ -38,14 +38,14 @@ El mateix document generat, mostrat per cadascuna de les quatre interfícies enr
 
 ## Característiques
 
-- **Zero dependències** — només la biblioteca estàndard de Go en temps d'execució.
+- **Cinc interfícies** — una per defecte, diminuta i sense dependències (~1.6 KB, només JS inline), més Scalar, Swagger UI, Redoc i Stoplight Elements — cadascuna disponible com a subpaquet CDN (amb versió fixada i hashes d'integritat SRI) o com a subpaquet incrustat aïllat de la xarxa.
 - **Tres versions d'OpenAPI** — 3.0.4 (per defecte), 3.1.2 i 3.2.0, totes provades.
 - **Reflexió** — els tipus Go es converteixen en JSON Schemas: punters, slices, mapes, genèrics, structs incrustats, tipus recursius via `$ref`, etiquetes `json` (incloses `omitempty`, `omitzero` i `,string`), i reconeixement de `json.Marshaler`/`encoding.TextMarshaler`.
 - **Valors per defecte intel·ligents** — els noms de funcions es converteixen en resums, el primer segment de la ruta es converteix en el tag i els paràmetres de ruta s'inclouen automàticament.
 - **Seguretat** — bearer, basic, API key, OAuth 2.0 (inclòs el device flow de 3.2). Els noms d'esquemes no registrats es reporten com a errors.
-- **Cinc interfícies** — una per defecte, diminuta i sense dependències (~1.6 KB, només JS inline), més Scalar, Swagger UI, Redoc i Stoplight Elements — cadascuna disponible com a subpaquet CDN (amb versió fixada i hashes d'integritat SRI) o com a subpaquet incrustat aïllat de la xarxa.
 - **Commutació per entorn** — `mux.Docs(enabled)` i `WithDisabled(true)` activen o desactiven la documentació segons l'entorn sense canviar les rutes registrades.
 - **Segur davant XSS** — l'HTML de la documentació es renderitza amb `html/template`.
+- **Zero dependències** — només la biblioteca estàndard de Go en temps d'execució.
 
 ## Instal·lació
 
