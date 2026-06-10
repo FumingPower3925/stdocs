@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+      - name: Download scalaremb bundle
+        run: go generate ./ui/scalaremb/
+      - name: Verify go.mod is clean
+        run: |
+          go mod download
+          git diff --exit-code go.mod
+      - name: Build
+        run: go build ./...
+      - name: Test (with race)
+        run: go test -race -count=1 -timeout 60s ./...
+      - name: Fuzz (short)
+        run: go test -fuzz=^FuzzParsePattern$ -fuzztime=10s ./internal/pattern/
+      - name: Vet
+        run: go vet ./...

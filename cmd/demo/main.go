@@ -19,6 +19,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/FumingPower3925/stdocs"
@@ -100,11 +101,10 @@ func (s *store) delete(id string) bool {
 }
 
 var s = newStore()
-var nextID = 0
+var nextID atomic.Int64
 
 func nextTaskID() string {
-	nextID++
-	return fmt.Sprintf("t-%d", nextID)
+	return fmt.Sprintf("t-%d", nextID.Add(1))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
