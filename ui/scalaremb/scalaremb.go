@@ -71,7 +71,7 @@ const html = `<!doctype html>
 <style>body{margin:0}</style>
 </head>
 <body>
-<script id="api-reference" type="application/json">{{.SpecURL}}</script>
+<script id="api-reference" data-url="{{.SpecURL}}"></script>
 <script src="/docs/_assets/standalone.js"></script>
 </body>
 </html>`

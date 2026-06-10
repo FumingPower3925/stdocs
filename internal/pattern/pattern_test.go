@@ -149,6 +149,51 @@ func TestParsePattern_TrailingSlashPrefix(t *testing.T) {
 	if p.Path() != "/posts/" {
 		t.Errorf("Path() = %q, want %q", p.Path(), "/posts/")
 	}
+	// Guard: the anonymous Multi("") must not be reported as a
+	// named path parameter. An empty parameter name in the emitted
+	// spec is invalid (rejected by Spectral and OpenAPI validators).
+	if names := p.WildcardNames(); len(names) != 0 {
+		t.Errorf("WildcardNames() = %v, want [] (anonymous wildcard must be filtered)", names)
+	}
+}
+
+// TestWildcardNames_FiltersEmpty guards the regression where the
+// implicit anonymous multi from trailing slashes leaked an empty-name
+// path parameter into the OpenAPI spec, which is rejected by every
+// validator.
+func TestWildcardNames_FiltersEmpty(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"/", nil},
+		{"/posts/", nil},
+		{"/static/", nil},
+		{"GET /", nil},
+		{"GET /posts/", nil},
+		{"/users/{id}", []string{"id"}},
+		{"/users/{id}/posts/", []string{"id"}},
+		{"/files/{path...}", []string{"path"}},
+		{"/{a}/{b}/", []string{"a", "b"}},
+	}
+	for _, c := range cases {
+		t.Run(c.in, func(t *testing.T) {
+			p := MustParsePattern(c.in)
+			got := p.WildcardNames()
+			if len(got) == 0 && len(c.want) == 0 {
+				return
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("WildcardNames() = %v, want %v", got, c.want)
+			}
+			// Additionally, no name in the result may be empty.
+			for _, n := range got {
+				if n == "" {
+					t.Errorf("empty name in WildcardNames(): %v", got)
+				}
+			}
+		})
+	}
 }
 
 func TestParsePattern_MultipleWildcards(t *testing.T) {

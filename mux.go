@@ -2,6 +2,7 @@ package stdocs
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"reflect"
 	"runtime"
@@ -117,9 +118,14 @@ func (m *Mux) cachedJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Run user hooks (WithOpenAPI escape hatch) before marshalling.
+	// Run user hooks (WithOpenAPI escape hatch) before marshalling
+	// and before validation — hook-added schemes count as
+	// registered, so their use sites are valid.
 	for _, h := range m.cfg.Hooks {
 		h(doc)
+	}
+	if err := validateSecurity(doc); err != nil {
+		return nil, err
 	}
 	b, err := jsonMarshalIndent(doc)
 	if err != nil {
@@ -127,6 +133,50 @@ func (m *Mux) cachedJSON() ([]byte, error) {
 	}
 	m.specJSON = b
 	return b, nil
+}
+
+// validateSecurity walks the spec document and returns an error if
+// any operation-level security requirement references a scheme name
+// that does not appear in components.securitySchemes (or in the
+// top-level "security" array added by a WithOpenAPI hook). A
+// misspelled scheme name produces a spec that is invalid per the
+// OpenAPI 3.x standard and most consumers silently fail to render
+// auth.
+func validateSecurity(doc map[string]any) error {
+	registered, _ := doc["components"].(map[string]any)
+	schemes, _ := registered["securitySchemes"].(map[string]any)
+	// Hooks may have added schemes to the top-level "security"
+	// array without registering them; that path is rare and we
+	// don't validate it. We also don't validate the top-level
+	// "security" key, which is the global default and is
+	// intentionally optional.
+	paths, _ := doc["paths"].(map[string]any)
+	for path, pi := range paths {
+		pim, _ := pi.(map[string]any)
+		for method, op := range pim {
+			if method == "parameters" {
+				continue
+			}
+			om, _ := op.(map[string]any)
+			sec, ok := om["security"]
+			if !ok {
+				continue
+			}
+			arr, _ := sec.([]any)
+			for _, entry := range arr {
+				em, _ := entry.(map[string]any)
+				for name := range em {
+					if schemes == nil {
+						return fmt.Errorf("stdocs: security scheme %q referenced in %s %s is not registered in components.securitySchemes", name, strings.ToUpper(method), path)
+					}
+					if _, ok := schemes[name]; !ok {
+						return fmt.Errorf("stdocs: security scheme %q referenced in %s %s is not registered in components.securitySchemes", name, strings.ToUpper(method), path)
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // buildDoc assembles the OpenAPI document as a map[string]any. The

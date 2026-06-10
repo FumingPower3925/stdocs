@@ -205,16 +205,16 @@ Call `mux.Refresh()` to force a re-run.
 
 ### Tier 1 with a plain `*http.ServeMux`
 
-If you want to use stdocs with a stock `*http.ServeMux` (no wrapping),
-use `stdocs.Mount` to get a docs handler you can mount on it. The
-returned handler serves a docs UI and an empty spec — useful for
-displaying a hand-written OpenAPI spec at `/docs` while your routes
-live elsewhere. (Full route enumeration requires the wrapped `*stdocs.Mux`.)
+If you want to expose a docs UI at a configurable prefix but your
+routes are served by a stock `*http.ServeMux`, use
+`stdocs.DocsHandler`. The returned handler serves the docs UI and
+an empty placeholder spec. It does not introspect your mux; for
+route enumeration, use `*stdocs.Mux`.
 
 ```go
 mux := http.NewServeMux()
 mux.HandleFunc("GET /users", listUsers)
-mux.Handle("/docs/", stdocs.Mount(mux, stdocs.WithTitle("My API")))
+mux.Handle("/docs/", stdocs.DocsHandler(stdocs.WithTitle("My API")))
 ```
 
 ## OpenAPI versions
@@ -269,7 +269,7 @@ mux.Handle("GET /docs/_assets/", http.StripPrefix("/docs/_assets/", scalaremb.As
 
 ## Configuration
 
-### Mux-level (Options to `stdocs.New` / `stdocs.Mount`)
+### Mux-level (Options to `stdocs.New` / `stdocs.DocsHandler`)
 
 | Option | Default | Description |
 |---|---|---|

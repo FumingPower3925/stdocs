@@ -1,3 +1,16 @@
+// Package stdocs: docs handler for use with a plain *http.ServeMux.
+//
+// This file used to expose stdocs.Mount(mux, opts...) — a Tier-1
+// entry point that implied the user's *http.ServeMux would be
+// introspected to populate the spec. That was never implemented: the
+// mux argument was stored but never read, the spec was permanently
+// `{}`, and the referenced WithSpecFile option did not exist.
+//
+// In v0.1.1 we cut the feature rather than ship a signature that
+// implies introspection that does not happen. Tier-1 was renamed
+// to DocsHandler, the unused mux parameter removed, and the README
+// updated accordingly. For route enumeration (the actual value of
+// stdocs), use *stdocs.Mux.
 package stdocs
 
 import (
@@ -7,70 +20,66 @@ import (
 	"github.com/FumingPower3925/stdocs/internal/spec/yaml"
 )
 
-// Mount returns an http.Handler that serves the docs UI and the OpenAPI
-// spec for a plain *http.ServeMux whose routes are not directly
-// observed by stdocs. It is the "Tier 1" entry point.
+// DocsHandler returns an http.Handler that serves the docs UI and a
+// placeholder OpenAPI spec. The spec is empty: this handler does not
+// introspect any mux. It exists so users who already have a hand-
+// written OpenAPI spec (or who don't need a populated spec) can
+// expose a docs UI at a configurable prefix.
 //
-// Mount's spec is empty by default: the wrapped *http.ServeMux's routes
-// are not introspectable. The returned handler can be combined with
-// stdocs.Scan to produce a spec from observed traffic (future work) or
-// used as a UI-only mount while routes are documented by hand via
-// stdocs.ScanRefs (future work).
+// The handler serves:
 //
-// For now, Mount is most useful as a UI shell that points at a static
-// openapi.json the user provides via WithSpecFile. Tier 1 is best for
-// apps that have a hand-written OpenAPI spec they want to expose at
-// /docs; full route enumeration requires the *stdocs.Mux (Tier 2).
+//	GET <prefix>/             -> the HTML docs UI
+//	GET <prefix>/openapi.json -> the spec as JSON (placeholder)
+//	GET <prefix>/openapi.yaml -> the spec as YAML (placeholder)
 //
-// opts are stdocs.Options for the docs UI (title, version, etc.).
-func Mount(mux *http.ServeMux, opts ...Option) http.Handler {
+// The spec is currently `{}`. If you have a spec, see Tier 2
+// (*stdocs.Mux) which builds the spec from registered routes.
+//
+// To customise the docs UI, pass a UI option from one of the
+// github.com/FumingPower3925/stdocs/ui/* sub-packages:
+//
+//	mux := http.NewServeMux()
+//	mux.Handle("GET /docs/", stdocs.DocsHandler(
+//	    stdocs.WithTitle("My API"),
+//	    stdocs.WithDescription("Hand-written spec follows"),
+//	))
+//	mux.HandleFunc("GET /users", listUsers)
+func DocsHandler(opts ...Option) http.Handler {
 	cfg := applyOptions(opts)
-	sm := &stdMux{
-		parent: mux,
-		cfg:    cfg,
-		ui:     defaultUIDoc,
+	return &docsHandler{
+		cfg: cfg,
+		ui:  cfg.UIDoc,
 	}
-	return sm
 }
 
-// stdMux is the docs handler returned by Mount. It is a small wrapper
-// that serves the docs UI and the (empty) spec.
-type stdMux struct {
-	parent *http.ServeMux
-	cfg    *Config
-	ui     string
-	// specJSON is a static spec; if non-nil, it is served at the
-	// openapi.json endpoint. Mount does not generate a spec from the
-	// parent mux (which is not introspectable); the user is expected
-	// to either set this via a future stdocs.WithSpecFile option or
-	// use Tier 2 for full route enumeration.
-	specJSON []byte
+// docsHandler is the handler returned by DocsHandler. It serves the
+// docs UI page and a placeholder spec at the configured prefix.
+type docsHandler struct {
+	cfg *Config
+	ui  string
 }
 
-func (s *stdMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, s.cfg.DocsPrefix)
+func (h *docsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, h.cfg.DocsPrefix)
 	switch {
 	case path == "" || path == "/":
-		// Serve the docs UI.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		html := s.ui
-		html = strings.ReplaceAll(html, "{{.Title}}", s.cfg.Info.Title)
-		html = strings.ReplaceAll(html, "{{.SpecURL}}", s.cfg.DocsPrefix+"/openapi.json")
+		html := h.ui
+		html = strings.ReplaceAll(html, "{{.Title}}", h.cfg.Info.Title)
+		html = strings.ReplaceAll(html, "{{.SpecURL}}", h.cfg.DocsPrefix+"/openapi.json")
 		w.Write([]byte(html))
 	case path == "/openapi.json":
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		if s.specJSON == nil {
-			w.Write([]byte("{}"))
-			return
-		}
-		w.Write(s.specJSON)
+		// Placeholder: DocsHandler does not produce a spec. Users
+		// who want a populated spec should use *stdocs.Mux.
+		w.Write([]byte("{}"))
 	case path == "/openapi.yaml":
 		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
-		if s.specJSON == nil {
-			w.Write([]byte("{}\n"))
-			return
-		}
-		y, err := yaml.FromJSON(s.specJSON)
+		// We round-trip the JSON placeholder through the YAML
+		// converter so the response is syntactically valid YAML
+		// (rather than emitting "{}" as raw YAML, which is missing
+		// a top-level document marker and confuses some tools).
+		y, err := yaml.FromJSON([]byte("{}"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

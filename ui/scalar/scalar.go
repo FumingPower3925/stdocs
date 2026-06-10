@@ -31,6 +31,11 @@ func WithUI() stdocs.Option {
 // scalarHTML is the docs page served when the scalar sub-package is in
 // use. The Scalar reference web component is loaded from cdn.jsdelivr.net
 // and configured to fetch the spec from the same origin's openapi.json.
+//
+// Scalar expects the spec URL in the `data-url` attribute. The previous
+// form (the URL as element content of a <script type="application/json">)
+// made Scalar treat the URL as the document and fail with "Invalid
+// YAML object".
 const scalarHTML = `<!doctype html>
 <html>
 <head>
@@ -40,7 +45,7 @@ const scalarHTML = `<!doctype html>
 <style>body{margin:0}</style>
 </head>
 <body>
-<script id="api-reference" type="application/json">{{.SpecURL}}</script>
+<script id="api-reference" data-url="{{.SpecURL}}"></script>
 <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>`

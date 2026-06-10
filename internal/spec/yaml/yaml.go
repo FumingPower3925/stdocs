@@ -90,12 +90,18 @@ func emitYAML(buf *bytes.Buffer, v any, indent int) error {
 			buf.WriteByte('\n')
 			writeIndent(buf, indent+1)
 			buf.WriteString(k)
-			buf.WriteString(":")
-			if isCollection(vv) {
+			buf.WriteByte(':')
+			if isCollection(vv) && !isEmptyCollection(vv) {
 				if err := emitYAML(buf, vv, indent+1); err != nil {
 					return err
 				}
 			} else {
+				// Scalars and empty collections both go on the same
+				// line as the key. The space is required by the YAML
+				// spec (":" must be followed by space or newline) and
+				// matters most for empty maps/arrays, which would
+				// otherwise emit "key:{}" / "key:[]" — invalid in block
+				// context.
 				buf.WriteByte(' ')
 				if err := emitYAML(buf, vv, 0); err != nil {
 					return err
@@ -118,6 +124,19 @@ func isCollection(v any) bool {
 	switch v.(type) {
 	case map[string]any, []any:
 		return true
+	}
+	return false
+}
+
+// isEmptyCollection reports whether v is a map[string]any or []any with
+// zero elements. Used to decide whether to emit the value on the same
+// line as the key (with a space separator) or on a new line.
+func isEmptyCollection(v any) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		return len(x) == 0
+	case []any:
+		return len(x) == 0
 	}
 	return false
 }

@@ -106,12 +106,19 @@ func (p *Pattern) Path() string {
 	return b.String()
 }
 
-// WildcardNames returns the names of all wildcards in declaration order.
-// Multi wildcards and single-segment wildcards are both included.
-// The special "{$}" trailing-anchor has no name and is not included.
+// WildcardNames returns the names of all named wildcards in declaration
+// order. Multi wildcards and single-segment wildcards are both
+// included. The special "{$}" trailing-anchor has no name and is not
+// included. Anonymous wildcards (those with an empty Value, produced
+// implicitly by trailing slashes) are also filtered out — they are
+// not valid OpenAPI path parameters and emitting them produces a
+// spec-invalid empty-name parameter.
 func (p *Pattern) WildcardNames() []string {
 	var names []string
 	for _, s := range p.Segments {
+		if s.Value == "" {
+			continue
+		}
 		if s.Kind == KindWildcard || s.Kind == KindMulti {
 			names = append(names, s.Value)
 		}
@@ -276,8 +283,35 @@ func isValidMethod(s string) bool {
 	case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "CONNECT", "OPTIONS", "TRACE":
 		return true
 	}
-	// stdlib also accepts any custom method. We do the same.
+	// stdlib also accepts any custom method. We do the same. Whether
+	// the method is *also* a valid OpenAPI method is a separate
+	// question; see isOpenAPIMethod.
 	return true
+}
+
+// openAPIMethods is the set of HTTP method tokens that are legal as
+// the key of an OpenAPI Path Item Object. Custom methods (PURGE,
+// etc.) make the document fail strict validation; callers should
+// either use a vendor extension or pick a different approach.
+var openAPIMethods = map[string]bool{
+	"get":     true,
+	"put":     true,
+	"post":    true,
+	"delete":  true,
+	"options": true,
+	"head":    true,
+	"patch":   true,
+	"trace":   true,
+}
+
+// IsOpenAPIMethod reports whether s is a legal OpenAPI method key.
+// The set is the eight methods listed in the OpenAPI 3.x Paths
+// Object definition. The "head" key is a special case: it is
+// allowed in OpenAPI but is *also* implicitly registered by
+// registering "get" (per RFC 7231); stdocs emits "head" only if
+// the user registered it explicitly.
+func IsOpenAPIMethod(s string) bool {
+	return openAPIMethods[strings.ToLower(s)]
 }
 
 // isValidWildcardName reports whether s is a valid Go identifier.
