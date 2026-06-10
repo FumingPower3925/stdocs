@@ -1,6 +1,8 @@
 package stdocs
 
 import (
+	"strconv"
+
 	"github.com/FumingPower3925/stdocs/internal/schema"
 	"github.com/FumingPower3925/stdocs/internal/spec"
 )
@@ -283,7 +285,7 @@ func statusKey(status int) string {
 	if status == 0 {
 		return "default"
 	}
-	return fmtInt(status)
+	return itoa(status)
 }
 
 func defaultResponseDescription(status int) string {
@@ -328,25 +330,6 @@ func defaultResponseDescription(status int) string {
 	return "Response"
 }
 
-func fmtInt(n int) string {
-	// Avoid the strconv import for a single call.
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }

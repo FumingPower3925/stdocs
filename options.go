@@ -113,12 +113,24 @@ func WithLicense(name, url string) Option {
 	}
 }
 
-// WithDocsPrefix overrides the URL prefix for the docs UI.
-// The default is "/docs". Must start with "/".
+// WithDocsPrefix overrides the URL prefix for the docs UI. The
+// default is "/docs". The value is normalized: a leading slash is
+// added if missing, and a trailing slash is removed so the prefix
+// is comparable to strings.TrimPrefix results. An empty prefix
+// disables the docs UI (the user is expected to call Mux.Docs()
+// themselves, but a sensible user keeps a non-empty prefix).
 func WithDocsPrefix(prefix string) Option {
 	return func(c *Config) {
-		if prefix == "" || prefix[0] != '/' {
+		if prefix == "" {
+			prefix = "/docs"
+		}
+		if prefix[0] != '/' {
 			prefix = "/" + prefix
+		}
+		// Strip trailing slash; strings.TrimPrefix expects to
+		// match exactly.
+		if len(prefix) > 1 && prefix[len(prefix)-1] == '/' {
+			prefix = prefix[:len(prefix)-1]
 		}
 		c.DocsPrefix = prefix
 	}
