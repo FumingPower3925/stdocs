@@ -78,10 +78,6 @@ func WithResponse(status int, body any) RouteOpt {
 		if r.op.Responses == nil {
 			r.op.Responses = make(map[string]*Response)
 		}
-		// Track insertion order so WithExample can pick the most
-		// recently-added response. We append unconditionally; for
-		// the same status added twice, the latest entry wins and we
-		// keep the latest position in the order list (no duplicate).
 		if _, exists := r.op.Responses[key]; !exists {
 			r.op.ResponseOrder = append(r.op.ResponseOrder, key)
 		}
@@ -151,24 +147,15 @@ func WithExample(value any) RouteOpt {
 	return func(r *route) {
 		encoded, err := encodeExample(value)
 		if err != nil {
-			return // best effort: skip on encode failure
+			return
 		}
 		if r.op.RequestBody != nil {
 			r.op.RequestBody.Example = encoded
 			return
 		}
-		// Find the most recently added response.
 		if len(r.op.Responses) == 0 {
 			return
 		}
-		var lastKey string
-		for k := range r.op.Responses {
-			lastKey = k // map iteration order; deterministic for the last-inserted
-		}
-		// Actually, find by status: the user typically adds WithResponse
-		// before WithExample, so the most recently added is the one we
-		// want. We track insertion order via a separate slice.
-		_ = lastKey
 		if resp, ok := lastResponse(r.op); ok {
 			resp.Example = encoded
 		}
@@ -197,6 +184,61 @@ func WithResponseExample(status int, value any) RouteOpt {
 	}
 }
 
+// ResponseDescription sets a custom description for a response
+// status. Use after WithResponse() to override the default.
+//
+//	stdocs.WithResponse(200, User{}),
+//	stdocs.ResponseDescription(200, "The user, or 404 if not found"),
+func ResponseDescription(status int, description string) RouteOpt {
+	return func(r *route) {
+		key := statusKey(status)
+		if r.op.Responses == nil {
+			return
+		}
+		if resp, ok := r.op.Responses[key]; ok {
+			resp.Description = description
+		}
+	}
+}
+
+// ResponseHeader adds a header entry to a response status. Useful
+// for documenting rate-limit, pagination, or other custom headers.
+//
+//	stdocs.WithResponse(200, User{}),
+//	stdocs.ResponseHeader(200, "X-RateLimit-Remaining", "integer", "Remaining quota"),
+func ResponseHeader(status int, name, typ, description string) RouteOpt {
+	return func(r *route) {
+		key := statusKey(status)
+		if r.op.Responses == nil {
+			return
+		}
+		resp, ok := r.op.Responses[key]
+		if !ok {
+			return
+		}
+		if resp.Headers == nil {
+			resp.Headers = make(map[string]*schema.Schema)
+		}
+		resp.Headers[name] = &schema.Schema{
+			Type:        typ,
+			Description: description,
+		}
+	}
+}
+
+// BodyContentType sets the content type for the request body. The
+// default is "application/json". Use after WithBody().
+//
+//	stdocs.WithBody(MyRequest{}),
+//	stdocs.BodyContentType("application/xml"),
+func BodyContentType(ct string) RouteOpt {
+	return func(r *route) {
+		if r.op.RequestBody != nil {
+			r.op.RequestBody.ContentType = ct
+		}
+	}
+}
+
 // lastResponse returns the most recently added response in r.op. We
 // track insertion order via a hidden slice on the Operation.
 func lastResponse(op *Operation) (*Response, bool) {
@@ -204,8 +246,6 @@ func lastResponse(op *Operation) (*Response, bool) {
 		return nil, false
 	}
 	if op.ResponseOrder == nil || len(op.ResponseOrder) == 0 {
-		// Fallback: pick any response. Should not happen in practice
-		// because WithResponse populates ResponseOrder.
 		for _, resp := range op.Responses {
 			return resp, true
 		}
@@ -216,16 +256,11 @@ func lastResponse(op *Operation) (*Response, bool) {
 }
 
 // encodeExample serializes value to JSON for the OpenAPI "example" field.
-// It returns the raw JSON bytes (as any) so they marshal back to JSON
-// cleanly when emitted.
 func encodeExample(value any) (any, error) {
 	b, err := spec.MarshalJSON(value)
 	if err != nil {
 		return nil, err
 	}
-	// Round-trip through Unmarshal so the example is a generic
-	// map/slice that marshals to the same JSON, rather than a
-	// Go-typed value that might produce a different shape.
 	var v any
 	if err := spec.UnmarshalJSON(b, &v); err != nil {
 		return nil, err
@@ -241,13 +276,13 @@ func encodeExample(value any) (any, error) {
 // Multiple WithParam calls accumulate.
 func WithParam(name, in, typ, description string) RouteOpt {
 	return func(r *route) {
-		schema := schemaForType(typ, r.version)
+		s := schemaForType(typ, r.version)
 		r.op.Parameters = append(r.op.Parameters, Param{
 			Name:        name,
 			In:          in,
 			Description: description,
 			Required:    in == "path",
-			Schema:      schema,
+			Schema:      s,
 		})
 	}
 }
@@ -287,6 +322,10 @@ func statusKey(status int) string {
 	}
 	return itoa(status)
 }
+
+// itoa is a small wrapper around strconv.Itoa kept for use by other
+// files in this package (e.g. registry.go).
+func itoa(n int) string { return strconv.Itoa(n) }
 
 func defaultResponseDescription(status int) string {
 	switch status {
@@ -328,8 +367,4 @@ func defaultResponseDescription(status int) string {
 		return "Service Unavailable"
 	}
 	return "Response"
-}
-
-func itoa(n int) string {
-	return strconv.Itoa(n)
 }

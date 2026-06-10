@@ -113,12 +113,15 @@ func (r *registry) finalize(cfg *Config) {
 		}
 
 		// Default summary: from function name, or from DefaultSummary
-		// template, but only if Summary was not provided.
+		// template, but only if Summary was not provided. The
+		// template's {resource} placeholder is replaced with the
+		// first path segment, e.g. "List {resource}" for GET /users
+		// becomes "List users".
 		if rt.op.Summary == "" {
 			if s := summaryFromFuncName(rt.funcName); s != "" {
 				rt.op.Summary = s
 			} else if cfg.DefaultSummary != "" {
-				rt.op.Summary = cfg.DefaultSummary
+				rt.op.Summary = strings.ReplaceAll(cfg.DefaultSummary, "{resource}", firstSegment(rt.pattern))
 			}
 		}
 

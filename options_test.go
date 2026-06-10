@@ -245,6 +245,31 @@ func TestRegistry_Finalize_DefaultSummary(t *testing.T) {
 	}
 }
 
+func TestRegistry_Finalize_DefaultSummaryTemplate_Resource(t *testing.T) {
+	// Function name with no inference -> template fallback. The
+	// {resource} placeholder should be replaced with the first
+	// path segment.
+	r := &registry{}
+	p := MustParsePattern("GET /articles")
+	r.add("GET /articles", "", p, OpenAPI30, nil)
+	r.finalize(applyOptions([]Option{WithDefaultSummary("List {resource}")}))
+	if r.routes[0].op.Summary != "List articles" {
+		t.Errorf("Summary = %q, want %q", r.routes[0].op.Summary, "List articles")
+	}
+}
+
+func TestRegistry_Finalize_DefaultSummaryTemplate_NoResource(t *testing.T) {
+	// No resource in path; the {resource} placeholder substitutes
+	// to the empty string.
+	r := &registry{}
+	p := MustParsePattern("GET /")
+	r.add("GET /", "", p, OpenAPI30, nil)
+	r.finalize(applyOptions([]Option{WithDefaultSummary("List {resource}")}))
+	if got := r.routes[0].op.Summary; got != "List " {
+		t.Errorf("Summary = %q, want %q", got, "List ")
+	}
+}
+
 func TestRegistry_Finalize_DefaultTag(t *testing.T) {
 	r := &registry{}
 	p := MustParsePattern("GET /users/{id}")
