@@ -3,11 +3,10 @@ package stdocs
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"net/http"
 	"reflect"
 	"runtime"
-	"slices"
+	"sort"
 	"strings"
 	"sync"
 
@@ -16,6 +15,16 @@ import (
 	"github.com/FumingPower3925/stdocs/internal/spec"
 	"github.com/FumingPower3925/stdocs/internal/spec/yaml"
 )
+
+// sortedKeys returns m's keys in ascending order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
 
 // marshalSpec marshals the spec document as compact JSON (no
 // whitespace). The emitters already sort keys, so indentation would
@@ -235,7 +244,7 @@ func (m *Mux) buildDoc() map[string]any {
 		}
 		// Iterate responses in sorted-key order so component-name
 		// suffixes are assigned deterministically across rebuilds.
-		for _, key := range slices.Sorted(maps.Keys(rt.op.Responses)) {
+		for _, key := range sortedKeys(rt.op.Responses) {
 			if resp := rt.op.Responses[key]; resp != nil && resp.BodyValue != nil {
 				resp.Schema = ref.Reflect(resp.BodyValue)
 			}
@@ -296,7 +305,7 @@ func (m *Mux) reflectWebhooks(ref *schema.Reflector) map[string]Webhook {
 		return m.cfg.Webhooks
 	}
 	out := make(map[string]Webhook, len(m.cfg.Webhooks))
-	for _, name := range slices.Sorted(maps.Keys(m.cfg.Webhooks)) {
+	for _, name := range sortedKeys(m.cfg.Webhooks) {
 		hook := m.cfg.Webhooks[name]
 		if rb := hook.RequestBody; rb != nil && rb.BodyValue != nil {
 			rbCopy := *rb
@@ -305,7 +314,7 @@ func (m *Mux) reflectWebhooks(ref *schema.Reflector) map[string]Webhook {
 		}
 		if len(hook.Responses) > 0 {
 			respCopy := make(map[string]*Response, len(hook.Responses))
-			for _, key := range slices.Sorted(maps.Keys(hook.Responses)) {
+			for _, key := range sortedKeys(hook.Responses) {
 				resp := hook.Responses[key]
 				if resp != nil && resp.BodyValue != nil {
 					rc := *resp

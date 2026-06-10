@@ -13,8 +13,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"maps"
-	"slices"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -108,7 +107,12 @@ func emitYAML(buf *bytes.Buffer, v any, indent int) error {
 			return nil
 		}
 		// Sort keys for deterministic output.
-		for _, k := range slices.Sorted(maps.Keys(x)) {
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
 			vv := x[k]
 			buf.WriteByte('\n')
 			writeIndent(buf, indent+1)

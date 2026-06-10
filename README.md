@@ -47,7 +47,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requires Go 1.26.4 or later (the module's `go` directive). The route patterns stdocs documents (`"GET /users/{id}"`) are the method+path syntax that `net/http.ServeMux` gained in Go 1.22.
+Requires Go 1.25 or later. stdocs follows the Go project's release support policy — the two most recent Go releases, currently 1.25 and 1.26 — and CI runs the full test suite on every patch release of both. The route patterns stdocs documents (`"GET /users/{id}"`) are the method+path syntax that `net/http.ServeMux` gained in Go 1.22.
 
 ## Usage
 
