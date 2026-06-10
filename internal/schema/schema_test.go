@@ -47,15 +47,15 @@ func TestReflectSchema_IntegerSizes(t *testing.T) {
 		value  any
 		format string
 	}{
-		{int(0), "int32"},
+		{int(0), "int64"},
 		{int8(0), "int32"},
 		{int16(0), "int32"},
 		{int32(0), "int32"},
 		{int64(0), "int64"},
-		{uint(0), "int32"},
+		{uint(0), "int64"},
 		{uint8(0), "int32"},
 		{uint16(0), "int32"},
-		{uint32(0), "int32"},
+		{uint32(0), "int64"},
 		{uint64(0), "int64"},
 	}
 	for _, c := range cases {
