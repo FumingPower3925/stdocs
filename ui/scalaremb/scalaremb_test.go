@@ -16,9 +16,13 @@ func TestWithUI_ReplacesUIDoc(t *testing.T) {
 	if cfg.UIDoc == "" {
 		t.Fatal("UIDoc not set")
 	}
-	// Should reference the embedded asset path.
-	if !strings.Contains(cfg.UIDoc, "/docs/_assets/standalone.js") {
-		t.Errorf("HTML should reference embedded asset: %s", cfg.UIDoc)
+	// Should reference the embedded asset with a RELATIVE URL so the
+	// page works under WithDocsPrefix and reverse proxies.
+	if !strings.Contains(cfg.UIDoc, `src="_assets/standalone.js"`) {
+		t.Errorf("HTML should reference the embedded asset relatively: %s", cfg.UIDoc)
+	}
+	if strings.Contains(cfg.UIDoc, "/docs/_assets/") {
+		t.Errorf("HTML must not hardcode the /docs prefix: %s", cfg.UIDoc)
 	}
 	// And should NOT be the CDN URL.
 	if strings.Contains(cfg.UIDoc, "cdn.jsdelivr.net") {
@@ -42,7 +46,7 @@ func TestWithUI_EndToEnd(t *testing.T) {
 	req := httptest.NewRequest("GET", "/docs/", nil)
 	mux.Docs().ServeHTTP(rr, req)
 	body := rr.Body.String()
-	if !strings.Contains(body, "/docs/_assets/standalone.js") {
+	if !strings.Contains(body, `src="_assets/standalone.js"`) {
 		t.Errorf("body should reference embedded asset: %s", body)
 	}
 	if !strings.Contains(body, "Scalar Embed Demo") {
@@ -50,18 +54,37 @@ func TestWithUI_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestAssetHandler(t *testing.T) {
-	// The handler should serve the embedded bundle. The bundle
-	// is fetched on `go generate`; if it's missing, the test
-	// is skipped.
+func TestAssetHandler_ServesBundle(t *testing.T) {
 	handler := scalaremb.AssetHandler()
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/standalone.js", nil)
 	handler.ServeHTTP(rr, req)
 	if rr.Code != 200 {
-		t.Skipf("standalone.js not embedded (status %d); run `go generate ./ui/scalaremb/`", rr.Code)
+		t.Fatalf("GET /standalone.js = %d, want 200 (the bundle ships vendored in assets/)", rr.Code)
 	}
-	if rr.Body.Len() < 1000 {
-		t.Errorf("standalone.js unexpectedly small: %d bytes", rr.Body.Len())
+	if got := rr.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Errorf("Cache-Control = %q, want immutable caching", got)
+	}
+}
+
+func TestAssetHandler_DirectoryIs404(t *testing.T) {
+	handler := scalaremb.AssetHandler()
+	for _, p := range []string{"/", "/subdir/"} {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", p, nil)
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404 (no directory listings)", p, rr.Code)
+		}
+	}
+}
+
+func TestAssetHandler_MissingFileIs404(t *testing.T) {
+	handler := scalaremb.AssetHandler()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/nope.js", nil)
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("GET /nope.js = %d, want 404", rr.Code)
 	}
 }

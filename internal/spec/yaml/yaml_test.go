@@ -44,8 +44,8 @@ func TestYAMLFromJSON_Nested(t *testing.T) {
 
 func TestYAMLFromJSON_EmptyObject(t *testing.T) {
 	y, _ := yaml.FromJSON([]byte(`{}`))
-	if string(y) != "{}" {
-		t.Errorf("empty object = %q, want {}", y)
+	if string(y) != "{}\n" {
+		t.Errorf("empty object = %q, want {} with trailing newline", y)
 	}
 }
 
@@ -80,8 +80,8 @@ func TestYAMLFromJSON_EmptyCollectionSpace(t *testing.T) {
 	}{
 		{"empty map", `{"a":{}}`, "a: {}"},
 		{"empty array", `{"a":[]}`, "a: []"},
-		{"nested empty", `{"a":{"b":{}}}`, "a:" + "\n    b: {}"},
-		{"mixed", `{"a":{},"b":[],"c":1}`, "a: {}" + "\n  b: []" + "\n  c: 1"},
+		{"nested empty", `{"a":{"b":{}}}`, "a:" + "\n  b: {}"},
+		{"mixed", `{"a":{},"b":[],"c":1}`, "a: {}" + "\nb: []" + "\nc: 1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := yaml.FromJSON([]byte(tc.in))
@@ -89,9 +89,6 @@ func TestYAMLFromJSON_EmptyCollectionSpace(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := string(got)
-			// The whole document is currently emitted one indent
-			// level deep, so the leading "  " (two spaces) is
-			// expected. We don't compare that here.
 			if !strings.Contains(s, tc.want) {
 				t.Errorf("expected %q in:\n%s", tc.want, s)
 			}

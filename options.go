@@ -1,6 +1,12 @@
 package stdocs
 
-import "github.com/FumingPower3925/stdocs/internal/spec"
+import (
+	"net/url"
+	"strconv"
+	"strings"
+
+	"github.com/FumingPower3925/stdocs/internal/spec"
+)
 
 // Config holds the resolved configuration for an stdocs Mux.
 // It is built by applying a list of Options to a fresh Config and is
@@ -33,10 +39,11 @@ type Config struct {
 	// neither a per-route Summary nor a function-name-based inference.
 	DefaultSummary string
 	// UIDoc is the HTML template for the docs UI page. The default is
-	// the raw zero-JS UI in stdocs.defaultUIDoc. UI sub-packages
-	// override this field via a stdocs.Option to swap in their own
-	// page. The template may contain {{.Title}} and {{.SpecURL}}
-	// placeholders, which are substituted at request time.
+	// the small dependency-free page in stdocs.defaultUIDoc. UI
+	// sub-packages override this field via a stdocs.Option to swap in
+	// their own page. The template may contain {{.Title}} and
+	// {{.SpecURL}} placeholders; the page is rendered once, when the
+	// docs handler is constructed.
 	UIDoc string
 	// Hooks is the list of post-build callbacks registered via
 	// WithOpenAPI. Each is called once per spec build, with the
@@ -50,17 +57,22 @@ type Config struct {
 	// every operation. Operations may override with WithSecurity or
 	// opt out with WithNoSecurity.
 	GlobalSecurity []SecurityRequirement
-	// Webhooks are 3.1-only. The map is keyed by webhook name. The
-	// emitter ignores this field for 3.0.3 specs.
+	// Webhooks are emitted for 3.1 and 3.2 specs and ignored for 3.0
+	// (the field does not exist there). The map is keyed by webhook
+	// name.
 	Webhooks map[string]Webhook
 	// Disabled turns off the docs handler. When true, Mux.Docs and
 	// DocsHandler return a 404 handler instead of serving the UI and
 	// the spec. Mux.Mount respects this and registers nothing.
 	Disabled bool
+	// StaticSpec is a hand-written OpenAPI document (JSON bytes) set
+	// via WithSpec. It is served verbatim by DocsHandler (Tier 1) and
+	// ignored by *Mux (Tier 2), which generates its own document.
+	StaticSpec []byte
 }
 
-// Option is a function that mutates a config. Used at New() and Mount()
-// time.
+// Option is a function that mutates a config. Options are applied by
+// New and DocsHandler at construction time.
 type Option func(*Config)
 
 // WithTitle sets the API title. The default is "API".
@@ -74,7 +86,7 @@ func WithTitle(title string) Option {
 // string type with the same underlying values.
 //
 // WithVersion panics on an unknown version string. Options run at
-// New()/Mount() time, the same fail-fast window where bad patterns
+// New()/DocsHandler() time, the same fail-fast window where bad patterns
 // already panic; silently coercing to a default would mask user
 // errors.
 func WithVersion(v SpecVersion) Option {
@@ -97,7 +109,7 @@ func WithDescription(s string) Option {
 
 // WithAPIVersion sets the API version string in the OpenAPI "info"
 // block (e.g. "1.0.0"). This is independent of WithVersion which sets
-// the OpenAPI specification version (3.0.3 vs 3.1.0).
+// the OpenAPI specification version (3.0.4 vs 3.1.2 vs 3.2.0).
 func WithAPIVersion(v string) Option {
 	return func(c *Config) { c.Info.Version = v }
 }
@@ -126,23 +138,23 @@ func WithLicense(name, url string) Option {
 // WithDocsPrefix overrides the URL prefix for the docs UI. The
 // default is "/docs". The value is normalized: a leading slash is
 // added if missing, and a trailing slash is removed so the prefix
-// is comparable to strings.TrimPrefix results. An empty prefix
-// disables the docs UI (the user is expected to call Mux.Docs()
-// themselves, but a sensible user keeps a non-empty prefix).
+// is comparable to strings.TrimPrefix results. An empty prefix is
+// replaced with the default "/docs"; to turn the docs UI off, use
+// WithDisabled or pass false to Mux.Docs.
+//
+// The root prefix "/" is rejected with a panic: it would claim the
+// whole URL space and produce an invalid ServeMux pattern in Mount.
 func WithDocsPrefix(prefix string) Option {
 	return func(c *Config) {
 		if prefix == "" {
-			prefix = "/docs"
+			c.DocsPrefix = "/docs"
+			return
 		}
-		if prefix[0] != '/' {
-			prefix = "/" + prefix
+		normalized := "/" + strings.Trim(prefix, "/")
+		if normalized == "/" {
+			panic(`stdocs: WithDocsPrefix("/") is not supported; the docs prefix must be a non-root path like "/docs"`)
 		}
-		// Strip trailing slash; strings.TrimPrefix expects to
-		// match exactly.
-		if len(prefix) > 1 && prefix[len(prefix)-1] == '/' {
-			prefix = prefix[:len(prefix)-1]
-		}
-		c.DocsPrefix = prefix
+		c.DocsPrefix = normalized
 	}
 }
 
@@ -168,8 +180,22 @@ func WithDisabled(disabled bool) Option {
 // canonical URI of the document. It is emitted only in 3.2 specs;
 // setting it on a 3.0 or 3.1 mux has no effect because those
 // versions do not have the field.
+//
+// The value must be a valid RFC 3986 URI reference without a
+// fragment (both constraints come from the OpenAPI 3.2
+// specification and its published JSON Schema). WithSelfURL panics
+// on invalid input, consistent with WithVersion's fail-fast
+// behavior at New()/DocsHandler() time.
 func WithSelfURL(selfURL string) Option {
-	return func(c *Config) { c.SelfURL = selfURL }
+	return func(c *Config) {
+		if strings.Contains(selfURL, "#") {
+			panic("stdocs: WithSelfURL: $self must not contain a fragment (OpenAPI 3.2 requires a fragment-free URI reference)")
+		}
+		if _, err := url.Parse(selfURL); err != nil || strings.ContainsAny(selfURL, " \t\n") {
+			panic("stdocs: WithSelfURL: " + strconv.Quote(selfURL) + " is not a valid RFC 3986 URI reference")
+		}
+		c.SelfURL = selfURL
+	}
 }
 
 // WithTag declares a top-level tag and its description. Tags attached to

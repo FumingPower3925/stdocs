@@ -1,12 +1,14 @@
 // Package main is a demo of stdocs using a fictional Task Tracker API.
 //
-// It demonstrates both tiers:
+// Everything here uses the *stdocs.Mux path (what doc.go calls
+// Tier 2). It shows both levels of route documentation:
 //
-//   - Tier 1: a route registered with no documentation opts gets a
-//     summary inferred from the function name and a tag from the first
-//     path segment.
-//   - Tier 2: routes that pass stdocs.WithResponse / stdocs.WithBody
-//     produce schemas from Go types in the OpenAPI spec.
+//   - zero-config: a route registered with no documentation opts gets
+//     a summary inferred from the function name and a tag from the
+//     first path segment.
+//   - rich metadata: routes that pass stdocs.WithResponse /
+//     stdocs.WithBody produce schemas from Go types in the OpenAPI
+//     spec.
 //
 // Run with: go run ./cmd/demo
 // Then visit http://localhost:8080/docs/ for the docs UI.
@@ -15,6 +17,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -249,10 +252,11 @@ func main() {
 	// Seed some demo data so the responses aren't empty.
 	seedDemoData()
 
-	addr := ":8080"
-	fmt.Printf("Task Tracker API listening on %s\nDocs at http://localhost%s/docs/\n", addr, addr)
+	addr := flag.String("addr", ":8080", "listen address")
+	flag.Parse()
+	fmt.Printf("Task Tracker API listening on %s\nDocs at http://localhost%s/docs/\n", *addr, *addr)
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              *addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,

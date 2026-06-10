@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/FumingPower3925/stdocs/internal/schema"
-	"github.com/FumingPower3925/stdocs/internal/version"
 )
 
 func TestWithWebhooks_3_1(t *testing.T) {
@@ -126,6 +125,6 @@ func TestWithWebhooks_MethodCase(t *testing.T) {
 // the Webhook tests, avoiding a full ReflectSchema call.
 func mustSchema(t *testing.T, v any) *schema.Schema {
 	t.Helper()
-	s, _ := schema.ReflectSchema(v, version.OpenAPI30)
+	s, _ := schema.ReflectSchema(v)
 	return s
 }

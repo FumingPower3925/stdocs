@@ -575,7 +575,7 @@ func TestEmitOpenAPI30_EndToEndWithReflect(t *testing.T) {
 	type T struct {
 		User *User `json:"user"`
 	}
-	_, comps := schema.ReflectSchema(T{}, version.OpenAPI30)
+	_, comps := schema.ReflectSchema(T{})
 	in := SpecInput{
 		Info:       Info{Title: "T", Version: "0.0.0"},
 		Components: comps,

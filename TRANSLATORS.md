@@ -12,5 +12,5 @@ translation in sync with the English `README.md`.
 
 To add yourself as a translator, see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Translations" → "Adding a new
-language". New translators are added to this file by a maintainer
-after the contributor's first accepted translation PR.
+language". New translators add their own row as part of their first
+translation PR; a maintainer confirms it during review.

@@ -1,27 +1,26 @@
-> ⚠️ **Esta es una traducción comunitaria del [README en inglés](README.md).** La versión en inglés es la de referencia. Esta traducción puede estar desactualizada; en caso de duda, consulta la versión en inglés.
+> ⚠️ **This is a community translation of the [English README](README.md).** The English version is canonical. This translation may be out of date; when in doubt, consult the English version.
 >
-> Para proponer correcciones, ver [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Translations".
+> To propose corrections, see [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Translations".
 
 # stdocs
 
-**Idiomas:** [English](README.md) (canónico) · [Español](README.es.md) · [Català](README.ca.md)
+**Idiomas:** [English](README.md) (canonical) · [Español](README.es.md) · [Català](README.ca.md)
 
-[![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
+[![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FumingPower3925/stdocs)](https://goreportcard.com/report/github.com/FumingPower3925/stdocs)
 [![Go Reference](https://pkg.go.dev/badge/github.com/FumingPower3925/stdocs.svg)](https://pkg.go.dev/github.com/FumingPower3925/stdocs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Generación de OpenAPI 3.0.4, 3.1.2 y 3.2.0 para el `net/http.ServeMux` de la biblioteca estándar de Go 1.22+. Sin dependencias en tiempo de ejecución.
+Generación de OpenAPI 3.0.4, 3.1.2 y 3.2.0 para el `net/http.ServeMux` de la biblioteca estándar (sintaxis de patrones de Go 1.22+). Sin dependencias en tiempo de ejecución.
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("Mi API"))
 mux.HandleFunc("GET /users/{id}", getUser)
-http.Handle("/api/", mux)
-http.Handle("/docs/", mux.Docs())
-log.Fatal(http.ListenAndServe(":8080", nil))
+mux.Mount() // interfaz de docs en /docs/, spec en /docs/openapi.json
+log.Fatal(http.ListenAndServe(":8080", mux))
 ```
 
-Eso es todo. `stdocs` recorre las rutas registradas, genera un documento OpenAPI a partir de tus tipos Go y sirve una interfaz de documentación en `/docs/`.
+Eso es todo. `stdocs` recorre tus rutas registradas, genera un spec OpenAPI a partir de tus tipos Go y sirve una interfaz de documentación en `/docs/`.
 
 ## Tabla de contenidos
 
@@ -35,13 +34,13 @@ Eso es todo. `stdocs` recorre las rutas registradas, genera un documento OpenAPI
 
 ## Características
 
-- **Sin dependencias** — solo la biblioteca estándar de Go en tiempo de ejecución.
-- **Tres versiones de OpenAPI** — 3.0.4 (por defecto), 3.1.2 y 3.2.0, todas probadas. No se exponen constantes de parches antiguos (3.0.3, 3.1.0): según la especificación de OpenAPI, el tooling debe aceptar cualquier 3.0.* / 3.1.*, por lo que un único "último parche" por menor es el valor por defecto correcto.
-- **Reflexión** — los tipos Go se convierten en JSON Schemas: punteros, slices, mapas, genéricos, structs embebidos, tipos recursivos vía `$ref`, etiquetas `json`.
-- **Valores predeterminados inteligentes** — los nombres de las funciones se convierten en resúmenes, el primer segmento de la ruta se convierte en el tag, los parámetros de path se incluyen automáticamente.
-- **Seguridad** — bearer, basic, API key, OAuth 2.0. Los nombres de esquemas no registrados se reportan como errores.
-- **Ocho interfaces** — HTML sin JS por defecto; Scalar, Swagger UI, Redoc, Stoplight como sub-paquetes opcionales con CDN, cada una con una variante "air-gapped" (embebida) en un sub-paquete separado.
-- **Conmutación en tiempo de ejecución** — `mux.Docs(false)` y `WithDisabled(true)` permiten activar o desactivar la interfaz de documentación según el entorno, la llamada o un feature flag, sin cambiar las rutas registradas.
+- **Cero dependencias** — solo la biblioteca estándar de Go en tiempo de ejecución.
+- **Tres versiones de OpenAPI** — 3.0.4 (por defecto), 3.1.2 y 3.2.0, todas probadas. Los parches antiguos (3.0.3, 3.1.0) no se exponen como constantes: según la especificación de OpenAPI, las herramientas deben aceptar cualquier 3.0.\* / 3.1.\*, así que un único "último parche" por versión menor es el valor por defecto correcto.
+- **Reflexión** — los tipos Go se convierten en JSON Schemas: punteros, slices, mapas, genéricos, structs embebidos, tipos recursivos vía `$ref`, etiquetas `json` (incluidas `omitempty`, `omitzero` y `,string`), y reconocimiento de `json.Marshaler`/`encoding.TextMarshaler`.
+- **Valores por defecto inteligentes** — los nombres de funciones se convierten en resúmenes, el primer segmento de la ruta se convierte en el tag y los parámetros de ruta se incluyen automáticamente.
+- **Seguridad** — bearer, basic, API key, OAuth 2.0 (incluido el device flow de 3.2). Los nombres de esquemas no registrados se reportan como errores.
+- **Cinco interfaces** — una por defecto, diminuta y sin dependencias (~1.6 KB, solo JS inline), más Scalar, Swagger UI, Redoc y Stoplight Elements — cada una disponible como subpaquete CDN (con versión fijada y hashes de integridad SRI) o como subpaquete embebido aislado de la red.
+- **Conmutación por entorno** — `mux.Docs(enabled)` y `WithDisabled(true)` activan o desactivan la documentación según el entorno sin cambiar las rutas registradas.
 - **Seguro frente a XSS** — el HTML de la documentación se renderiza con `html/template`.
 
 ## Instalación
@@ -50,7 +49,7 @@ Eso es todo. `stdocs` recorre las rutas registradas, genera un documento OpenAPI
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requiere Go 1.22 o superior. Probado con Go 1.26.
+Requiere Go 1.26 o posterior (la directiva `go` del módulo). Los patrones de ruta que stdocs documenta (`"GET /users/{id}"`) son la sintaxis método+ruta que `net/http.ServeMux` incorporó en Go 1.22.
 
 ## Uso
 
@@ -59,16 +58,24 @@ Las rutas se documentan automáticamente a partir del patrón y del nombre de la
 ```go
 mux := stdocs.New(stdocs.WithTitle("Mi API"))
 mux.HandleFunc("GET /users", listUsers)        // resumen "List users", tag "Users"
-mux.HandleFunc("GET /health", healthCheck)     // resumen "Health", tag "Health"
+mux.HandleFunc("GET /health", healthCheck)     // resumen "Health check", tag "Health"
 ```
 
-Pasa opciones de ruta para añadir cuerpos, respuestas, tags y seguridad:
+Pasa opciones de ruta para adjuntar cuerpos, respuestas, tags y seguridad:
 
 ```go
 type User struct {
     ID    string `json:"id" doc:"Identificador único"`
     Name  string `json:"name"`
     Email string `json:"email,omitempty"`
+}
+
+type CreateUserRequest struct {
+    Name string `json:"name"`
+}
+
+type APIError struct {
+    Message string `json:"message"`
 }
 
 mux.HandleFunc("GET /users/{id}", getUser,
@@ -83,7 +90,7 @@ mux.HandleFunc("POST /users", createUser,
 )
 ```
 
-Para funcionalidades que `stdocs` no expone directamente, usa la salida de emergencia:
+Para funcionalidades que stdocs no expone directamente, usa el mecanismo de escape:
 
 ```go
 mux := stdocs.New(
@@ -96,7 +103,7 @@ mux := stdocs.New(
 )
 ```
 
-Para fijar el spec a una versión específica de OpenAPI, usa `WithVersion`:
+Para fijar el spec a una versión concreta de OpenAPI, usa `WithVersion`:
 
 ```go
 mux := stdocs.New(
@@ -105,7 +112,7 @@ mux := stdocs.New(
 )
 ```
 
-`stdocs` incluye el último parche de cada menor (`OpenAPI30` = 3.0.4, `OpenAPI31` = 3.1.2, `OpenAPI32` = 3.2.0). Para 3.2 también puedes fijar el URI canónico del documento:
+`stdocs` incluye el último parche de cada versión menor (`OpenAPI30` = 3.0.4, `OpenAPI31` = 3.1.2, `OpenAPI32` = 3.2.0). Para 3.2 puedes fijar además el URI canónico del documento:
 
 ```go
 mux := stdocs.New(
@@ -119,35 +126,42 @@ La lista completa de opciones está en [pkg.go.dev](https://pkg.go.dev/github.co
 
 ### Desactivar la interfaz de documentación
 
-La interfaz de documentación y los endpoints del spec (`openapi.json`, `openapi.yaml`) se pueden desactivar sin desregistrar rutas ni cambiar el punto de llamada. Se admiten dos patrones:
+La interfaz de documentación y los endpoints del spec (`openapi.json`, `openapi.yaml`) se pueden desactivar sin anular el registro de rutas. La decisión se toma cuando se llama a `Docs()`/`Mount()` (envuelve el handler tú mismo si necesitas un conmutador por petición):
 
 ```go
-// 1) Por llamada: pasa false a mux.Docs en el punto de uso.
+// 1) Por llamada: pasa la condición a mux.Docs en el punto de llamada.
+//    Un bool explícito gana a WithDisabled en ambos sentidos.
 mux := stdocs.New(stdocs.WithTitle("Mi API"))
 mux.HandleFunc("GET /users", listUsers)
-
-if os.Getenv("ENV") == "prod" {
-    mux.Handle("GET /docs/", mux.Docs(false))  // responde 404
-} else {
-    mux.Handle("GET /docs/", mux.Docs())        // sirve la interfaz
-}
+mux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
 ```
 
 ```go
-// 2) Por mux: WithDisabled() hace que Mount y Docs no registren nada.
+// 2) Por mux: WithDisabled(true) hace que Mount no haga nada y que
+//    Docs devuelva un handler 404 en todas partes.
 mux := stdocs.New(
     stdocs.WithTitle("Mi API"),
     stdocs.WithDisabled(os.Getenv("ENV") == "prod"),
 )
 mux.HandleFunc("GET /users", listUsers)
-mux.Mount()  // no registra nada cuando está desactivado
+mux.Mount() // no registra nada cuando está desactivado
 ```
 
-Ambos patrones devuelven `http.NotFoundHandler()` para cada petición al prefijo de documentación. El spec sigue siendo construible con `mux.JSON()` y `mux.YAML()` — desactivar la interfaz no detiene la generación del spec. `DocsHandler` (el placeholder de Tier 1) respeta `WithDisabled` de la misma forma.
+Cuando está desactivada, toda petición bajo el prefijo de documentación recibe un 404. El spec sigue pudiéndose construir con `mux.JSON()` y `mux.YAML()` — desactivar la interfaz no detiene la generación del spec. Las rutas registradas bajo el prefijo de documentación (la propia página de docs, los handlers de recursos) nunca aparecen en el spec generado.
+
+Si tienes un documento OpenAPI escrito a mano en lugar de rutas generadas, sírvelo con `DocsHandler` + `WithSpec`:
+
+```go
+spec, _ := os.ReadFile("openapi.json")
+http.Handle("GET /docs/", stdocs.DocsHandler(
+    stdocs.WithTitle("Mi API"),
+    stdocs.WithSpec(spec),
+))
+```
 
 ## Interfaces de documentación
 
-La interfaz por defecto es una página HTML mínima sin JavaScript (~3 KB). Para usar una interfaz más rica, importa un sub-paquete y pasa su opción `WithUI()`:
+La interfaz por defecto es una pequeña página HTML sin dependencias (~1.6 KB, solo JS inline, sin recursos externos). Para usar una interfaz más rica, importa un subpaquete y pasa su opción `WithUI()`:
 
 ```go
 import "github.com/FumingPower3925/stdocs/ui/scalar"
@@ -155,35 +169,36 @@ import "github.com/FumingPower3925/stdocs/ui/scalar"
 mux := stdocs.New(stdocs.WithTitle("Mi API"), scalar.WithUI())
 ```
 
-Para una compilación sin conexión a internet, importa el sub-paquete `*emb` correspondiente y monta su `AssetHandler()`:
+Para una compilación aislada de la red (sin CDN), importa el subpaquete `*emb` correspondiente y monta su `AssetHandler()`:
 
 ```go
 import "github.com/FumingPower3925/stdocs/ui/scalaremb"
 
 mux := stdocs.New(stdocs.WithTitle("Mi API"), scalaremb.WithUI())
+mux.Mount()
 mux.Handle("GET /docs/_assets/",
     http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
 ```
 
-Cada interfaz viene en dos variantes:
+Cada interfaz rica viene en dos variantes:
 
-| Interfaz         | Sub-paquete CDN    | Sub-paquete embebido   | Tamaño embebido |
-| ---------------- | ------------------ | --------------------- | --------------- |
-| _(por defecto)_  | —                  | —                     | 3 KB           |
-| Scalar           | `ui/scalar`        | `ui/scalaremb`        | ~3.6 MB        |
-| Swagger UI       | `ui/swaggerui`     | `ui/swaggeruiemb`     | ~1.7 MB        |
-| Redoc            | `ui/redoc`         | `ui/redocemb`         | ~1.1 MB        |
-| Stoplight        | `ui/stoplight`     | `ui/stoplightemb`     | ~2.4 MB        |
+| Interfaz        | Subpaquete CDN | Subpaquete embebido | Tamaño embebido |
+| --------------- | -------------- | ------------------- | --------------- |
+| _(por defecto)_ | —              | — (inline, ~1.6 KB) | —               |
+| Scalar          | `ui/scalar`    | `ui/scalaremb`      | ~3.6 MB         |
+| Swagger UI      | `ui/swaggerui` | `ui/swaggeruiemb`   | ~1.7 MB         |
+| Redoc           | `ui/redoc`     | `ui/redocemb`       | ~1.1 MB         |
+| Stoplight       | `ui/stoplight` | `ui/stoplightemb`   | ~2.4 MB         |
 
-Las URLs del CDN están fijadas a una versión específica con hashes de integridad sha384 (excepto Scalar y Stoplight, cuyos bundles de jsDelivr se generan al vuelo y no admiten SRI; usa las variantes embebidas para tener SRI). Los sub-paquetes se eliminan en el tree-shaking si no se importan.
+Todas las URL del CDN están fijadas a versiones exactas con hashes de integridad SRI sha384. Los subpaquetes no se enlazan en tu binario a menos que los importes.
 
 ## Cómo funciona
 
-El `net/http.ServeMux` de Go 1.22 soporta patrones de método y ruta, pero no los expone públicamente. `stdocs.New()` devuelve un `*stdocs.Mux` que envuelve `*http.ServeMux` e intercepta las llamadas a `Handle`/`HandleFunc` para registrar el patrón y los metadatos. En la primera petición a `/docs/openapi.json`, se recorre el registro y se construye y cachea el documento.
+El `net/http.ServeMux` de Go 1.22 admite patrones de método+ruta, pero no los expone públicamente. `stdocs.New()` devuelve un `*stdocs.Mux` que embebe `*http.ServeMux` e intercepta las llamadas a `Handle`/`HandleFunc` para registrar el patrón y los metadatos. En la primera petición a `/docs/openapi.json`, se recorre el registro y el spec se construye y se guarda en caché (llama a `mux.Refresh()` para reconstruirlo).
 
-Sin comentarios, sin generación de código, sin `unsafe` — el patrón mismo es la documentación.
+Sin comentarios, sin generación de código, sin `unsafe` — la cadena del patrón es la documentación.
 
-Hay un demo ejecutable en [`cmd/demo`](cmd/demo):
+Hay una demo ejecutable en [`cmd/demo`](./cmd/demo):
 
 ```bash
 go run ./cmd/demo
@@ -192,7 +207,7 @@ go run ./cmd/demo
 
 ## Contribuir
 
-Ver [`CONTRIBUTING.md`](CONTRIBUTING.md). Las traducciones las mantiene la comunidad; consulta la sección "Translations" para añadir o actualizar una.
+Consulta [CONTRIBUTING.md](CONTRIBUTING.md). Las traducciones las mantiene la comunidad; consulta allí la sección "Translations" para añadir o actualizar una.
 
 ```bash
 go test -race -count=1 ./...
@@ -201,4 +216,4 @@ golangci-lint run ./...
 
 ## Licencia
 
-Apache-2.0. Ver [LICENSE](LICENSE).
+Apache-2.0. Consulta [LICENSE](LICENSE).

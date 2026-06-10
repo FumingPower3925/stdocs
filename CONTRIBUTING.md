@@ -50,9 +50,10 @@ explain the use case, not just the proposed API.
 ## Translations
 
 The English `README.md` is canonical. Translations live alongside
-it as `README.<lang>.md` files at the repo root, so GitHub's
-native "Read in <Language>" picker can surface them. Currently
-maintained translations:
+it as `README.<lang>.md` files at the repo root and are linked
+from the **Languages** line at the top of `README.md` (GitHub does
+not auto-detect translated READMEs). Currently maintained
+translations:
 
 - `README.es.md` — Spanish (Español)
 - `README.ca.md` — Catalan (Català)
@@ -93,21 +94,27 @@ unreviewed machine output will be closed without review.
 
 1. Open a GitHub issue in this repository describing the language,
    why a translation is needed, and naming the fluent speaker(s) who
-   will maintain it. Wait for a maintainer to confirm and to add you
-   to `TRANSLATORS.md`.
+   will maintain it. Wait for a maintainer to confirm.
 
 2. Copy the current `README.md` to `README.<lang>.md` at the
    repo root, where `<lang>` is the two-letter [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes)
-   code (`es`, `fr`, `de`, `ja`, …), or a POSIX locale
-   (`pt-BR`, `zh-CN`, …) when regional variation matters.
+   code (`es`, `fr`, `de`, `ja`, …), or an [IETF BCP 47 language
+   tag](https://en.wikipedia.org/wiki/IETF_language_tag) (`pt-BR`,
+   `zh-CN`, …) when regional variation matters.
 
 3. Translate the body. The community-translation banner at the top
    of the file stays **in English** so every reader sees the same
    canonical-link notice, regardless of language.
 
-4. Add a one-line entry to the language list at the top of the root
-   `README.md` and a row to `TRANSLATORS.md` with your GitHub
-   handle.
+   Code blocks must stay identical to the English README, with one
+   exception: code comments and user-facing example strings (API
+   titles, `doc:` tags, summaries) should be localized. Identifiers,
+   route patterns, URLs, commands, and numbers must not change.
+
+4. In the same pull request, add a one-line entry to the language
+   list at the top of the root `README.md` and a row to
+   `TRANSLATORS.md` with your GitHub handle (a maintainer confirms
+   it during review).
 
 5. Open the pull request. A maintainer will review. Reviewers may
    request changes for tone, accuracy, or to match a project-wide

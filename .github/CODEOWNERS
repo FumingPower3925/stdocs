@@ -1,4 +1,3 @@
-# CODEOWNERS
 #
 # This file follows the GitHub CODEOWNERS spec. Each line is a path
 # pattern and the GitHub users or teams that own it. Pull requests
@@ -7,13 +6,11 @@
 #
 # See: https://docs.github.com/en/repositories/creating-and-managing-repositories/about-code-owners
 
-# Default: the project owner reviews everything.
-/                         @FumingPower3925
+# Default: the project owner reviews everything. ("*" is GitHub's
+# documented repo-wide pattern; a bare "/" matches nothing.)
+*                        @FumingPower3925
 
-# Translations: each language's translator is a co-owner, so a
-# translation PR can be merged when the translator approves (no
-# project-owner review strictly required for prose changes). The
-# project owner remains the fallback so a PR can still be merged
-# when the translator is unavailable.
-/README.es.md            @FumingPower3925
-/README.ca.md            @FumingPower3925
+# Translations: when a language gains a dedicated translator, add
+# them as a co-owner here (e.g. "/README.es.md @FumingPower3925
+# @translator") so translation PRs can be merged on the translator's
+# approval. Until then the default owner covers these files too.

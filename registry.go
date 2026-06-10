@@ -49,112 +49,137 @@ func (r *registry) add(pattern, funcName string, parsed *pattern.Pattern, versio
 }
 
 // finalize applies the per-route defaults that require knowing the
-// config: auto-200, default tag from first path segment, default summary
-// from function name, and operationId from method+path.
+// config (auto-200, default tag, default summary, operationId) and
+// then makes operation ids document-wide unique. Path parameters
+// derived from pattern wildcards are emitted once, at the path-item
+// level (see toPathItems); operation-level Parameters hold only what
+// the user added via WithParam — an operation-level "path" param with
+// the same name as a wildcard deliberately overrides the inherited
+// one, per the OpenAPI parameter-override rules.
 func (r *registry) finalize(cfg *Config) {
 	for _, rt := range r.routes {
-		// Auto-200: if no responses were declared, add a default 200.
-		if len(rt.op.Responses) == 0 {
-			rt.op.Responses = map[string]*Response{
-				"200": {Status: "200", Description: "OK"},
-			}
-		}
+		applyRouteDefaults(rt, cfg)
+	}
+	r.disambiguateOperationIDs()
+}
 
-		// Method from pattern.
-		if rt.op.Method == "" {
-			rt.op.Method = rt.parsed.Method
-		}
-		// Custom HTTP methods (PURGE, etc.) are valid in stdlib
-		// ServeMux but are not legal as keys of an OpenAPI Path Item
-		// Object. We accept the registration (the user is going to
-		// need the route to actually work) but record a warning
-		// in the spec via an x-stdocs-warning extension on the
-		// operation, and the operation key the emitter produces
-		// is still the lowercased method. Strict validators
-		// (Spectral, openapi-spec-validator) will flag this; the
-		// extension makes the cause visible.
-		if rt.parsed.Method != "" && !pattern.IsOpenAPIMethod(rt.parsed.Method) {
-			if rt.op.Extensions == nil {
-				rt.op.Extensions = map[string]any{}
-			}
-			rt.op.Extensions["x-stdocs-warning"] = "method " + rt.parsed.Method +
-				" is not a legal OpenAPI Path Item key; the spec may fail strict validation"
-		}
-
-		// Path-level parameters (shared across methods of the same path)
-		// come from wildcards in the pattern. We add them only at the
-		// operation level here; if the user registers multiple methods
-		// on the same path, the emitter will see them all.
-		//
-		// For now, append path parameters that are not already in the
-		// operation's parameter list. (The spec emitter handles dedup.)
-		existingNames := make(map[string]bool)
-		for _, p := range rt.op.Parameters {
-			existingNames[p.Name] = true
-		}
-		for _, name := range rt.parsed.WildcardNames() {
-			if name == "" {
-				// Defensive: anonymous wildcards (e.g. the implicit
-				// multi from "/") should not be emitted as parameters.
-				// WildcardNames already filters these, but be
-				// defensive at the use site too.
-				continue
-			}
-			if existingNames[name] {
-				continue
-			}
-			rt.op.Parameters = append(rt.op.Parameters, Param{
-				Name:        name,
-				In:          "path",
-				Required:    true,
-				Description: "",
-				Schema:      &schema.Schema{Type: "string"},
-			})
-		}
-
-		// Default summary: from function name, or from DefaultSummary
-		// template, but only if Summary was not provided. The
-		// template's {resource} placeholder is replaced with the
-		// first path segment, e.g. "List {resource}" for GET /users
-		// becomes "List users".
-		if rt.op.Summary == "" {
-			if s := summaryFromFuncName(rt.funcName); s != "" {
-				rt.op.Summary = s
-			} else if cfg.DefaultSummary != "" {
-				rt.op.Summary = strings.ReplaceAll(cfg.DefaultSummary, "{resource}", firstSegment(rt.pattern))
-			}
-		}
-
-		// Default tag: from first path segment, but only if no tags
-		// were provided.
-		if len(rt.op.Tags) == 0 {
-			if t := tagFromPath(rt.pattern); t != "" {
-				rt.op.Tags = []string{t}
-			}
-		}
-
-		// Default operationId from method+path.
-		if rt.op.OperationID == "" {
-			rt.op.OperationID = defaultOperationID(rt.parsed)
+// applyRouteDefaults fills the operation fields the user left unset.
+func applyRouteDefaults(rt *route, cfg *Config) {
+	// Auto-200: if no responses were declared, add a default 200.
+	if len(rt.op.Responses) == 0 {
+		rt.op.Responses = map[string]*Response{
+			"200": {Status: "200", Description: "OK"},
 		}
 	}
 
-	// Operation-IDs must be document-wide unique. Disambiguate
-	// collisions with a numeric suffix. The first occurrence keeps
-	// its name; subsequent collisions become "id", "id_2", "id_3"...
-	seen := make(map[string]int)
+	// Method from pattern.
+	if rt.op.Method == "" {
+		rt.op.Method = rt.parsed.Method
+	}
+	applyMethodWarnings(rt)
+
+	// Default summary: from function name, or from DefaultSummary
+	// template, but only if Summary was not provided. The template's
+	// {resource} placeholder is replaced with the first path segment,
+	// e.g. "List {resource}" for GET /users becomes "List users".
+	if rt.op.Summary == "" {
+		if s := summaryFromFuncName(rt.funcName); s != "" {
+			rt.op.Summary = s
+		} else if cfg.DefaultSummary != "" {
+			rt.op.Summary = strings.ReplaceAll(cfg.DefaultSummary, "{resource}", firstSegment(rt.pattern))
+		}
+	}
+
+	// Default tag: from first path segment, but only if no tags
+	// were provided. When a tag declared via WithTag matches
+	// case-insensitively, adopt the declared casing so the
+	// operation groups under the described tag in UIs (inferred
+	// "Health" must not split from a declared "health").
+	if len(rt.op.Tags) == 0 {
+		if tag := tagFromPath(rt.pattern); tag != "" {
+			for _, decl := range cfg.Tags {
+				if strings.EqualFold(decl.Name, tag) {
+					tag = decl.Name
+					break
+				}
+			}
+			rt.op.Tags = []string{tag}
+		}
+	}
+
+	// Default operationId from method+path.
+	if rt.op.OperationID == "" {
+		rt.op.OperationID = defaultOperationID(rt.parsed)
+	}
+}
+
+// applyMethodWarnings records x-stdocs-warning extensions for methods
+// the OpenAPI version cannot represent as first-class Path Item keys.
+//
+// Custom HTTP methods (PURGE, etc.) are valid in stdlib ServeMux but
+// are not legal as keys of a 3.0/3.1 Path Item Object. The emitter
+// places them under the x-stdocs-additionalOperations extension for
+// 3.0/3.1 (always legal) and under the standard additionalOperations
+// field for 3.2; QUERY is a first-class key in 3.2, so neither gets a
+// warning there. Method-less patterns match every HTTP method at
+// runtime but are documented as GET only — that choice is surfaced
+// too.
+func applyMethodWarnings(rt *route) {
+	warn := func(msg string) {
+		if rt.op.Extensions == nil {
+			rt.op.Extensions = map[string]any{}
+		}
+		rt.op.Extensions["x-stdocs-warning"] = msg
+	}
+	switch {
+	case rt.parsed.Method == "":
+		warn("pattern has no method and matches every HTTP method at runtime; it is documented as GET only")
+	case !operationKeyIsStandard(rt.parsed.Method, rt.version) && rt.version != OpenAPI32:
+		warn("method " + rt.parsed.Method + " is not a legal OpenAPI " + string(rt.version) +
+			" Path Item key; the operation is emitted under the x-stdocs-additionalOperations extension")
+	}
+}
+
+// disambiguateOperationIDs makes operation ids document-wide unique
+// with numeric suffixes: the first route with a given id keeps it,
+// later ones become "id_2", "id_3"... A generated candidate is never
+// an id that any route carries (taken) or that this pass has already
+// handed out (used), so an explicit OperationID("x_2") can never end
+// up duplicated. Because renames only happen on actual collisions,
+// re-running on an already-unique set (e.g. after Refresh) is a
+// no-op, keeping ids stable across rebuilds.
+func (r *registry) disambiguateOperationIDs() {
+	taken := make(map[string]bool, len(r.routes))
+	for _, rt := range r.routes {
+		taken[rt.op.OperationID] = true
+	}
+	used := make(map[string]bool, len(r.routes))
 	for _, rt := range r.routes {
 		id := rt.op.OperationID
-		if n, exists := seen[id]; exists {
-			rt.op.OperationID = id + "_" + itoa(n+1)
-			seen[id] = n + 1
-		} else {
-			seen[id] = 1
+		if !used[id] {
+			used[id] = true
+			continue
+		}
+		for i := 2; ; i++ {
+			cand := id + "_" + itoa(i)
+			if !taken[cand] && !used[cand] {
+				rt.op.OperationID = cand
+				used[cand] = true
+				break
+			}
 		}
 	}
 }
 
-// itoa lives in routeopt.go; the operation-Id disambiguator uses it.
+// operationKeyIsStandard reports whether the (upper-case) method maps
+// to a fixed operation key of the OpenAPI Path Item Object for the
+// given version: the classic eight for 3.0/3.1, plus QUERY for 3.2.
+func operationKeyIsStandard(method string, v SpecVersion) bool {
+	if pattern.IsOpenAPIMethod(method) {
+		return true
+	}
+	return v == OpenAPI32 && method == "QUERY"
+}
 
 // defaultOperationID builds an operationId like "get_users_by_id"
 // from a parsed pattern. The method is lower-cased; path segments are
@@ -190,14 +215,7 @@ func defaultOperationID(p *pattern.Pattern) string {
 			parts = append(parts, v)
 		}
 	}
-	out := ""
-	for i, p := range parts {
-		if i > 0 {
-			out += "_"
-		}
-		out += p
-	}
-	return out
+	return strings.Join(parts, "_")
 }
 
 // toPathItems flattens the routes into PathItems, grouped by path. The
