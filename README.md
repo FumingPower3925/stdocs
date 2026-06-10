@@ -28,7 +28,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 - [Install](#install)
 - [Usage](#usage)
 - [UIs](#uis)
-- [Using the spec downstream](#using-the-spec-downstream)
+- [Documentation](#documentation)
 - [How it works](#how-it-works)
 - [Scope and non-goals](#scope-and-non-goals)
 - [Contributing](#contributing)
@@ -36,14 +36,13 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 
 ## Features
 
-- **Five UIs** — a tiny dependency-free default (~1.6 KB, inline JS only), plus Scalar, Swagger UI, Redoc, and Stoplight Elements — each available as a CDN sub-package (version-pinned with SRI integrity hashes) or an air-gapped embedded sub-package.
-- **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all tested.
-- **Reflection** — Go types become JSON Schemas: pointers, slices, maps, generics, embedded structs, recursive types via `$ref`, `json` tags (including `omitempty`, `omitzero`, and `,string`), `json.Marshaler`/`encoding.TextMarshaler` awareness.
-- **Smart defaults** — function names become summaries, the first path segment becomes the tag, path params are auto-included.
-- **Security** — bearer, basic, API key, OAuth 2.0 (including the 3.2 device flow). Unregistered scheme names are reported as errors.
-- **Environment toggling** — `mux.Mount(enabled)`/`mux.Docs(enabled)` and `WithDisabled(true)` turn the docs on or off per environment, and `Hidden()`/`Internal()` + `WithInternal(show)` control per-route visibility — all without changing registered routes.
-- **Try-it detection** — `FromDocs` identifies requests coming from the docs consoles so your middleware can decide what they may do.
-- **XSS-safe** — the docs HTML is rendered through `html/template`.
+- **Five UIs** — a tiny dependency-free default (~1.6 KB), plus Scalar, Swagger UI, Redoc, and Stoplight Elements — each CDN-pinned with SRI integrity hashes or fully embedded for air-gapped builds.
+- **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all externally validated.
+- **Reflection** — Go types become JSON Schemas following the `encoding/json` contract, with documentation and validation rules (`minimum`, `maxLength`, `pattern`, `enum`, `default`, …) read from struct tags.
+- **Typed parameters** — declare query/header/cookie parameters from a struct or inline with typed, validated modifiers.
+- **Smart defaults** — function names become summaries, path segments become tags, path params and a 200 are auto-documented, secured routes document their 401, and the shared error envelope is declared once mux-wide.
+- **Environment control** — turn docs on/off per environment, hide individual routes, and detect try-it console traffic, all without touching registered routes.
+- **Honest by default** — invalid documentation input panics instead of publishing a wrong contract, and an opt-in dev middleware warns when handlers drift from the document.
 - **Zero deps** — only the Go standard library at runtime.
 
 ## Install
@@ -56,184 +55,49 @@ Requires Go 1.25 or later. stdocs follows the Go project's release support polic
 
 ## Usage
 
-Routes are documented automatically from the pattern and the registered function name:
+Routes document themselves from the pattern and handler name; struct tags and route opts add the rest:
 
 ```go
-mux := stdocs.New(stdocs.WithTitle("My API"))
-mux.HandleFunc("GET /users", listUsers)        // summary "List users", tag "Users"
-mux.HandleFunc("GET /health", healthCheck)     // summary "Health check", tag "Health"
-```
-
-Pass route options to attach bodies, responses, tags, and security:
-
-```go
-type User struct {
-    ID    string `json:"id" doc:"Unique ID"`
-    Name  string `json:"name"`
-    Email string `json:"email,omitempty"`
+type CreateTask struct {
+    Title    string `json:"title" doc:"Short title" minLength:"1" maxLength:"200"`
+    Priority int    `json:"priority" minimum:"1" maximum:"5" default:"3"`
 }
 
-type CreateUserRequest struct {
-    Name string `json:"name"`
+type Task struct {
+    ID string `json:"id" doc:"Unique ID"`
+}
+
+type ListParams struct {
+    Cursor string `query:"cursor" doc:"Opaque pagination cursor"`
+    Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
 }
 
 type APIError struct {
     Message string `json:"message"`
 }
 
-mux.HandleFunc("GET /users/{id}", getUser,
-    stdocs.Summary("Get a user by ID"),
-    stdocs.WithResponse(200, User{}),
-    stdocs.WithResponse(404, APIError{}),
-)
-
-mux.HandleFunc("POST /users", createUser,
-    stdocs.WithBody(CreateUserRequest{}),
-    stdocs.WithResponse(201, User{}),
-)
-```
-
-### Field tags
-
-Struct fields can carry documentation in tags, picked up when the type is reflected:
-
-| Tag | Effect |
-|---|---|
-| `doc:"…"` (or `description:"…"`) | Sets the field's schema description |
-| `example:"…"` | Sets the field's example — parsed according to the field type, so `example:"42"` on an `int` emits the number 42 |
-
-```go
-type Task struct {
-    ID       string `json:"id" doc:"Unique task ID"`
-    Priority int    `json:"priority" doc:"1 (low) to 5 (urgent)" example:"3"`
-}
-```
-
-An `example` value that does not parse as the field's type panics at document-build time.
-
-### The default response
-
-`WithResponse(0, body)` declares the OpenAPI `default` response — the catch-all entry consumers fall back to for undeclared status codes, conventionally the shared error shape:
-
-```go
-mux.HandleFunc("GET /tasks/{id}", getTask,
-    stdocs.WithResponse(200, Task{}),
-    stdocs.WithResponse(0, APIError{}), // "default" in the document
-)
-```
-
-For features stdocs does not expose directly, use the escape hatch:
-
-```go
 mux := stdocs.New(
     stdocs.WithTitle("My API"),
-    stdocs.WithOpenAPI(func(doc map[string]any) {
-        doc["info"].(map[string]any)["x-logo"] = map[string]any{
-            "url": "https://example.com/logo.png",
-        }
-    }),
+    stdocs.WithBearerAuth("bearerAuth", "JWT"),
+    stdocs.WithDefaultResponse(500, APIError{}), // the error envelope, once
 )
-```
 
-To pin the spec to a specific OpenAPI version, use `WithVersion`:
+mux.HandleFunc("GET /tasks", listTasks, stdocs.WithParams(ListParams{}))
 
-```go
-mux := stdocs.New(
-    stdocs.WithTitle("My API"),
-    stdocs.WithVersion(stdocs.OpenAPI32),  // 3.2.0
+mux.HandleFunc("POST /tasks", createTask,
+    stdocs.WithBody(CreateTask{}),
+    stdocs.WithResponse(201, Task{}),
+    stdocs.WithSecurity("bearerAuth"), // documents the 401 too
 )
-```
 
-`stdocs` ships the latest patch of each minor (`OpenAPI30` = 3.0.4, `OpenAPI31` = 3.1.2, `OpenAPI32` = 3.2.0). For 3.2 you can additionally set the document's canonical URI:
-
-```go
-mux := stdocs.New(
-    stdocs.WithTitle("My API"),
-    stdocs.WithVersion(stdocs.OpenAPI32),
-    stdocs.WithSelfURL("https://example.com/openapi.json"),
-)
-```
-
-The full option list lives on [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs).
-
-### Mounting and disabling the docs
-
-`mux.Mount()` is shorthand for registering the handler returned by `mux.Docs()` on the mux itself at the configured docs prefix — there is one docs handler, two ways to place it. Use `Mount()` unless you need the handler directly (to wrap it in auth middleware or mount it on another mux). Both accept the same optional bool with the same rule: an explicit per-call value wins over `WithDisabled` in both directions.
-
-The docs UI and the spec endpoints (`openapi.json`, `openapi.yaml`) can be turned off without unregistering routes. The decision is taken when `Mount()`/`Docs()` is called (wrap the handler yourself if you need a per-request switch):
-
-```go
-// 1) Per-mux: WithDisabled(true) makes Mount a no-op and Docs return
-//    a 404 handler everywhere.
-mux := stdocs.New(
-    stdocs.WithTitle("My API"),
-    stdocs.WithDisabled(os.Getenv("ENV") == "prod"),
-)
-mux.HandleFunc("GET /users", listUsers)
-mux.Mount() // registers nothing when disabled
-```
-
-```go
-// 2) Per-call: pass the condition to Mount (or to Docs when
-//    mounting manually).
-mux := stdocs.New(stdocs.WithTitle("My API"))
-mux.HandleFunc("GET /users", listUsers)
 mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
-When disabled, every request under the docs prefix gets a 404. The spec is still buildable via `mux.JSON()` and `mux.YAML()` — disabling the UI does not stop spec generation. Routes registered under the docs prefix (the docs page itself, asset handlers) never appear in the generated spec.
-
-### Hiding individual routes
-
-Per-route visibility composes with the switches above: `Hidden()` excludes a route from the document everywhere, and `Internal()` excludes it unless the mux was built with `WithInternal(true)` (when shown, the operation carries `x-internal: true`, the extension spec-filtering tools understand). A complete environment setup:
-
-```go
-env := os.Getenv("ENV")
-mux := stdocs.New(
-    stdocs.WithTitle("My API"),
-    stdocs.WithDisabled(env == "prod"), // prod: no docs at all
-    stdocs.WithInternal(env == "dev"),  // dev: full docs; elsewhere internal routes are hidden
-)
-mux.HandleFunc("GET /users", listUsers)                           // always documented
-mux.HandleFunc("POST /admin/keys", rotateKeys, stdocs.Internal()) // documented only in dev
-mux.HandleFunc("GET /healthz", healthCheck, stdocs.Hidden())      // never documented
-mux.Mount()
-```
-
-Excluded routes leave no trace in the document — no paths, no schemas, no operation ids. Visibility only shapes the published documentation: hidden and internal routes **still serve traffic in every environment**. It is not access control; protect sensitive endpoints with real authentication.
-
-### Detecting try-it requests
-
-The rich UIs' "Try it out" / "Test Request" consoles send **real requests** to your backend — on the wire they are indistinguishable from any other client. `FromDocs` identifies them (best-effort, via the `Referer` header the browser attaches to the docs page's fetches) so your team can decide the policy: block writes, route them to a scratch datastore, tag them for observability, or anything else.
-
-```go
-guard := func(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if r.Method != http.MethodGet && mux.FromDocs(r) {
-            http.Error(w, "try-it requests cannot modify data", http.StatusForbidden)
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
-}
-log.Fatal(http.ListenAndServe(":8080", guard(mux)))
-```
-
-`FromDocs` is a guardrail against accidents, **not a security control**: the `Referer` header is client-controlled (it can be forged) and strippable (privacy extensions, a strict `Referrer-Policy`). It also only works when the docs page and the API share an origin — with an absolute `WithServer` URL on another host, browsers send an origin-only `Referer` by default and detection reports false. Use it only to *restrict* what docs-originated traffic may do — never to grant access or skip authentication.
-
-If you have a hand-written OpenAPI document instead of generated routes, serve it with `DocsHandler` + `WithSpec`:
-
-```go
-spec, _ := os.ReadFile("openapi.json")
-http.Handle("GET /docs/", stdocs.DocsHandler(
-    stdocs.WithTitle("My API"),
-    stdocs.WithSpec(spec),
-))
-```
+Misdeclared documentation — a typo'd parameter type, a `minLength` on an `int`, an `example` that doesn't parse — panics at registration or build time instead of publishing a wrong contract.
 
 ## UIs
 
-The default UI is a tiny dependency-free HTML page (~1.6 KB, inline JS only, no external assets). To use a richer UI, import a sub-package and pass its `WithUI()` option:
+Import a sub-package and pass its `WithUI()` option; the `*emb` twins embed the bundle for air-gapped builds:
 
 ```go
 import "github.com/FumingPower3925/stdocs/ui/scalar"
@@ -241,70 +105,33 @@ import "github.com/FumingPower3925/stdocs/ui/scalar"
 mux := stdocs.New(stdocs.WithTitle("My API"), scalar.WithUI())
 ```
 
-For an air-gapped build (no CDN), import the matching `*emb` sub-package and mount its `AssetHandler()`:
+| UI                              | CDN sub-package                       | Embedded sub-package                       |
+| ------------------------------- | ------------------------------------- | ------------------------------------------ |
+| _(default)_ (built-in, ~1.6 KB) | —                                     | —                                          |
+| Scalar                          | `ui/scalar` (~3.6 MB from the CDN)    | `ui/scalaremb` (~3.6 MB in your binary)    |
+| Swagger UI                      | `ui/swaggerui` (~1.7 MB from the CDN) | `ui/swaggeruiemb` (~1.7 MB in your binary) |
+| Redoc                           | `ui/redoc` (~1.1 MB from the CDN)     | `ui/redocemb` (~1.1 MB in your binary)     |
+| Stoplight                       | `ui/stoplight` (~2.4 MB from the CDN) | `ui/stoplightemb` (~2.4 MB in your binary) |
 
-```go
-import "github.com/FumingPower3925/stdocs/ui/scalaremb"
+CDN URLs are pinned to exact versions with sha384 SRI hashes; sub-packages are not linked into your binary unless imported. Embedded setup details: [Docs UIs](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Docs_UIs).
 
-mux := stdocs.New(stdocs.WithTitle("My API"), scalaremb.WithUI())
-mux.Mount()
-mux.Handle("GET /docs/_assets/",
-    http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
-```
+## Documentation
 
-Each rich UI comes in two flavors:
+The full reference lives on [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs), organized by topic:
 
-| UI                                | CDN sub-package                        | Embedded sub-package                        |
-| --------------------------------- | -------------------------------------- | ------------------------------------------- |
-| _(default)_ (built-in, ~1.6 KB)   | —                                      | —                                           |
-| Scalar                            | `ui/scalar` (~3.6 MB from the CDN)     | `ui/scalaremb` (~3.6 MB in your binary)     |
-| Swagger UI                        | `ui/swaggerui` (~1.7 MB from the CDN)  | `ui/swaggeruiemb` (~1.7 MB in your binary)  |
-| Redoc                             | `ui/redoc` (~1.1 MB from the CDN)      | `ui/redocemb` (~1.1 MB in your binary)      |
-| Stoplight                         | `ui/stoplight` (~2.4 MB from the CDN)  | `ui/stoplightemb` (~2.4 MB in your binary)  |
-
-All CDN URLs are pinned to exact versions with sha384 SRI integrity hashes. Sub-packages are not linked into your binary unless imported.
-
-## Using the spec downstream
-
-The generated document is not just for the docs page: `mux.JSON()` and `mux.YAML()` hand you the exact bytes served at the spec endpoints, and the output is **deterministic by construction** — keys are sorted and operationIds and component names are stable across rebuilds — so it works as a committed artifact.
-
-The recommended pattern is a golden-file test:
-
-```go
-var update = flag.Bool("update", false, "rewrite openapi.json")
-
-func TestOpenAPIGolden(t *testing.T) {
-    got, err := NewAPI().JSON() // your mux constructor
-    if err != nil {
-        t.Fatal(err)
-    }
-    const golden = "openapi.json"
-    if *update {
-        if err := os.WriteFile(golden, got, 0o644); err != nil {
-            t.Fatal(err)
-        }
-    }
-    want, err := os.ReadFile(golden)
-    if err != nil {
-        t.Fatalf("%v (run: go test -run TestOpenAPIGolden -update)", err)
-    }
-    if !bytes.Equal(got, want) {
-        t.Fatalf("openapi.json is stale; run: go test -run TestOpenAPIGolden -update")
-    }
-}
-```
-
-Every API change now shows up as a reviewable diff to `openapi.json` in the PR, and the committed file feeds the rest of the toolchain without running the server:
-
-- **Contract diffing** — e.g. `oasdiff breaking old.json openapi.json` in CI flags breaking changes.
-- **Linting** — `spectral lint openapi.json` (or Redocly CLI) enforces API style rules.
-- **Client generation** — point `openapi-generator`, `oapi-codegen`, or your SDK pipeline at the committed file to produce typed clients in any language.
+- [Field tags](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Field_tags) — `doc:`, `example:`, and the constraint vocabulary.
+- [Parameters](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Parameters) — `WithParams` structs and `ParamOpt` modifiers.
+- [Responses](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Responses) — per-status declarations, the `default` response, mux-level error envelopes.
+- [Visibility](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Visibility) — `Hidden`, `Internal`, and `WithInternal(show)`.
+- [Mounting and toggling](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Mounting_and_toggling) — `Mount`/`Docs`, per-environment switches, proxy path prefixes.
+- [Try-it requests and drift](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Try_it_requests_and_drift) — `FromDocs` detection and the `DriftWarn` dev aid.
+- [Using the spec downstream](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Using_the_spec_downstream) — golden-file tests, PR diffing, client generation.
+- [OpenAPI versions](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-OpenAPI_versions) — `WithVersion`, 3.2's `$self`, and the `WithOpenAPI` escape hatch.
+- [DocsHandler](https://pkg.go.dev/github.com/FumingPower3925/stdocs#DocsHandler) — serve a hand-written spec behind any of the bundled UIs.
 
 ## How it works
 
-Go 1.22's `net/http.ServeMux` supports method+path patterns but does not expose them publicly. `stdocs.New()` returns a `*stdocs.Mux` that embeds `*http.ServeMux` and intercepts `Handle`/`HandleFunc` calls to record pattern + metadata. On the first request to `/docs/openapi.json`, the registry is walked and the spec is built and cached (call `mux.Refresh()` to rebuild).
-
-No comments, no code generation, no `unsafe` — the pattern string is the documentation.
+`stdocs.New()` returns a `*stdocs.Mux` that embeds `*http.ServeMux` and records pattern + metadata as you register handlers. On the first request to `/docs/openapi.json`, the registry is walked and the spec is built and cached (`mux.Refresh()` rebuilds). No comments, no code generation, no `unsafe` — the pattern string is the documentation.
 
 A runnable demo lives in [`cmd/demo`](./cmd/demo):
 
@@ -315,14 +142,7 @@ go run ./cmd/demo
 
 ## Scope and non-goals
 
-stdocs does one thing: it documents stdlib `net/http.ServeMux` applications and serves the result. Knowing the boundaries up front saves you an evaluation:
-
-- **stdlib only.** There are no gin/echo/chi/fiber integrations and there will be none — the wrapped `ServeMux` is the design, not a first adapter.
-- **Documentation, not enforcement.** stdocs does not validate requests, bind parameters, or check that handlers honor the documented contract. The document describes intent; keeping handlers honest is the application's job (the golden-file workflow above makes drift reviewable).
-- **No code generation, no comment annotations, no dependencies.** Permanently, by design.
-- **The built-in UI stays minimal.** The default page is a ~1.6 KB dependency-free route list without a try-it console — that smallness is its feature. All four rich UIs ship consoles and are one import away.
-
-When something else fits better: if the contract is your deliverable (cross-team spec reviews, multi-language clients, enforced conformance), a spec-first generator like oapi-codegen or ogen is the right tool; if you are greenfield and want validation enforced from types, a typed-handler framework like huma is. stdocs is for the code you already have.
+stdocs documents stdlib `ServeMux` applications — it does not integrate with other routers, does not validate requests at runtime, and uses no code generation, comment annotations, or dependencies, permanently and by design. The document describes intent; keeping handlers honest is the application's job. The full boundary statement, including when a different tool fits better, is in the [package documentation](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Scope_and_non_goals).
 
 ## Contributing
 
