@@ -1,16 +1,7 @@
-// Package stdocs: docs handler for use with a plain *http.ServeMux.
-//
-// This file used to expose stdocs.Mount(mux, opts...) — a Tier-1
-// entry point that implied the user's *http.ServeMux would be
-// introspected to populate the spec. That was never implemented: the
-// mux argument was stored but never read, the spec was permanently
-// `{}`, and the referenced WithSpecFile option did not exist.
-//
-// In v0.1.1 we cut the feature rather than ship a signature that
-// implies introspection that does not happen. Tier-1 was renamed
-// to DocsHandler, the unused mux parameter removed, and the README
-// updated accordingly. For route enumeration (the actual value of
-// stdocs), use *stdocs.Mux.
+// mount.go implements the Tier-1 docs handler (DocsHandler). It
+// serves the docs UI and a placeholder spec at a configurable URL
+// prefix. For route enumeration and a populated spec, use *Mux
+// (mux.go).
 package stdocs
 
 import (
