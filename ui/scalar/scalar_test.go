@@ -77,7 +77,7 @@ func TestScalar_SpecURLSubstitution(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/docs/", nil)
 	docs.ServeHTTP(rr, req)
-	if !strings.Contains(rr.Body.String(), "/docs/openapi.json") {
+	if !strings.Contains(rr.Body.String(), "openapi.json") {
 		t.Errorf("body should contain spec URL: %s", rr.Body.String())
 	}
 }

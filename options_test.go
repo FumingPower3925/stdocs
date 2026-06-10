@@ -138,6 +138,10 @@ func TestSummaryFromFuncName(t *testing.T) {
 		{"", ""},
 		{"x", "X"},
 		{"a", "A"},
+		{"HTTPHandler", "HTTP handler"},
+		{"parseXML", "Parse XML"},
+		{"getAPI", "Get API"},
+		{"createURL", "Create URL"},
 	}
 	for _, c := range cases {
 		got := summaryFromFuncName(c.in)
