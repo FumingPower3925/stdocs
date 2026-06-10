@@ -11,7 +11,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/FumingPower3925/stdocs.svg)](https://pkg.go.dev/github.com/FumingPower3925/stdocs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Generación de OpenAPI 3.0.3 y 3.1.0 para el `net/http.ServeMux` de la biblioteca estándar de Go 1.22+. Sin dependencias en tiempo de ejecución.
+Generación de OpenAPI 3.0.4, 3.1.2 y 3.2.0 para el `net/http.ServeMux` de la biblioteca estándar de Go 1.22+. Sin dependencias en tiempo de ejecución.
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("Mi API"))
@@ -36,11 +36,11 @@ Eso es todo. `stdocs` recorre las rutas registradas, genera un documento OpenAPI
 ## Características
 
 - **Sin dependencias** — solo la biblioteca estándar de Go en tiempo de ejecución.
-- **Dos versiones de OpenAPI** — 3.0.3 (por defecto) y 3.1.0, ambas probadas.
+- **Tres versiones de OpenAPI** — 3.0.4 (por defecto), 3.1.2 y 3.2.0, todas probadas. No se exponen constantes de parches antiguos (3.0.3, 3.1.0): según la especificación de OpenAPI, el tooling debe aceptar cualquier 3.0.* / 3.1.*, por lo que un único "último parche" por menor es el valor por defecto correcto.
 - **Reflexión** — los tipos Go se convierten en JSON Schemas: punteros, slices, mapas, genéricos, structs embebidos, tipos recursivos vía `$ref`, etiquetas `json`.
 - **Valores predeterminados inteligentes** — los nombres de las funciones se convierten en resúmenes, el primer segmento de la ruta se convierte en el tag, los parámetros de path se incluyen automáticamente.
 - **Seguridad** — bearer, basic, API key, OAuth 2.0. Los nombres de esquemas no registrados se reportan como errores.
-- **Cinco interfaces** — HTML sin JS por defecto; Scalar, Swagger UI, Redoc, Stoplight como sub-paquetes opcionales.
+- **Ocho interfaces** — HTML sin JS por defecto; Scalar, Swagger UI, Redoc, Stoplight como sub-paquetes opcionales con CDN, cada una con una variante "air-gapped" (embebida) en un sub-paquete separado.
 - **Seguro frente a XSS** — el HTML de la documentación se renderiza con `html/template`.
 
 ## Instalación
@@ -95,6 +95,25 @@ mux := stdocs.New(
 )
 ```
 
+Para fijar el spec a una versión específica de OpenAPI, usa `WithVersion`:
+
+```go
+mux := stdocs.New(
+    stdocs.WithTitle("Mi API"),
+    stdocs.WithVersion(stdocs.OpenAPI32),  // 3.2.0
+)
+```
+
+`stdocs` incluye el último parche de cada menor (`OpenAPI30` = 3.0.4, `OpenAPI31` = 3.1.2, `OpenAPI32` = 3.2.0). Para 3.2 también puedes fijar el URI canónico del documento:
+
+```go
+mux := stdocs.New(
+    stdocs.WithTitle("Mi API"),
+    stdocs.WithVersion(stdocs.OpenAPI32),
+    stdocs.WithSelfURL("https://example.com/openapi.json"),
+)
+```
+
 La lista completa de opciones está en [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs).
 
 ## Interfaces de documentación
@@ -107,7 +126,27 @@ import "github.com/FumingPower3925/stdocs/ui/scalar"
 mux := stdocs.New(stdocs.WithTitle("Mi API"), scalar.WithUI())
 ```
 
-Interfaces disponibles: `ui/scalar` (CDN), `ui/scalaremb` (sin conexión, ~3.6 MB), `ui/swaggerui`, `ui/redoc`, `ui/stoplight`. Los sub-paquetes se eliminan en el tree-shaking si no se importan.
+Para una compilación sin conexión a internet, importa el sub-paquete `*emb` correspondiente y monta su `AssetHandler()`:
+
+```go
+import "github.com/FumingPower3925/stdocs/ui/scalaremb"
+
+mux := stdocs.New(stdocs.WithTitle("Mi API"), scalaremb.WithUI())
+mux.Handle("GET /docs/_assets/",
+    http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
+```
+
+Cada interfaz viene en dos variantes:
+
+| Interfaz         | Sub-paquete CDN    | Sub-paquete embebido   | Tamaño embebido |
+| ---------------- | ------------------ | --------------------- | --------------- |
+| _(por defecto)_  | —                  | —                     | 3 KB           |
+| Scalar           | `ui/scalar`        | `ui/scalaremb`        | ~3.6 MB        |
+| Swagger UI       | `ui/swaggerui`     | `ui/swaggeruiemb`     | ~1.7 MB        |
+| Redoc            | `ui/redoc`         | `ui/redocemb`         | ~1.1 MB        |
+| Stoplight        | `ui/stoplight`     | `ui/stoplightemb`     | ~2.4 MB        |
+
+Las URLs del CDN están fijadas a una versión específica con hashes de integridad sha384 (excepto Scalar y Stoplight, cuyos bundles de jsDelivr se generan al vuelo y no admiten SRI; usa las variantes embebidas para tener SRI). Los sub-paquetes se eliminan en el tree-shaking si no se importan.
 
 ## Cómo funciona
 
