@@ -28,7 +28,7 @@ func TestWithWebhooks_3_1(t *testing.T) {
 	}
 	m := New(
 		WithTitle("T"),
-		WithVersion("3.1.0"),
+		WithVersion(OpenAPI31),
 		WithWebhooks(map[string]Webhook{"newUser": hook}),
 	)
 	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {})
@@ -49,11 +49,11 @@ func TestWithWebhooks_3_1(t *testing.T) {
 }
 
 func TestWithWebhooks_3_0_3_Ignored(t *testing.T) {
-	// Webhooks are 3.1-only; on 3.0.3 they should be silently
+	// Webhooks are 3.1-only; on 3.0.x they should be silently
 	// ignored without error.
 	m := New(
 		WithTitle("T"),
-		WithVersion("3.0.3"),
+		WithVersion(OpenAPI30),
 		WithWebhooks(map[string]Webhook{
 			"newUser": {Method: "POST", Summary: "x"},
 		}),
@@ -62,14 +62,14 @@ func TestWithWebhooks_3_0_3_Ignored(t *testing.T) {
 	b, _ := m.JSON()
 	doc := jx(t, b)
 	if _, has := doc["webhooks"]; has {
-		t.Errorf("3.0.3 should not include webhooks, got %v", doc["webhooks"])
+		t.Errorf("3.0.x should not include webhooks, got %v", doc["webhooks"])
 	}
 }
 
 func TestWithWebhooks_Multiple(t *testing.T) {
 	m := New(
 		WithTitle("T"),
-		WithVersion("3.1.0"),
+		WithVersion(OpenAPI31),
 		WithWebhooks(map[string]Webhook{
 			"newUser":     {Method: "POST", Summary: "new user"},
 			"deletedUser": {Method: "POST", Summary: "user deleted"},
@@ -90,7 +90,7 @@ func TestWithWebhooks_Multiple(t *testing.T) {
 func TestWithWebhooks_Default200WhenNoResponses(t *testing.T) {
 	m := New(
 		WithTitle("T"),
-		WithVersion("3.1.0"),
+		WithVersion(OpenAPI31),
 		WithWebhooks(map[string]Webhook{
 			"x": {Method: "POST", Summary: "x"},
 		}),
@@ -109,7 +109,7 @@ func TestWithWebhooks_MethodCase(t *testing.T) {
 	// Methods should be lower-cased in the output.
 	m := New(
 		WithTitle("T"),
-		WithVersion("3.1.0"),
+		WithVersion(OpenAPI31),
 		WithWebhooks(map[string]Webhook{
 			"x": {Method: "POST", Summary: "x"},
 		}),

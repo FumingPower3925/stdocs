@@ -74,7 +74,7 @@ func TestWithOpenAPI_AddsWebhooks(t *testing.T) {
 	// Webhooks are 3.1 only; verify we can add them to the 3.1 doc.
 	m := New(
 		WithTitle("T"),
-		WithVersion("3.1.0"),
+		WithVersion(OpenAPI31),
 		WithOpenAPI(func(doc map[string]any) {
 			doc["webhooks"] = map[string]any{
 				"newUser": map[string]any{
