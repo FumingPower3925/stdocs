@@ -1,0 +1,11 @@
+# CODEOWNERS
+#
+# This file follows the GitHub CODEOWNERS spec. Each line is a path
+# pattern and the GitHub users or teams that own it. Pull requests
+# that touch a path require review from at least one of the listed
+# owners before merge.
+#
+# See: https://docs.github.com/en/repositories/creating-and-managing-repositories/about-code-owners
+
+# Default: the project owner reviews everything.
+/                         @FumingPower3925
