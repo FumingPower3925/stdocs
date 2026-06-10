@@ -56,12 +56,14 @@ func (c *Config) registerSecurityScheme(scheme SecurityScheme, name string) stri
 	return name
 }
 
-// WithSecurityScheme registers a security scheme under the given name
-// and returns the name. If name is empty, a sensible default is chosen
-// (e.g. "bearerAuth" for HTTP bearer).
+// WithSecurityScheme registers a security scheme under the given
+// name. The name is the key in the components.securitySchemes
+// map and is the value you pass to WithSecurity on a route. If
+// name is empty, a sensible default is chosen (e.g. "bearerAuth"
+// for HTTP bearer).
 //
-// Use the returned name with stdocs.WithSecurity to require this
-// scheme on a route.
+// Use the chosen name with WithSecurity to require this scheme
+// on a route.
 func WithSecurityScheme(name string, scheme SecurityScheme) Option {
 	return func(c *Config) {
 		c.registerSecurityScheme(scheme, name)

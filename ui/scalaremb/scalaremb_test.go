@@ -51,13 +51,17 @@ func TestWithUI_EndToEnd(t *testing.T) {
 }
 
 func TestAssetHandler(t *testing.T) {
-	// The handler should serve the embedded files. The placeholder
-	// file is there; the real one is fetched on `go generate`.
+	// The handler should serve the embedded bundle. The bundle
+	// is fetched on `go generate`; if it's missing, the test
+	// is skipped.
 	handler := scalaremb.AssetHandler()
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/.placeholder.txt", nil)
+	req := httptest.NewRequest("GET", "/standalone.js", nil)
 	handler.ServeHTTP(rr, req)
 	if rr.Code != 200 {
-		t.Errorf("status = %d, want 200", rr.Code)
+		t.Skipf("standalone.js not embedded (status %d); run `go generate ./ui/scalaremb/`", rr.Code)
+	}
+	if rr.Body.Len() < 1000 {
+		t.Errorf("standalone.js unexpectedly small: %d bytes", rr.Body.Len())
 	}
 }
