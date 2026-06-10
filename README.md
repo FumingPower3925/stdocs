@@ -203,13 +203,13 @@ mux.Handle("GET /docs/_assets/",
 
 Each rich UI comes in two flavors:
 
-| UI          | CDN sub-package | Embedded sub-package | Embedded size |
-| ----------- | --------------- | -------------------- | ------------- |
-| _(default)_ | —               | — (inline, ~1.6 KB)  | —             |
-| Scalar      | `ui/scalar`     | `ui/scalaremb`       | ~3.6 MB       |
-| Swagger UI  | `ui/swaggerui`  | `ui/swaggeruiemb`    | ~1.7 MB       |
-| Redoc       | `ui/redoc`      | `ui/redocemb`        | ~1.1 MB       |
-| Stoplight   | `ui/stoplight`  | `ui/stoplightemb`    | ~2.4 MB       |
+| UI                                | CDN sub-package                        | Embedded sub-package                        |
+| --------------------------------- | -------------------------------------- | ------------------------------------------- |
+| _(default)_ (built-in, ~1.6 KB)   | —                                      | —                                           |
+| Scalar                            | `ui/scalar` (~3.6 MB from the CDN)     | `ui/scalaremb` (~3.6 MB in your binary)     |
+| Swagger UI                        | `ui/swaggerui` (~1.7 MB from the CDN)  | `ui/swaggeruiemb` (~1.7 MB in your binary)  |
+| Redoc                             | `ui/redoc` (~1.1 MB from the CDN)      | `ui/redocemb` (~1.1 MB in your binary)      |
+| Stoplight                         | `ui/stoplight` (~2.4 MB from the CDN)  | `ui/stoplightemb` (~2.4 MB in your binary)  |
 
 All CDN URLs are pinned to exact versions with sha384 SRI integrity hashes. Sub-packages are not linked into your binary unless imported.
 
