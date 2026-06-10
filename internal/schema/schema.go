@@ -239,13 +239,19 @@ func (r *Reflector) reflect(t reflect.Type) *Schema {
 		return &Schema{Type: "string", Nullable: nullable}
 	case reflect.Bool:
 		return &Schema{Type: "boolean", Nullable: nullable}
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
+	case reflect.Int8, reflect.Int16, reflect.Int32:
 		return &Schema{Type: "integer", Format: "int32", Nullable: nullable}
-	case reflect.Int64:
+	case reflect.Int, reflect.Int64:
+		// Go int is 64-bit on every platform this module supports.
 		return &Schema{Type: "integer", Format: "int64", Nullable: nullable}
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
+	case reflect.Uint8, reflect.Uint16:
 		return &Schema{Type: "integer", Format: "int32", Nullable: nullable}
-	case reflect.Uint64:
+	case reflect.Uint, reflect.Uint32, reflect.Uint64:
+		// uint32's range exceeds int32; uint and uint64 are 64-bit.
+		// OpenAPI has no unsigned format — uint64 values above
+		// math.MaxInt64 exceed the documented int64 range (a minimum
+		// of 0 can be expressed once the constraint vocabulary
+		// exists).
 		return &Schema{Type: "integer", Format: "int64", Nullable: nullable}
 	case reflect.Float32:
 		return &Schema{Type: "number", Format: "float", Nullable: nullable}
