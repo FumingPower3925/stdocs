@@ -89,6 +89,35 @@ mux.HandleFunc("POST /users", createUser,
 )
 ```
 
+### Field tags
+
+Struct fields can carry documentation in tags, picked up when the type is reflected:
+
+| Tag | Effect |
+|---|---|
+| `doc:"…"` (or `description:"…"`) | Sets the field's schema description |
+| `example:"…"` | Sets the field's example — parsed according to the field type, so `example:"42"` on an `int` emits the number 42 |
+
+```go
+type Task struct {
+    ID       string `json:"id" doc:"Unique task ID"`
+    Priority int    `json:"priority" doc:"1 (low) to 5 (urgent)" example:"3"`
+}
+```
+
+An `example` value that does not parse as the field's type panics at document-build time.
+
+### The default response
+
+`WithResponse(0, body)` declares the OpenAPI `default` response — the catch-all entry consumers fall back to for undeclared status codes, conventionally the shared error shape:
+
+```go
+mux.HandleFunc("GET /tasks/{id}", getTask,
+    stdocs.WithResponse(200, Task{}),
+    stdocs.WithResponse(0, APIError{}), // "default" in the document
+)
+```
+
 For features stdocs does not expose directly, use the escape hatch:
 
 ```go

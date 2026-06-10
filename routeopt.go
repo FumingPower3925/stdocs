@@ -63,8 +63,11 @@ func OperationID(id string) RouteOpt {
 
 // WithBody sets the route's request body. body is a zero value of the
 // type to reflect; its type is used to build the JSON Schema when the
-// spec document is assembled. The default content type is
-// application/json (override with WithBodyContentType).
+// spec document is assembled. Struct fields may carry doc: (or
+// description:) and example: tags, which become the field's schema
+// description and example (examples are parsed according to the
+// field type). The default content type is application/json
+// (override with WithBodyContentType).
 //
 // Mark the body as not required with Optional().
 func WithBody(body any) RouteOpt {
@@ -96,11 +99,15 @@ func Optional() RouteOpt {
 }
 
 // WithResponse adds a response entry. body is a zero value whose type
-// is reflected into a JSON Schema when the spec document is assembled;
-// pass nil if there is no body (e.g. 204 No Content). Multiple
-// WithResponse calls accumulate. Calling WithResponse twice for the
-// same status replaces the body but keeps any description, headers, or
-// example attached via the other response opts.
+// is reflected into a JSON Schema when the spec document is assembled
+// (struct fields may carry doc:/description: and example: tags); pass
+// nil if there is no body (e.g. 204 No Content). Pass status 0 to
+// declare the OpenAPI "default" response — the catch-all entry
+// consumers use for undeclared status codes, conventionally the
+// shared error shape. Multiple WithResponse calls accumulate. Calling
+// WithResponse twice for the same status replaces the body but keeps
+// any description, headers, or example attached via the other
+// response opts.
 func WithResponse(status int, body any) RouteOpt {
 	return func(r *route) {
 		resp := ensureResponse(r.op, statusKey(status))
