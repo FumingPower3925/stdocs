@@ -17,9 +17,11 @@ a docs UI at `/docs` (configurable).
 
 ## Features
 
-- **Zero runtime dependencies.** Only the Go standard library. (Test
-  deps include `gopkg.in/yaml.v3` for round-trip verification, never
-  imported by the runtime code.)
+- **Zero runtime dependencies.** Only the Go standard library. (The
+  YAML round-trip test lives in its own submodule at
+  `internal/spec/yaml/roundtrip_test/` and uses `gopkg.in/yaml.v3`;
+  this dep never appears in the main module's `go.mod`, so
+  downstream users see one dep: `github.com/FumingPower3925/stdocs`.)
 - **Two OpenAPI versions.** Both 3.0.3 and 3.1.0 are emitted and tested.
   Choose with `stdocs.WithVersion(stdocs.OpenAPI31)`.
 - **Type-to-schema reflection.** Pass a Go value to `stdocs.WithResponse`
