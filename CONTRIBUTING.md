@@ -43,7 +43,7 @@ explain the use case, not just the proposed API.
 ## Pull requests
 
 - Keep changes focused; one concern per PR.
-- Update the README, CHANGELOG, and godoc comments as needed.
+- Update the README and godoc comments as needed.
 - All four CI jobs (`Test`, `Lint`, `YAML Roundtrip`, `Coverage`)
   must pass before review.
 
@@ -131,6 +131,6 @@ translations are best-effort mirrors.
 ## Releasing
 
 Releases are cut by the project maintainers from `main`. The release
-process bumps the version in `CHANGELOG.md`, tags the commit, and
-publishes a GitHub Release. Contributors do not need to cut
+process tags the commit and publishes a GitHub Release whose notes
+describe the changes since the previous tag. Contributors do not need to cut
 releases.
