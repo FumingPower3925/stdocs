@@ -21,6 +21,11 @@ import (
 // Values are validated against the parameter's declared type at
 // registration time; a mismatch (ParamDefault("x") on an integer
 // parameter) panics.
+//
+// The modifier set covers the common refinements; for the full
+// constraint vocabulary (exclusive bounds, array facets, format
+// overrides), declare the parameter as a [WithParams] struct field
+// instead.
 type ParamOpt func(p *Param)
 
 // ParamRequired marks the parameter required. Path parameters are
@@ -56,7 +61,7 @@ func ParamEnum(values ...any) ParamOpt {
 func ParamMinimum(n float64) ParamOpt {
 	return func(p *Param) {
 		requireNumericParam(p, "ParamMinimum")
-		p.Schema.Minimum = json.Number(strconv.FormatFloat(n, 'f', -1, 64))
+		p.Schema.Minimum = finiteNumber(n, p, "ParamMinimum")
 	}
 }
 
@@ -65,8 +70,17 @@ func ParamMinimum(n float64) ParamOpt {
 func ParamMaximum(n float64) ParamOpt {
 	return func(p *Param) {
 		requireNumericParam(p, "ParamMaximum")
-		p.Schema.Maximum = json.Number(strconv.FormatFloat(n, 'f', -1, 64))
+		p.Schema.Maximum = finiteNumber(n, p, "ParamMaximum")
 	}
+}
+
+// finiteNumber renders a bound as a JSON number; NaN and infinities
+// have no JSON representation and panic.
+func finiteNumber(n float64, p *Param, what string) json.Number {
+	if math.IsNaN(n) || math.IsInf(n, 0) {
+		panic("stdocs: " + what + " value for parameter " + strconv.Quote(p.Name) + " must be finite")
+	}
+	return json.Number(strconv.FormatFloat(n, 'f', -1, 64))
 }
 
 // ParamMinLength documents the parameter's minimum string length.
@@ -111,9 +125,11 @@ func ParamPattern(pattern string) ParamOpt {
 // header, or cookie — whose value is the parameter name ("-" skips
 // the field). The Go type provides the schema (scalars and slices of
 // scalars), the constraint tags apply as on body fields, and
-// required:"true" marks a parameter required. Violations panic at
-// registration time. Multiple WithParams and WithParam declarations
-// accumulate.
+// required:"true" marks a parameter required. Embedded structs are
+// not flattened — tag them query:"-" or declare their fields
+// directly. Violations panic at registration time. Multiple
+// WithParams and WithParam declarations accumulate, but a duplicate
+// (name, location) pair across them panics at document build.
 func WithParams(v any) RouteOpt {
 	fields := schema.ParamFields(v)
 	return func(r *route) {
@@ -149,8 +165,14 @@ func paramValue(v any, p *Param, what string) any {
 		switch rv.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			return float64(rv.Int())
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return float64(rv.Uint())
 		case reflect.Float32, reflect.Float64:
-			return rv.Float()
+			f := rv.Float()
+			if math.IsNaN(f) || math.IsInf(f, 0) {
+				panic("stdocs: " + what + " value for parameter " + strconv.Quote(p.Name) + " must be finite")
+			}
+			return f
 		}
 	case "boolean":
 		if rv.Kind() == reflect.Bool {

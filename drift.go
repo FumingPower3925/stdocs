@@ -1,7 +1,10 @@
 package stdocs
 
 import (
+	"bufio"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -25,6 +28,12 @@ import (
 //	    handler = stdocs.DriftWarn(mux, nil)
 //	}
 //	log.Fatal(http.ListenAndServe(":8080", handler))
+//
+// Call DriftWarn after registering all routes: it builds and caches
+// the document, so routes registered later are neither checked nor
+// documented. Because it builds the document up front, the fail-fast
+// panics from invalid constraint or params tags surface at the
+// DriftWarn call.
 //
 // DriftWarn is a development aid, not validation: it observes
 // statuses and content types, never request or body schemas, and adds
@@ -78,6 +87,11 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rec := &driftRecorder{ResponseWriter: w}
 	d.mux.ServeHTTP(rec, r)
 
+	if rec.hijacked {
+		// The handler took over the connection (websocket upgrade);
+		// there is no HTTP response to compare.
+		return
+	}
 	status := rec.status
 	if status == 0 {
 		status = http.StatusOK // a body written without WriteHeader
@@ -87,7 +101,8 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !documented {
 		if _, hasDefault := rt.op.Responses["default"]; !hasDefault {
 			d.warn(pattern+"\x00"+key,
-				"stdocs drift: %s returned %d, which the document does not declare", pattern, status)
+				"stdocs drift: %s (observed via %s) returned %d, which the document does not declare",
+				pattern, r.Method, status)
 		}
 		return
 	}
@@ -112,14 +127,20 @@ func (d *driftWarner) warn(key, format string, args ...any) {
 }
 
 // driftRecorder captures the response status while passing everything
-// through.
+// through. It preserves the optional ResponseWriter interfaces:
+// Unwrap serves http.ResponseController, and Flush/Hijack/ReadFrom
+// forward so streaming (SSE), websocket upgrades, and sendfile keep
+// working through the wrapper.
 type driftRecorder struct {
 	http.ResponseWriter
-	status int
+	status   int
+	hijacked bool
 }
 
 func (r *driftRecorder) WriteHeader(status int) {
-	if r.status == 0 {
+	// 1xx informational responses (e.g. 103 Early Hints) are not the
+	// final status; net/http lets the handler call WriteHeader again.
+	if r.status == 0 && (status >= 200 || status == http.StatusSwitchingProtocols) {
 		r.status = status
 	}
 	r.ResponseWriter.WriteHeader(status)
@@ -130,4 +151,39 @@ func (r *driftRecorder) Write(b []byte) (int, error) {
 		r.status = http.StatusOK
 	}
 	return r.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (r *driftRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
+// Flush implements http.Flusher for handlers that assert it directly.
+func (r *driftRecorder) Flush() {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	// A flush failure has nowhere to go in a dev aid; the handler's
+	// own writes will surface the broken connection.
+	_ = http.NewResponseController(r.ResponseWriter).Flush()
+}
+
+// Hijack implements http.Hijacker for handlers that assert it
+// directly (websocket libraries).
+func (r *driftRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(r.ResponseWriter).Hijack()
+	if err == nil {
+		r.hijacked = true
+	}
+	return conn, rw, err
+}
+
+// ReadFrom preserves the sendfile fast path when the underlying
+// writer supports it.
+func (r *driftRecorder) ReadFrom(src io.Reader) (int64, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	if rf, ok := r.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(src)
+	}
+	return io.Copy(struct{ io.Writer }{r.ResponseWriter}, src)
 }
