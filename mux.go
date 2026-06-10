@@ -250,11 +250,20 @@ func (m *Mux) buildDoc() map[string]any {
 			}
 		}
 	}
+	paths := visible.toPathItems()
+	// The public path prefix (WithPathPrefix) is documentation-only
+	// and applied last, so registration, visibility filtering, and
+	// operation-id derivation all see the patterns as registered.
+	if m.cfg.PathPrefix != "" {
+		for i := range paths {
+			paths[i].Path = m.cfg.PathPrefix + paths[i].Path
+		}
+	}
 	in := SpecInput{
 		Info:            m.cfg.Info,
 		Servers:         m.cfg.Servers,
 		Tags:            m.cfg.Tags,
-		Paths:           visible.toPathItems(),
+		Paths:           paths,
 		Version:         m.cfg.Version,
 		SecuritySchemes: m.cfg.Security,
 		GlobalSecurity:  m.cfg.GlobalSecurity,
