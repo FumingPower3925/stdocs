@@ -49,7 +49,7 @@ Això és tot. `stdocs` recorre les teves rutes registrades, genera un spec Open
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requereix Go 1.26 o posterior (la directiva `go` del mòdul). Els patrons de ruta que stdocs documenta (`"GET /users/{id}"`) són la sintaxi mètode+ruta que `net/http.ServeMux` va incorporar a Go 1.22.
+Requereix Go 1.26.4 o posterior (la directiva `go` del mòdul). Els patrons de ruta que stdocs documenta (`"GET /users/{id}"`) són la sintaxi mètode+ruta que `net/http.ServeMux` va incorporar a Go 1.22.
 
 ## Ús
 
