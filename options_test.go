@@ -586,7 +586,6 @@ func TestSchemaForType(t *testing.T) {
 		{"integer", "integer"},
 		{"number", "number"},
 		{"boolean", "boolean"},
-		{"unknown", ""},
 	}
 	for _, c := range cases {
 		s := schemaForType(c.in)
@@ -594,6 +593,14 @@ func TestSchemaForType(t *testing.T) {
 			t.Errorf("schemaForType(%q) = Type %q, want %q", c.in, s.Type, c.want)
 		}
 	}
+	// Unknown types fail fast instead of producing a silent empty
+	// schema.
+	defer func() {
+		if recover() == nil {
+			t.Errorf("schemaForType(\"unknown\") should panic")
+		}
+	}()
+	schemaForType("unknown")
 }
 
 // Suppress unused warnings on reflect (kept for future-proofing).
