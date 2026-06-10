@@ -1,6 +1,7 @@
 package stdocs
 
 import (
+	"net/http"
 	"reflect"
 	"testing"
 
@@ -213,7 +214,7 @@ func TestRegistry_Finalize_Auto200(t *testing.T) {
 	if _, ok := rt.op.Responses["200"]; !ok {
 		t.Errorf("auto-200 missing")
 	}
-	if rt.op.Method != "GET" {
+	if rt.op.Method != http.MethodGet {
 		t.Errorf("Method = %q", rt.op.Method)
 	}
 }
@@ -575,7 +576,7 @@ func TestSchemaForType(t *testing.T) {
 		{"unknown", ""},
 	}
 	for _, c := range cases {
-		s := schemaForType(c.in, OpenAPI30)
+		s := schemaForType(c.in)
 		if s.Type != c.want {
 			t.Errorf("schemaForType(%q) = Type %q, want %q", c.in, s.Type, c.want)
 		}

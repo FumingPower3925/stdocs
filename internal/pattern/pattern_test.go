@@ -1,6 +1,7 @@
 package pattern
 
 import (
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -26,8 +27,8 @@ func TestParsePattern_Root(t *testing.T) {
 
 func TestParsePattern_MethodAndPath(t *testing.T) {
 	p := MustParsePattern("GET /users")
-	if p.Method != "GET" {
-		t.Errorf("Method = %q, want %q", p.Method, "GET")
+	if p.Method != http.MethodGet {
+		t.Errorf("Method = %q, want %q", p.Method, http.MethodGet)
 	}
 	if p.Path() != "/users" {
 		t.Errorf("Path() = %q, want %q", p.Path(), "/users")
@@ -39,15 +40,15 @@ func TestParsePattern_MethodAndPath(t *testing.T) {
 
 func TestParsePattern_AcceptsLowercaseMethod(t *testing.T) {
 	p := MustParsePattern("get /users")
-	if p.Method != "GET" {
-		t.Errorf("Method = %q, want %q", p.Method, "GET")
+	if p.Method != http.MethodGet {
+		t.Errorf("Method = %q, want %q", p.Method, http.MethodGet)
 	}
 }
 
 func TestParsePattern_TabSeparatorBetweenMethodAndPath(t *testing.T) {
 	p := MustParsePattern("POST\t/users")
-	if p.Method != "POST" {
-		t.Errorf("Method = %q, want %q", p.Method, "POST")
+	if p.Method != http.MethodPost {
+		t.Errorf("Method = %q, want %q", p.Method, http.MethodPost)
 	}
 	if p.Path() != "/users" {
 		t.Errorf("Path() = %q, want %q", p.Path(), "/users")
@@ -66,8 +67,8 @@ func TestParsePattern_Host(t *testing.T) {
 
 func TestParsePattern_MethodAndHost(t *testing.T) {
 	p := MustParsePattern("GET example.com/users/{id}")
-	if p.Method != "GET" {
-		t.Errorf("Method = %q, want %q", p.Method, "GET")
+	if p.Method != http.MethodGet {
+		t.Errorf("Method = %q, want %q", p.Method, http.MethodGet)
 	}
 	if p.Host != "example.com" {
 		t.Errorf("Host = %q, want %q", p.Host, "example.com")
@@ -222,7 +223,7 @@ func TestParsePattern_InvalidPatterns(t *testing.T) {
 	tests := []string{
 		"",                          // empty
 		"users",                     // no slash
-		"GET",                       // no path
+		http.MethodGet,                       // no path
 		"GET example.com",           // host but no path
 		"GET /users/{",              // unterminated wildcard
 		"GET /users/}",              // orphan closing brace
@@ -359,8 +360,8 @@ func TestIsValidMethod(t *testing.T) {
 		in   string
 		want bool
 	}{
-		{"GET", true},
-		{"POST", true},
+		{http.MethodGet, true},
+		{http.MethodPost, true},
 		{"PUT", true},
 		{"DELETE", true},
 		{"HEAD", true},

@@ -1,7 +1,7 @@
 # stdocs
 
 Zero-dependency OpenAPI 3.0.3 and 3.1.0 documentation generation for a stdlib
-`net/http.ServeMux` (Go 1.22+).
+`net/http.ServeMux` (Go 1.22+; tested on 1.26).
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("My API"))

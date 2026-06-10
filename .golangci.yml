@@ -1,0 +1,96 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - contextcheck
+    - decorder
+    - durationcheck
+    - errcheck
+    - errorlint
+    - copyloopvar
+    - fatcontext
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gocognit
+    - gocritic
+    - gocyclo
+    - godot
+    - gosec
+    - gosmopolitan
+    - govet
+    - ineffassign
+    - misspell
+    - musttag
+    - nakedret
+    - nilerr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - prealloc
+    - predeclared
+    - promlinter
+    - reassign
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+    - testifylint
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+
+  settings:
+    gocognit:
+      min-complexity: 40
+    gocyclo:
+      min-complexity: 25
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - inline
+    revive:
+      rules:
+        - name: var-naming
+          arguments:
+            - ["ID"] # allow common Go short forms
+        - name: package-comments
+        - name: dot-imports
+        - name: error-return
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - gocognit
+          - gocyclo
+          - forcetypeassert
+          - noctx
+          - usestdlibvars
+      - path: internal/spec/yaml/
+        linters:
+          - gocognit
+      - path: cmd/demo/
+        linters:
+          - all
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0

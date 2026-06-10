@@ -1,10 +1,15 @@
+// Package schema reflects Go values into a version-agnostic JSON
+// Schema representation consumed by the OpenAPI emitters in
+// internal/spec. Two emitters (3.0.3 and 3.1.0) share the same
+// intermediate Schema type; differences in how nullable, $ref,
+// and other version-specific bits are rendered live in the
+// emitter code, not in this package.
 package schema
 
 import (
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/FumingPower3925/stdocs/internal/version"
@@ -61,10 +66,8 @@ type Schema struct {
 // the API surface is).
 type reflector struct {
 	version version.SpecVersion
-	mu      sync.Mutex
 	seen    map[reflect.Type]string // type -> component schema name
-	counter int
-	out     map[string]*Schema // accumulated components
+	out     map[string]*Schema     // accumulated components
 }
 
 // reserveName returns a unique component name based on claimed. If
@@ -374,6 +377,25 @@ func isValidComponentName(s string) bool {
 // object schema. For a named struct, name is set and the result is
 // also stored in r.out by the caller. For an anonymous struct, name
 // is empty and the schema is inlined.
+// fieldMeta is the per-field result of inspection. name is the
+// JSON name; opts is the json-tag options; fieldSchema is the
+// reflected schema; embedded is true for anonymous (flattened)
+// fields. A field that is skipped produces a zero value.
+type fieldMeta struct {
+	name        string
+	opts        []string
+	fieldSchema *Schema
+	embedded    bool
+	// requiredCandidate is true if the field could be required
+	// (no omitempty and not a pointer). The dedup pass decides
+	// what actually makes it into s.Required.
+	requiredCandidate bool
+	// isPointer tracks whether the field type is a pointer
+	// regardless of dereferencing for chan/func skip. Used by
+	// the required pass to keep the encoding/json contract.
+	isPointer bool
+}
+
 func (r *reflector) buildStructSchema(t reflect.Type, name string, nullable bool) *Schema {
 	s := &Schema{Type: "object", Nullable: nullable, Properties: make(map[string]*Schema)}
 	if name != "" {
@@ -384,96 +406,123 @@ func (r *reflector) buildStructSchema(t reflect.Type, name string, nullable bool
 
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		// Skip unexported fields: encoding/json does, we do the same.
-		if !f.IsExported() {
+		meta, ok := r.inspectField(f, i)
+		if !ok {
 			continue
 		}
-		tag := f.Tag.Get("json")
-		name, opts := parseJSONTag(tag)
-		if name == "-" {
-			continue
-		}
-		if name == "" {
-			name = f.Name
-		}
-		// Channels and functions: skip.
-		ft := f.Type
-		for ft.Kind() == reflect.Ptr {
-			ft = ft.Elem()
-		}
-		if ft.Kind() == reflect.Chan || ft.Kind() == reflect.Func || ft.Kind() == reflect.UnsafePointer {
-			continue
-		}
-		// Build the field schema.
-		fieldSchema := r.reflect(f.Type, []int{i})
-		if fieldSchema == nil {
-			continue
-		}
-		// Apply the doc tag if present.
-		if doc := f.Tag.Get("doc"); doc != "" {
-			fieldSchema.Description = doc
-		} else if desc := f.Tag.Get("description"); desc != "" {
-			fieldSchema.Description = desc
-		}
-		// Apply the example tag if present.
-		if ex := f.Tag.Get("example"); ex != "" {
-			if fieldSchema.Example == nil {
-				fieldSchema.Example = ex
-			}
-		}
-		// For embedded structs, the field is a struct; we want to inline
-		// its properties into the parent.
-		if f.Anonymous {
-			// Resolve a possible $ref to the actual object.
-			inner := fieldSchema
-			if inner.Ref != "" {
-				// Look up the named component we already built.
-				resolved := r.resolveRef(inner.Ref)
-				if resolved != nil {
-					inner = resolved
-				}
-			}
-			if inner.Type == "object" && len(inner.Properties) > 0 {
-				for k, v := range inner.Properties {
-					if _, exists := s.Properties[k]; !exists {
-						s.Properties[k] = v
-					}
-				}
-				required = append(required, inner.Required...)
+		if meta.embedded {
+			if r.inlineEmbedded(s, meta.fieldSchema, &required) {
 				continue
 			}
 		}
-		s.Properties[name] = fieldSchema
-		// Required unless the json tag has "omitempty" and the field is
-		// not a pointer (Go's json:omitempty semantics for "required"
-		// do not exist, so we approximate: a pointer field is optional,
-		// a value field with omitempty is optional, everything else is
-		// required).
-		if !slices.Contains(opts, "omitempty") && f.Type.Kind() != reflect.Ptr {
-			required = append(required, name)
+		s.Properties[meta.name] = meta.fieldSchema
+		if meta.requiredCandidate {
+			required = append(required, meta.name)
 		}
 	}
-	// Dedupe required: embedded fields can include the same key
-	// as a same-named non-embedded field. The first occurrence
-	// wins; later duplicates are removed. We also strip any
-	// required entries that aren't present in Properties, which
-	// can happen if a "required" key is computed from a named
-	// component that we then drop during flattening.
-	seen := make(map[string]struct{}, len(required))
-	deduped := required[:0]
-	for _, k := range required {
+	s.Required = dedupRequired(required, s.Properties)
+	applyVersion(s, r.version)
+	return s
+}
+
+// inspectField returns a fieldMeta for a struct field, or
+// (zero, false) if the field should be skipped (unexported, "-"
+// tag, or non-representable kind).
+func (r *reflector) inspectField(f reflect.StructField, i int) (fieldMeta, bool) {
+	if !f.IsExported() {
+		return fieldMeta{}, false
+	}
+	tag := f.Tag.Get("json")
+	name, opts := parseJSONTag(tag)
+	if name == "-" {
+		return fieldMeta{}, false
+	}
+	if name == "" {
+		name = f.Name
+	}
+	ft := f.Type
+	for ft.Kind() == reflect.Ptr {
+		ft = ft.Elem()
+	}
+	if ft.Kind() == reflect.Chan || ft.Kind() == reflect.Func || ft.Kind() == reflect.UnsafePointer {
+		return fieldMeta{}, false
+	}
+	fieldSchema := r.reflect(f.Type, []int{i})
+	if fieldSchema == nil {
+		return fieldMeta{}, false
+	}
+	applyFieldTags(&fieldSchema, f.Tag)
+	return fieldMeta{
+		name:              name,
+		opts:              opts,
+		fieldSchema:       fieldSchema,
+		embedded:          f.Anonymous,
+		requiredCandidate: !slices.Contains(opts, "omitempty") && f.Type.Kind() != reflect.Ptr,
+		isPointer:         f.Type.Kind() == reflect.Ptr,
+	}, true
+}
+
+// applyFieldTags transfers doc/description/example struct tags onto
+// the field's schema. Mutates fieldSchema.
+func applyFieldTags(fieldSchema **Schema, tag reflect.StructTag) {
+	if doc := tag.Get("doc"); doc != "" {
+		(*fieldSchema).Description = doc
+	} else if desc := tag.Get("description"); desc != "" {
+		(*fieldSchema).Description = desc
+	}
+	if ex := tag.Get("example"); ex != "" && (*fieldSchema).Example == nil {
+		(*fieldSchema).Example = ex
+	}
+}
+
+// inlineEmbedded flattens an anonymous struct's properties into s.
+// Returns true if flattening happened (caller should skip further
+// processing of the field); false if the embedded schema was not an
+// object with properties, in which case the caller should treat the
+// field as a regular property.
+func (r *reflector) inlineEmbedded(s *Schema, fieldSchema *Schema, required *[]string) bool {
+	inner := fieldSchema
+	if inner.Ref != "" {
+		if resolved := r.resolveRef(inner.Ref); resolved != nil {
+			inner = resolved
+		}
+	}
+	if !inner.isInlineable() {
+		return false
+	}
+	for k, v := range inner.Properties {
+		if _, exists := s.Properties[k]; !exists {
+			s.Properties[k] = v
+		}
+	}
+	*required = append(*required, inner.Required...)
+	return true
+}
+
+// isInlineable reports whether a schema can have its properties
+// merged into a parent (i.e. it is an object with at least one
+// property). Used by inlineEmbedded.
+func (s *Schema) isInlineable() bool {
+	return s != nil && s.Type == "object" && len(s.Properties) > 0
+}
+
+// dedupRequired removes duplicates and orphans from a list of
+// required keys. A key is an orphan if it is not present in the
+// properties map. The first occurrence of each key wins.
+func dedupRequired(keys []string, props map[string]*Schema) []string {
+	seen := make(map[string]struct{}, len(keys))
+	out := keys[:0]
+	for _, k := range keys {
 		if _, ok := seen[k]; ok {
 			continue
 		}
-		if _, exists := s.Properties[k]; !exists {
+		if _, exists := props[k]; !exists {
 			continue
 		}
 		seen[k] = struct{}{}
-		deduped = append(deduped, k)
+		out = append(out, k)
 	}
-	s.Required = deduped
-	applyVersion(s, r.version)
-	return s
+	return out
 }
 
 // resolveRef returns the named component schema for a $ref pointer that
@@ -510,8 +559,6 @@ func parseJSONTag(tag string) (name string, opts []string) {
 	}
 	parts := strings.Split(tag, ",")
 	name = parts[0]
-	for _, p := range parts[1:] {
-		opts = append(opts, p)
-	}
+	opts = append(opts, parts[1:]...)
 	return name, opts
 }

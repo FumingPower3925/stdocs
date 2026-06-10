@@ -18,7 +18,7 @@ func TestParity_30_31(t *testing.T) {
 	type Resp struct {
 		ID string `json:"id"`
 	}
-	make := func(v SpecVersion) *Mux {
+	makeMux := func(v SpecVersion) *Mux {
 		m := New(WithTitle("T"), WithVersion(v), WithBearerAuth("bearerAuth", "JWT"))
 		m.HandleFunc("GET /users", func(w http.ResponseWriter, r *http.Request) {},
 			Summary("List users"),
@@ -36,8 +36,8 @@ func TestParity_30_31(t *testing.T) {
 		)
 		return m
 	}
-	m30 := make(OpenAPI30)
-	m31 := make(OpenAPI31)
+	m30 := makeMux(OpenAPI30)
+	m31 := makeMux(OpenAPI31)
 	b30, _ := m30.JSON()
 	b31, _ := m31.JSON()
 	var d30, d31 map[string]any
