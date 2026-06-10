@@ -46,6 +46,9 @@ explain the use case, not just the proposed API.
 
 ## Pull requests
 
+All changes land through pull requests — `main` is protected, for
+maintainers too. CI must be green (the `CI OK` check) before merge.
+
 - Keep changes focused; one concern per PR.
 - Update the README, CHANGELOG, and godoc comments as needed.
 - All CI jobs must pass before review: `Test`, `Lint`, `Coverage`,
