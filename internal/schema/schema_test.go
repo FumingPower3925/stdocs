@@ -894,3 +894,43 @@ func TestReflectSchema_30NullableField(t *testing.T) {
 
 // Suppress unused-import warning on the reflect import.
 var _ = reflect.TypeOf
+
+// Typed example parsing: example tags must be converted to the field's
+// schema type so the emitted example does not violate its own schema.
+func TestReflectSchema_TypedExamples(t *testing.T) {
+	type T struct {
+		Count  int     `json:"count" example:"42"`
+		Ratio  float64 `json:"ratio" example:"0.75"`
+		Active bool    `json:"active" example:"true"`
+		Label  string  `json:"label" example:"hello"`
+	}
+	_, out := schema30(t, T{})
+	comp := out["T"]
+	if comp == nil {
+		t.Fatal("T component missing")
+	}
+	if got := comp.Properties["count"].Example; got != int64(42) {
+		t.Errorf("count example = %#v, want int64(42)", got)
+	}
+	if got := comp.Properties["ratio"].Example; got != 0.75 {
+		t.Errorf("ratio example = %#v, want 0.75", got)
+	}
+	if got := comp.Properties["active"].Example; got != true {
+		t.Errorf("active example = %#v, want true", got)
+	}
+	if got := comp.Properties["label"].Example; got != "hello" {
+		t.Errorf("label example = %#v, want hello", got)
+	}
+}
+
+func TestReflectSchema_InvalidExamplePanics(t *testing.T) {
+	type T struct {
+		Count int `json:"count" example:"forty-two"`
+	}
+	defer func() {
+		if recover() == nil {
+			t.Errorf("unparseable example on an integer field should panic")
+		}
+	}()
+	_, _ = ReflectSchema(T{})
+}
