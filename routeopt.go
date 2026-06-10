@@ -11,6 +11,28 @@ import (
 // passed as variadic to *stdocs.Mux.HandleFunc and *stdocs.Mux.Handle.
 type RouteOpt func(*route)
 
+// Opts combines several route opts into one, enabling reusable
+// bundles shared across registrations:
+//
+//	paginated := stdocs.Opts(
+//	    stdocs.QueryParam("cursor", "string", "Opaque cursor"),
+//	    stdocs.QueryParam("limit", "integer", "Page size"),
+//	)
+//	mux.HandleFunc("GET /tasks", listTasks, paginated, stdocs.WithResponse(200, TaskPage{}))
+//	mux.HandleFunc("GET /users", listUsers, paginated, stdocs.WithResponse(200, UserPage{}))
+//
+// Opts applies its opts in order; nil opts are skipped. A bundle is
+// stateless and safe to reuse across any number of routes.
+func Opts(opts ...RouteOpt) RouteOpt {
+	return func(r *route) {
+		for _, opt := range opts {
+			if opt != nil {
+				opt(r)
+			}
+		}
+	}
+}
+
 // Summary sets the route's summary (the short single-line description
 // shown next to the operation in UIs).
 func Summary(s string) RouteOpt {
