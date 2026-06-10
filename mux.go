@@ -310,15 +310,32 @@ func (m *Mux) Config() *Config {
 // fallback — so a user route like "GET /docs/{file}" can never shadow
 // the spec endpoints (exact literals win over wildcards in ServeMux).
 //
-// If the mux has been disabled via WithDisabled, Mount is a no-op and
-// registers nothing. Calling Mount more than once is a no-op after the
-// first successful registration. Call it after registering all routes.
-func (m *Mux) Mount() {
-	if m.cfg.Disabled || m.mounted {
+// The optional bool argument mirrors Docs: pass false to register
+// nothing, pass true to register the docs even on a mux disabled via
+// WithDisabled, or omit it to follow the WithDisabled config. An
+// explicit per-call value wins over WithDisabled in both directions.
+// Only one bool is accepted; passing more panics.
+//
+//	mux.Mount(os.Getenv("ENV") != "prod")
+//
+// Calling Mount more than once is a no-op after the first call that
+// registered the docs. Call it after registering all routes.
+func (m *Mux) Mount(enabled ...bool) {
+	if len(enabled) > 1 {
+		panic("stdocs: Mount accepts at most one bool argument")
+	}
+	on := !m.cfg.Disabled
+	if len(enabled) == 1 {
+		on = enabled[0]
+	}
+	if !on || m.mounted {
 		return
 	}
 	prefix := m.cfg.DocsPrefix
-	docs := m.Docs()
+	// Force-enable the handler: the decision was already taken above,
+	// so a WithDisabled config must not turn the mounted docs into
+	// 404s when the caller passed an explicit true.
+	docs := m.Docs(true)
 	m.ServeMux.Handle("GET "+prefix+"/{$}", docs)
 	m.ServeMux.Handle("GET "+prefix+"/openapi.json", docs)
 	m.ServeMux.Handle("GET "+prefix+"/openapi.yaml", docs)
