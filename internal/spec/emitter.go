@@ -29,6 +29,36 @@ type emitter struct {
 	buildSchema func(*schema.Schema) map[string]any
 }
 
+// applyConstraintFacets emits the version-independent constraint
+// keywords from s onto m. Exclusive bounds render differently per
+// OpenAPI version and stay in the per-version schema builders.
+func applyConstraintFacets(m map[string]any, s *schema.Schema) {
+	if s.Minimum != "" {
+		m["minimum"] = s.Minimum
+	}
+	if s.Maximum != "" {
+		m["maximum"] = s.Maximum
+	}
+	if s.MinLength != nil {
+		m["minLength"] = *s.MinLength
+	}
+	if s.MaxLength != nil {
+		m["maxLength"] = *s.MaxLength
+	}
+	if s.Pattern != "" {
+		m["pattern"] = s.Pattern
+	}
+	if s.MinItems != nil {
+		m["minItems"] = *s.MinItems
+	}
+	if s.MaxItems != nil {
+		m["maxItems"] = *s.MaxItems
+	}
+	if s.UniqueItems {
+		m["uniqueItems"] = true
+	}
+}
+
 // sortedKeys returns m's keys in ascending order.
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))

@@ -615,3 +615,15 @@ func TestEmitOpenAPI30_EndToEndWithReflect(t *testing.T) {
 		t.Errorf("User.id missing")
 	}
 }
+
+// Exclusive bounds use the draft-4 boolean form in 3.0.
+func TestBuildSchema30_ExclusiveBoundsBooleanForm(t *testing.T) {
+	s := &schema.Schema{Type: "number", ExclusiveMinimum: "0", ExclusiveMaximum: "1.5"}
+	m := buildSchema30(s)
+	if m["minimum"] != json.Number("0") || m["exclusiveMinimum"] != true {
+		t.Errorf("minimum/exclusiveMinimum = %#v/%#v, want 0/true", m["minimum"], m["exclusiveMinimum"])
+	}
+	if m["maximum"] != json.Number("1.5") || m["exclusiveMaximum"] != true {
+		t.Errorf("maximum/exclusiveMaximum = %#v/%#v, want 1.5/true", m["maximum"], m["exclusiveMaximum"])
+	}
+}

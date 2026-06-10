@@ -106,6 +106,14 @@ func buildSchema31(s *schema.Schema) map[string]any {
 	if s.Example != nil {
 		m["example"] = s.Example
 	}
+	applyConstraintFacets(m, s)
+	// JSON Schema 2020-12: exclusive bounds are numeric keywords.
+	if s.ExclusiveMinimum != "" {
+		m["exclusiveMinimum"] = s.ExclusiveMinimum
+	}
+	if s.ExclusiveMaximum != "" {
+		m["exclusiveMaximum"] = s.ExclusiveMaximum
+	}
 	maps.Copy(m, s.Extensions)
 	if len(m) == 0 {
 		return map[string]any{}
