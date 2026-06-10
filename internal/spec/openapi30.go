@@ -97,7 +97,14 @@ func buildSchema30(s *schema.Schema) map[string]any {
 		m["items"] = buildSchema30(s.Items)
 	}
 	if len(s.Enum) > 0 {
-		m["enum"] = s.Enum
+		enum := s.Enum
+		if s.Nullable {
+			// enum is independent of type/nullable in JSON Schema:
+			// null must be listed for a nullable field's null value to
+			// validate against its own enum.
+			enum = append(append(make([]any, 0, len(enum)+1), enum...), nil)
+		}
+		m["enum"] = enum
 	}
 	if s.Default != nil {
 		m["default"] = s.Default

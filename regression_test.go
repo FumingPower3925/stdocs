@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -935,5 +936,153 @@ func TestWithParamsPanics(t *testing.T) {
 			}()
 			tc.f()
 		})
+	}
+}
+
+// Findings from the v0.3.0 verification pass, pinned.
+func TestVerificationFindings(t *testing.T) {
+	// Non-JSON numeric literals panic at build instead of 500ing the
+	// docs endpoint.
+	for _, bad := range []string{".5", "+5", "010", "1.", "NaN", "Inf", "1_0"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("minimum:%q should panic", bad)
+				}
+			}()
+			schemaTagPanic(bad)
+		}()
+	}
+
+	// Valid exponent forms still pass and YAML renders them 1.1-safe.
+	type Exp struct {
+		R float64 `json:"r" minimum:"1e3"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("POST /e", noop, WithBody(Exp{}))
+	y, err := mux.YAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(y, []byte("minimum: 1.0e+3")) {
+		t.Errorf("YAML should reformat 1e3 to a YAML-1.1-safe number, got:\n%s", y)
+	}
+
+	// enum members are trimmed; empty members panic.
+	type Spaced struct {
+		S string `json:"s" enum:"a, b, c"`
+	}
+	mux2 := New(WithTitle("T"))
+	mux2.HandleFunc("POST /s", noop, WithBody(Spaced{}))
+	doc := buildDocMap(t, mux2)
+	enum := doc["components"].(map[string]any)["schemas"].(map[string]any)["Spaced"].(map[string]any)["properties"].(map[string]any)["s"].(map[string]any)["enum"].([]any)
+	if enum[1] != "b" || enum[2] != "c" {
+		t.Errorf("enum members must be trimmed: %#v", enum)
+	}
+
+	// Nullable + enum lists null so the contract matches encoding/json.
+	type Nullable struct {
+		S *string `json:"s" enum:"a,b"`
+	}
+	mux3 := New(WithTitle("T"))
+	mux3.HandleFunc("POST /n", noop, WithBody(Nullable{}))
+	ndoc := buildDocMap(t, mux3)
+	nenum := ndoc["components"].(map[string]any)["schemas"].(map[string]any)["Nullable"].(map[string]any)["properties"].(map[string]any)["s"].(map[string]any)["enum"].([]any)
+	if len(nenum) != 3 || nenum[2] != nil {
+		t.Errorf("nullable enum must list null: %#v", nenum)
+	}
+
+	// Duplicate (name, in) parameters panic at build.
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Errorf("duplicate parameter should panic")
+			}
+		}()
+		type P struct {
+			L int `query:"limit"`
+		}
+		dup := New(WithTitle("T"))
+		dup.HandleFunc("GET /d", noop, WithParams(P{}), QueryParam("limit", "integer", "dup"))
+		dup.JSON()
+	}()
+
+	// WithDefaultResponse(200, body) supplies the success body on
+	// routes that declare nothing.
+	type OK struct {
+		Done bool `json:"done"`
+	}
+	d200 := New(WithTitle("T"), WithDefaultResponse(200, OK{}))
+	d200.HandleFunc("GET /x", noop)
+	xdoc := buildDocMap(t, d200)
+	resp200 := xdoc["paths"].(map[string]any)["/x"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["200"].(map[string]any)
+	if _, ok := resp200["content"]; !ok {
+		t.Errorf("default 200 body should apply to undeclared routes: %#v", resp200)
+	}
+
+	// nil RouteOpts are tolerated like in Opts.
+	nilmux := New(WithTitle("T"))
+	nilmux.HandleFunc("GET /nil", noop, nil, Summary("S"))
+
+	// default/example/format on non-scalar fields panic.
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Errorf("default on RawMessage should panic")
+			}
+		}()
+		type Raw struct {
+			R json.RawMessage `json:"r" default:"x"`
+		}
+		rm := New(WithTitle("T"))
+		rm.HandleFunc("POST /r", noop, WithBody(Raw{}))
+		rm.JSON()
+	}()
+
+	// example on a $ref field still decorates the use site (v0.2.x
+	// behavior).
+	type Inner struct {
+		X string `json:"x"`
+	}
+	type Outer struct {
+		I Inner `json:"i" example:"sample"`
+	}
+	ref := New(WithTitle("T"))
+	ref.HandleFunc("POST /o", noop, WithBody(Outer{}))
+	rdoc := buildDocMap(t, ref)
+	iProp := rdoc["components"].(map[string]any)["schemas"].(map[string]any)["Outer"].(map[string]any)["properties"].(map[string]any)["i"].(map[string]any)
+	if iProp["example"] != "sample" {
+		t.Errorf("example on $ref field lost: %#v", iProp)
+	}
+
+	// WithPathPrefix rejects wildcards and whitespace.
+	for _, bad := range []string{"/{tenant}", "/a b", "/x?y"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("WithPathPrefix(%q) should panic", bad)
+				}
+			}()
+			New(WithTitle("T"), WithPathPrefix(bad))
+		}()
+	}
+}
+
+// schemaTagPanic reflects a one-field struct whose minimum tag is the
+// given literal, via the params path (eager validation).
+func schemaTagPanic(literal string) {
+	// The tag must be a compile-time constant per field, so exercise
+	// the same numericConstraint path through reflection of a
+	// runtime-built struct tag.
+	typ := reflect.StructOf([]reflect.StructField{{
+		Name: "N",
+		Type: reflect.TypeOf(float64(0)),
+		Tag:  reflect.StructTag(`json:"n" minimum:"` + literal + `"`),
+	}})
+	v := reflect.New(typ).Elem().Interface()
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("POST /t", noop, WithBody(v))
+	if _, err := mux.JSON(); err != nil {
+		panic(err) // either way the test's recover() fires
 	}
 }

@@ -7,7 +7,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/FumingPower3925/stdocs.svg)](https://pkg.go.dev/github.com/FumingPower3925/stdocs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-stdocs converteix un `net/http.ServeMux` de la biblioteca estàndard en una API autodocumentada: registra les rutes com sempre i stdocs en serveix la documentació interactiva — Scalar, Swagger UI, Redoc o Stoplight Elements a `/docs` — basada en un document OpenAPI 3.0/3.1/3.2 generat. Zero dependències i sense generació de codi: els patrons que ja escrius són la font de la veritat.
+stdocs converteix un `net/http.ServeMux` de la biblioteca estàndard en una API autodocumentada: registra les rutes com sempre i stdocs en serveix la documentació interactiva — Scalar, Swagger UI, Redoc o Stoplight Elements a `/docs` — basada en un document OpenAPI 3.0/3.1/3.2 generat. Zero dependències i sense generació de codi: els patrons que ja escrius són la font de veritat.
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("La meva API"))
@@ -40,7 +40,7 @@ El mateix document generat, mostrat per cadascuna de les quatre UI incloses — 
 - **Tres versions d'OpenAPI** — 3.0.4 (per defecte), 3.1.2 i 3.2.0, totes validades externament.
 - **Reflexió** — els tipus Go es converteixen en JSON Schemas seguint el contracte d'`encoding/json`, amb documentació i regles de validació (`minimum`, `maxLength`, `pattern`, `enum`, `default`, …) llegides dels tags de l'struct.
 - **Paràmetres tipats** — declara paràmetres query/header/cookie des d'un struct o inline amb modificadors tipats i validats.
-- **Valors per defecte intel·ligents** — els noms de funcions es converteixen en resums, els segments de ruta en tags, els paràmetres de ruta i un 200 es documenten sols, les rutes amb seguretat documenten el seu 401 i el sobre d'error compartit es declara una sola vegada per a tot el mux.
+- **Valors per defecte intel·ligents** — els noms de funcions es converteixen en resums, els segments de ruta en tags, els paràmetres de ruta i un 200 es documenten sols, les rutes amb seguretat documenten el seu 401 i l'envelope d'error compartit es declara una sola vegada per a tot el mux.
 - **Control per entorn** — activa o desactiva els docs segons l'entorn, amaga rutes individuals i detecta el trànsit de les consoles try-it, tot sense tocar les rutes registrades.
 - **Honest per defecte** — una documentació mal declarada provoca un panic en lloc de publicar un contracte erroni, i un middleware de desenvolupament opcional avisa quan els handlers es desvien del document.
 - **Zero dependències** — només la biblioteca estàndard de Go en temps d'execució.
@@ -79,7 +79,7 @@ type APIError struct {
 mux := stdocs.New(
     stdocs.WithTitle("La meva API"),
     stdocs.WithBearerAuth("bearerAuth", "JWT"),
-    stdocs.WithDefaultResponse(500, APIError{}), // el sobre d'error, una sola vegada
+    stdocs.WithDefaultResponse(500, APIError{}), // l'envelope d'error, una sola vegada
 )
 
 mux.HandleFunc("GET /tasks", listTasks, stdocs.WithParams(ListParams{}))
@@ -107,13 +107,13 @@ mux := stdocs.New(stdocs.WithTitle("La meva API"), scalar.WithUI())
 
 | UI                               | Subpaquet CDN                          | Subpaquet incrustat                         |
 | -------------------------------- | --------------------------------------- | -------------------------------------------- |
-| _(per defecte)_ (interna, ~1.6 KB) | —                                      | —                                            |
+| _(per defecte)_ (integrada, ~1.6 KB) | —                                      | —                                            |
 | Scalar                           | `ui/scalar` (~3.6 MB des del CDN)        | `ui/scalaremb` (~3.6 MB al teu binari)       |
 | Swagger UI                       | `ui/swaggerui` (~1.7 MB des del CDN)     | `ui/swaggeruiemb` (~1.7 MB al teu binari)    |
 | Redoc                            | `ui/redoc` (~1.1 MB des del CDN)         | `ui/redocemb` (~1.1 MB al teu binari)        |
 | Stoplight                        | `ui/stoplight` (~2.4 MB des del CDN)     | `ui/stoplightemb` (~2.4 MB al teu binari)    |
 
-Les URL del CDN estan fixades a versions exactes amb hashes SRI sha384; els subpaquets no s'enllacen al teu binari si no els importes. Detalls del muntatge incrustat: [Docs UIs](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Docs_UIs).
+Les URL del CDN estan fixades a versions exactes amb hashes SRI sha384; els subpaquets no s'enllacen al teu binari si no els importes. Detalls de configuració de la variant incrustada: [Docs UIs](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Docs_UIs).
 
 ## Documentació
 
