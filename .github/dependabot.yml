@@ -1,0 +1,61 @@
+# Dependabot configuration.
+#
+# All update checks run weekly. All PRs are grouped into a single
+# PR per push so the queue stays at one entry.
+#
+# Ecosystems covered:
+#   - gomod: weekly Go module updates (including toolchain bumps).
+#   - github-actions: weekly updates to the actions/* versions
+#     used in .github/workflows/ci.yml.
+#   - npm: weekly updates to the UI bundle versions. The
+#     /package.json at the repo root is a *dev-only* manifest
+#     used by Dependabot to track upstream versions. The Go
+#     source in ui/*/*.go is the source of truth for the version
+#     that ships. When a Dependabot PR lands, a human must:
+#       1. Update the version string in the relevant ui/*/*.go
+#       2. Re-fetch the bundle and update the embedded copy
+#          (only for *emb sub-packages)
+#       3. Re-compute the SRI hash and update the integrity=
+#          attribute (only for non-emb sub-packages)
+#       4. Update the corresponding *_pinning_test.go expected
+#          value
+#
+# OpenAPI spec versions: Dependabot cannot track the OAI spec
+# releases directly. The OpenAPI Initiative publishes new
+# versions on https://spec.openapis.org/oas/. Watch the releases
+# page or subscribe to https://github.com/OAI/OpenAPI-Specification
+# for new versions; bump stdocs/internal/version/version.go
+# manually when a release lands.
+
+version: 2
+
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    groups:
+      all-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    groups:
+      all-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    groups:
+      all-ui-bundles:
+        patterns:
+          - "*"
