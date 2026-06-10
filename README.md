@@ -5,7 +5,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/FumingPower3925/stdocs.svg)](https://pkg.go.dev/github.com/FumingPower3925/stdocs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-OpenAPI 3.0.4, 3.1.2, and 3.2.0 generation for the stdlib `net/http.ServeMux` (Go 1.22+ pattern syntax). No runtime dependencies.
+stdocs turns a standard library `net/http.ServeMux` into a self-documenting API: register routes as usual, and it serves interactive documentation for them — Scalar, Swagger UI, Redoc, or Stoplight Elements at `/docs` — backed by a generated OpenAPI 3.0/3.1/3.2 document. Zero dependencies, no code generation: the patterns you already write are the source of truth.
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("My API"))
@@ -32,14 +32,14 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 
 ## Features
 
-- **Zero deps** — only the Go standard library at runtime.
+- **Five UIs** — a tiny dependency-free default (~1.6 KB, inline JS only), plus Scalar, Swagger UI, Redoc, and Stoplight Elements — each available as a CDN sub-package (version-pinned with SRI integrity hashes) or an air-gapped embedded sub-package.
 - **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all tested.
 - **Reflection** — Go types become JSON Schemas: pointers, slices, maps, generics, embedded structs, recursive types via `$ref`, `json` tags (including `omitempty`, `omitzero`, and `,string`), `json.Marshaler`/`encoding.TextMarshaler` awareness.
 - **Smart defaults** — function names become summaries, the first path segment becomes the tag, path params are auto-included.
 - **Security** — bearer, basic, API key, OAuth 2.0 (including the 3.2 device flow). Unregistered scheme names are reported as errors.
-- **Five UIs** — a tiny dependency-free default (~1.6 KB, inline JS only), plus Scalar, Swagger UI, Redoc, and Stoplight Elements — each available as a CDN sub-package (version-pinned with SRI integrity hashes) or an air-gapped embedded sub-package.
 - **Environment toggling** — `mux.Mount(enabled)`/`mux.Docs(enabled)` and `WithDisabled(true)` turn the docs on or off per environment, and `Hidden()`/`Internal()` + `WithInternal(show)` control per-route visibility — all without changing registered routes.
 - **XSS-safe** — the docs HTML is rendered through `html/template`.
+- **Zero deps** — only the Go standard library at runtime.
 
 ## Install
 
