@@ -255,49 +255,25 @@ func (m *Mux) Mount() {
 // The docs prefix defaults to "/docs" but can be changed via
 // WithDocsPrefix.
 func (m *Mux) Docs() http.Handler {
-	return &muxDocs{
-		mux: m,
-		cfg: m.cfg,
-		ui:  m.cfg.UIDoc,
-	}
-}
-
-// muxDocs is the handler returned by Mux.Docs.
-type muxDocs struct {
-	mux *Mux
-	cfg *Config
-	ui  string
-}
-
-func (d *muxDocs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Strip the prefix.
-	path := strings.TrimPrefix(r.URL.Path, d.cfg.DocsPrefix)
-	switch {
-	case path == "" || path == "/":
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		html := d.ui
-		html = strings.ReplaceAll(html, "{{.Title}}", d.cfg.Info.Title)
-		html = strings.ReplaceAll(html, "{{.SpecURL}}", d.cfg.DocsPrefix+"/openapi.json")
-		w.Write([]byte(html))
-	case path == "/openapi.json":
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		b, err := d.mux.JSON()
+	core, err := newDocsCore(m.cfg, func() ([]byte, []byte, error) {
+		jb, err := m.JSON()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return nil, nil, err
 		}
-		w.Write(b)
-	case path == "/openapi.yaml":
-		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
-		b, err := d.mux.YAML()
+		yb, err := m.YAML()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return nil, nil, err
 		}
-		w.Write(b)
-	default:
-		http.NotFound(w, r)
+		return jb, yb, nil
+	})
+	if err != nil {
+		// A malformed UI constant is a programming error; surface
+		// it as a 500 on every request.
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		})
 	}
+	return core
 }
 
 // (buildSpec has been inlined into cachedJSON for clarity and to keep

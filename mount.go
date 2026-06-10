@@ -15,7 +15,6 @@ package stdocs
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/FumingPower3925/stdocs/internal/spec/yaml"
 )
@@ -46,46 +45,25 @@ import (
 //	mux.HandleFunc("GET /users", listUsers)
 func DocsHandler(opts ...Option) http.Handler {
 	cfg := applyOptions(opts)
-	return &docsHandler{
-		cfg: cfg,
-		ui:  cfg.UIDoc,
-	}
-}
-
-// docsHandler is the handler returned by DocsHandler. It serves the
-// docs UI page and a placeholder spec at the configured prefix.
-type docsHandler struct {
-	cfg *Config
-	ui  string
-}
-
-func (h *docsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, h.cfg.DocsPrefix)
-	switch {
-	case path == "" || path == "/":
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		html := h.ui
-		html = strings.ReplaceAll(html, "{{.Title}}", h.cfg.Info.Title)
-		html = strings.ReplaceAll(html, "{{.SpecURL}}", h.cfg.DocsPrefix+"/openapi.json")
-		w.Write([]byte(html))
-	case path == "/openapi.json":
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		// Placeholder: DocsHandler does not produce a spec. Users
-		// who want a populated spec should use *stdocs.Mux.
-		w.Write([]byte("{}"))
-	case path == "/openapi.yaml":
-		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
-		// We round-trip the JSON placeholder through the YAML
-		// converter so the response is syntactically valid YAML
-		// (rather than emitting "{}" as raw YAML, which is missing
-		// a top-level document marker and confuses some tools).
-		y, err := yaml.FromJSON([]byte("{}"))
-		if err != nil {
+	// Pre-compute the placeholder YAML once. The JSON is "{}"
+	// trivially; we keep the bytes for symmetry with the
+	// dynamic path.
+	yml, err := yaml.FromJSON([]byte("{}"))
+	if err != nil {
+		// yaml.FromJSON can only fail on structurally invalid
+		// input. "{}" is valid; we treat the error as a 500.
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Write(y)
-	default:
-		http.NotFound(w, r)
+		})
 	}
+	jsonBytes := []byte("{}")
+	core, err := newDocsCore(cfg, func() ([]byte, []byte, error) {
+		return jsonBytes, yml, nil
+	})
+	if err != nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		})
+	}
+	return core
 }
