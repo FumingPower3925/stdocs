@@ -72,6 +72,19 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 		}
 	}
 
+	// Mux-level default responses: documented on every operation that
+	// does not declare the status itself (a per-route declaration
+	// wins). Runs after the auto-200 so a route with no responses
+	// still documents its success case. Re-running is a no-op (the
+	// key exists), keeping rebuilds stable.
+	for _, dr := range cfg.DefaultResponses {
+		key := statusKey(dr.Status)
+		if _, ok := rt.op.Responses[key]; ok {
+			continue
+		}
+		ensureResponse(rt.op, key).BodyValue = dr.Body
+	}
+
 	// Method from pattern.
 	if rt.op.Method == "" {
 		rt.op.Method = rt.parsed.Method
