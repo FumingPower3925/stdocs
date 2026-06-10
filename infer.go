@@ -159,3 +159,22 @@ func tagFromPath(path string) string {
 	// Capitalize the first letter for tag-name presentation.
 	return strings.ToUpper(path[:1]) + path[1:]
 }
+
+// firstSegment returns the first non-empty path segment in
+// lowercase, suitable for substitution into a summary template
+// (e.g. "{resource}" -> "articles"). Returns "" for "/" or for
+// paths that begin with a wildcard.
+func firstSegment(path string) string {
+	if i := strings.IndexAny(path, " \t"); i >= 0 {
+		path = path[i+1:]
+	}
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		return ""
+	}
+	if i := strings.Index(path, "/"); i >= 0 {
+		path = path[:i]
+	}
+	path = strings.Trim(path, "{}")
+	return strings.ToLower(path)
+}
