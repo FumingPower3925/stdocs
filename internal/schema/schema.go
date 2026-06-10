@@ -50,6 +50,29 @@ type Schema struct {
 	Default any
 	// Example is an example value, if any.
 	Example any
+	// Minimum and Maximum bound numeric values (inclusive). They are
+	// kept as json.Number so the document shows the literal the user
+	// wrote ("10" stays an integer, "0.5" a decimal). Empty means
+	// unset.
+	Minimum json.Number
+	Maximum json.Number
+	// ExclusiveMinimum and ExclusiveMaximum bound numeric values
+	// exclusively. The emitters render them per version: a numeric
+	// keyword in 3.1/3.2, the 3.0 boolean form (minimum +
+	// exclusiveMinimum: true) in 3.0. Mutually exclusive with
+	// Minimum/Maximum on the same bound. Empty means unset.
+	ExclusiveMinimum json.Number
+	ExclusiveMaximum json.Number
+	// MinLength and MaxLength bound string lengths. Nil means unset.
+	MinLength *uint64
+	MaxLength *uint64
+	// Pattern is an ECMA-262 regular expression strings must match.
+	Pattern string
+	// MinItems and MaxItems bound array lengths. Nil means unset.
+	MinItems *uint64
+	MaxItems *uint64
+	// UniqueItems requires array elements to be unique.
+	UniqueItems bool
 	// Nullable is true when the value may be null (Go: a pointer or interface).
 	// In OpenAPI 3.0 this is emitted as `"nullable": true`. In 3.1/3.2 it is
 	// expressed by adding "null" to the type array.
@@ -464,44 +487,168 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	}, true
 }
 
-// applyFieldTags transfers doc/description/example struct tags onto
-// the field's schema. Mutates fieldSchema. fieldName is used only in
-// panic messages.
+// constraintTags is the vocabulary of schema-constraint struct tags,
+// used to detect (and reject) constraints on fields where they cannot
+// apply.
+var constraintTags = []string{
+	"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+	"minLength", "maxLength", "pattern",
+	"minItems", "maxItems", "uniqueItems",
+	"enum", "default", "format",
+}
+
+// applyFieldTags transfers the documentation and constraint struct
+// tags onto the field's schema. Mutates fieldSchema. fieldName is
+// used only in panic messages.
+//
+// Constraints are validated against the field's schema type and
+// invalid combinations or unparseable values panic at document-build
+// time, consistent with the module's fail-fast policy: a constraint
+// that silently failed to apply would publish a wrong contract.
 func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string) {
 	if doc := tag.Get("doc"); doc != "" {
 		fieldSchema.Description = doc
 	} else if desc := tag.Get("description"); desc != "" {
 		fieldSchema.Description = desc
 	}
+
+	if fieldSchema.Ref != "" {
+		for _, name := range constraintTags {
+			if _, ok := tag.Lookup(name); ok {
+				panic("stdocs: constraint tag " + name + " on field " + fieldName +
+					" is not supported on struct-typed fields; constrain the struct's own fields instead")
+			}
+		}
+		return
+	}
+
 	if ex := tag.Get("example"); ex != "" && fieldSchema.Example == nil {
-		fieldSchema.Example = parseExample(ex, fieldSchema.Type, fieldName)
+		fieldSchema.Example = parseScalar(ex, fieldSchema.Type, "example", fieldName)
+	}
+	if def := tag.Get("default"); def != "" {
+		fieldSchema.Default = parseScalar(def, fieldSchema.Type, "default", fieldName)
+	}
+	if format := tag.Get("format"); format != "" {
+		fieldSchema.Format = format
+	}
+	if enum := tag.Get("enum"); enum != "" {
+		switch fieldSchema.Type {
+		case "string", "integer", "number", "boolean":
+		default:
+			panic("stdocs: enum tag on field " + fieldName + " requires a scalar field, not " + describeType(fieldSchema.Type))
+		}
+		parts := strings.Split(enum, ",")
+		values := make([]any, len(parts))
+		for i, p := range parts {
+			values[i] = parseScalar(p, fieldSchema.Type, "enum", fieldName)
+		}
+		fieldSchema.Enum = values
+	}
+
+	fieldSchema.Minimum = numericConstraint(tag, "minimum", fieldSchema.Type, fieldName)
+	fieldSchema.Maximum = numericConstraint(tag, "maximum", fieldSchema.Type, fieldName)
+	fieldSchema.ExclusiveMinimum = numericConstraint(tag, "exclusiveMinimum", fieldSchema.Type, fieldName)
+	fieldSchema.ExclusiveMaximum = numericConstraint(tag, "exclusiveMaximum", fieldSchema.Type, fieldName)
+	if fieldSchema.Minimum != "" && fieldSchema.ExclusiveMinimum != "" {
+		panic("stdocs: field " + fieldName + " sets both minimum and exclusiveMinimum; use one")
+	}
+	if fieldSchema.Maximum != "" && fieldSchema.ExclusiveMaximum != "" {
+		panic("stdocs: field " + fieldName + " sets both maximum and exclusiveMaximum; use one")
+	}
+
+	fieldSchema.MinLength = lengthConstraint(tag, "minLength", "string", fieldSchema.Type, fieldName)
+	fieldSchema.MaxLength = lengthConstraint(tag, "maxLength", "string", fieldSchema.Type, fieldName)
+	if pattern := tag.Get("pattern"); pattern != "" {
+		if fieldSchema.Type != "string" {
+			panic("stdocs: pattern tag on field " + fieldName + " requires a string field, not " + describeType(fieldSchema.Type))
+		}
+		fieldSchema.Pattern = pattern
+	}
+
+	fieldSchema.MinItems = lengthConstraint(tag, "minItems", "array", fieldSchema.Type, fieldName)
+	fieldSchema.MaxItems = lengthConstraint(tag, "maxItems", "array", fieldSchema.Type, fieldName)
+	if unique := tag.Get("uniqueItems"); unique != "" {
+		if fieldSchema.Type != "array" {
+			panic("stdocs: uniqueItems tag on field " + fieldName + " requires a slice or array field, not " + describeType(fieldSchema.Type))
+		}
+		b, err := strconv.ParseBool(unique)
+		if err != nil {
+			panic("stdocs: uniqueItems tag " + strconv.Quote(unique) + " on field " + fieldName + " is not a valid boolean")
+		}
+		fieldSchema.UniqueItems = b
 	}
 }
 
-// parseExample converts an example struct-tag value to the field's
-// schema type so the emitted example matches its own schema (an
-// example:"42" on an integer field must emit the number 42, not the
-// string "42"). Unparseable values panic — loudly, at document-build
-// time — consistent with the module's fail-fast policy for invalid
-// registration input. Non-scalar schema types keep the raw string.
-func parseExample(value, schemaType, fieldName string) any {
+// numericConstraint reads a numeric bound tag, validating that the
+// field is numeric and the value parses as a number.
+func numericConstraint(tag reflect.StructTag, name, schemaType, fieldName string) json.Number {
+	v := tag.Get(name)
+	if v == "" {
+		return ""
+	}
+	if schemaType != "integer" && schemaType != "number" {
+		panic("stdocs: " + name + " tag on field " + fieldName + " requires a numeric field, not " + describeType(schemaType))
+	}
+	if _, err := strconv.ParseFloat(v, 64); err != nil {
+		panic("stdocs: " + name + " tag " + strconv.Quote(v) + " on field " + fieldName + " is not a valid number")
+	}
+	return json.Number(v)
+}
+
+// lengthConstraint reads a non-negative length bound tag (minLength,
+// maxItems, ...), validating the field's schema type and the value.
+func lengthConstraint(tag reflect.StructTag, name, wantType, schemaType, fieldName string) *uint64 {
+	v := tag.Get(name)
+	if v == "" {
+		return nil
+	}
+	if schemaType != wantType {
+		article := "a "
+		if wantType == "array" {
+			article = "a slice or "
+		}
+		panic("stdocs: " + name + " tag on field " + fieldName + " requires " + article + wantType + " field, not " + describeType(schemaType))
+	}
+	n, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		panic("stdocs: " + name + " tag " + strconv.Quote(v) + " on field " + fieldName + " is not a valid non-negative integer")
+	}
+	return &n
+}
+
+// describeType renders a schema type for panic messages.
+func describeType(schemaType string) string {
+	if schemaType == "" {
+		return "an untyped schema"
+	}
+	return schemaType
+}
+
+// parseScalar converts a struct-tag value (example, default, or an
+// enum member) to the field's schema type so the emitted value
+// matches its own schema (an example:"42" on an integer field must
+// emit the number 42, not the string "42"). Unparseable values panic
+// — loudly, at document-build time — consistent with the module's
+// fail-fast policy for invalid registration input. Non-scalar schema
+// types keep the raw string. tagName is used only in panic messages.
+func parseScalar(value, schemaType, tagName, fieldName string) any {
 	switch schemaType {
 	case "integer":
 		n, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			panic("stdocs: example tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid integer")
+			panic("stdocs: " + tagName + " tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid integer")
 		}
 		return n
 	case "number":
 		f, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			panic("stdocs: example tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid number")
+			panic("stdocs: " + tagName + " tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid number")
 		}
 		return f
 	case "boolean":
 		b, err := strconv.ParseBool(value)
 		if err != nil {
-			panic("stdocs: example tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid boolean")
+			panic("stdocs: " + tagName + " tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid boolean")
 		}
 		return b
 	}

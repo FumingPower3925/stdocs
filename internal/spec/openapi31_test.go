@@ -288,3 +288,19 @@ func TestEmitOpenAPI31_CrossVersionDifferences(t *testing.T) {
 		t.Errorf("3.1.2 field type should be a JSON array")
 	}
 }
+
+// Exclusive bounds are numeric keywords in 3.1 (JSON Schema 2020-12).
+func TestBuildSchema31_ExclusiveBoundsNumericForm(t *testing.T) {
+	s := &schema.Schema{Type: "number", ExclusiveMinimum: "0", ExclusiveMaximum: "1.5"}
+	m := buildSchema31(s)
+	if m["exclusiveMinimum"] != json.Number("0") || m["exclusiveMaximum"] != json.Number("1.5") {
+		t.Errorf("exclusive bounds = %#v/%#v, want numeric 0/1.5", m["exclusiveMinimum"], m["exclusiveMaximum"])
+	}
+	if _, ok := m["minimum"]; ok {
+		t.Errorf("minimum must not appear when only exclusiveMinimum is set")
+	}
+	mm := buildSchema31(&schema.Schema{Type: "integer", Minimum: "1", Maximum: "5"})
+	if mm["minimum"] != json.Number("1") || mm["maximum"] != json.Number("5") {
+		t.Errorf("inclusive bounds = %#v/%#v", mm["minimum"], mm["maximum"])
+	}
+}
