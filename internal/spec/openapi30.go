@@ -35,27 +35,33 @@ func BuildRoot30(in SpecInput) map[string]any {
 // This is required so that two routes — one with *T and one with T —
 // both reference the same component without one contaminating the
 // other.
+// refSchema30 renders a $ref use site, wrapping in allOf when the use
+// site carries extra facets (3.0 ignores siblings next to $ref).
+func refSchema30(s *schema.Schema) map[string]any {
+	if !s.Nullable && s.Description == "" && s.Example == nil {
+		return map[string]any{"$ref": s.Ref}
+	}
+	m := map[string]any{
+		"allOf": []any{map[string]any{"$ref": s.Ref}},
+	}
+	if s.Nullable {
+		m["nullable"] = true
+	}
+	if s.Description != "" {
+		m["description"] = s.Description
+	}
+	if s.Example != nil {
+		m["example"] = s.Example
+	}
+	return m
+}
+
 func buildSchema30(s *schema.Schema) map[string]any {
 	if s == nil {
 		return nil
 	}
 	if s.Ref != "" {
-		if !s.Nullable && s.Description == "" && s.Example == nil {
-			return map[string]any{"$ref": s.Ref}
-		}
-		m := map[string]any{
-			"allOf": []any{map[string]any{"$ref": s.Ref}},
-		}
-		if s.Nullable {
-			m["nullable"] = true
-		}
-		if s.Description != "" {
-			m["description"] = s.Description
-		}
-		if s.Example != nil {
-			m["example"] = s.Example
-		}
-		return m
+		return refSchema30(s)
 	}
 	m := make(map[string]any)
 	if s.Type != "" {
@@ -98,6 +104,19 @@ func buildSchema30(s *schema.Schema) map[string]any {
 	}
 	if s.Example != nil {
 		m["example"] = s.Example
+	}
+	applyConstraintFacets(m, s)
+	// OpenAPI 3.0 uses the draft-4 boolean form: the bound goes in
+	// minimum/maximum and exclusiveMinimum/exclusiveMaximum is a
+	// boolean flag. The model guarantees a bound is either inclusive
+	// or exclusive, never both.
+	if s.ExclusiveMinimum != "" {
+		m["minimum"] = s.ExclusiveMinimum
+		m["exclusiveMinimum"] = true
+	}
+	if s.ExclusiveMaximum != "" {
+		m["maximum"] = s.ExclusiveMaximum
+		m["exclusiveMaximum"] = true
 	}
 	maps.Copy(m, s.Extensions)
 	if len(m) == 0 {

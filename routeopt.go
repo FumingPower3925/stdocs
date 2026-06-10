@@ -64,9 +64,13 @@ func OperationID(id string) RouteOpt {
 // WithBody sets the route's request body. body is a zero value of the
 // type to reflect; its type is used to build the JSON Schema when the
 // spec document is assembled. Struct fields may carry doc: (or
-// description:) and example: tags, which become the field's schema
-// description and example (examples are parsed according to the
-// field type). The default content type is application/json
+// description:) and example: tags, plus the constraint tag
+// vocabulary — minimum, maximum, exclusiveMinimum, exclusiveMaximum,
+// minLength, maxLength, pattern, minItems, maxItems, uniqueItems,
+// enum, default, and format. Values are parsed according to the
+// field type (enum:"1,2,3" on an int emits numbers) and validated
+// against it; a misapplied or unparseable constraint panics at
+// document-build time. The default content type is application/json
 // (override with WithBodyContentType).
 //
 // Mark the body as not required with Optional().
@@ -100,7 +104,8 @@ func Optional() RouteOpt {
 
 // WithResponse adds a response entry. body is a zero value whose type
 // is reflected into a JSON Schema when the spec document is assembled
-// (struct fields may carry doc:/description: and example: tags); pass
+// (struct fields may carry doc:/description:, example:, and the
+// constraint tags listed on [WithBody]); pass
 // nil if there is no body (e.g. 204 No Content). Pass status 0 to
 // declare the OpenAPI "default" response — the catch-all entry
 // consumers use for undeclared status codes, conventionally the
