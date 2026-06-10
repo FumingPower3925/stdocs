@@ -53,7 +53,7 @@ El mateix document generat, mostrat per cadascuna de les quatre UI incloses — 
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requereix Go 1.26.4 o posterior (la directiva `go` del mòdul). Els patrons de ruta que stdocs documenta (`"GET /users/{id}"`) són la sintaxi mètode+ruta que `net/http.ServeMux` va incorporar a Go 1.22.
+Requereix Go 1.25 o posterior. stdocs segueix la mateixa política de suport que el projecte Go — les dues releases més recents, actualment 1.25 i 1.26 — i la CI executa la suite completa de tests a cada patch release de totes dues. Els patrons de ruta que stdocs documenta (`"GET /users/{id}"`) són la sintaxi mètode+ruta que `net/http.ServeMux` va incorporar a Go 1.22.
 
 ## Ús
 

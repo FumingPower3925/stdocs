@@ -73,13 +73,15 @@ func buildSchema30(s *schema.Schema) map[string]any {
 	if s.Type == "object" {
 		if len(s.Properties) > 0 {
 			props := make(map[string]any, len(s.Properties))
-			for _, k := range slices.Sorted(maps.Keys(s.Properties)) {
+			for _, k := range sortedKeys(s.Properties) {
 				props[k] = buildSchema30(s.Properties[k])
 			}
 			m["properties"] = props
 		}
 		if len(s.Required) > 0 {
-			m["required"] = slices.Sorted(slices.Values(s.Required))
+			req := slices.Clone(s.Required)
+			slices.Sort(req)
+			m["required"] = req
 		}
 		if s.AdditionalProperties != nil {
 			m["additionalProperties"] = buildSchema30(s.AdditionalProperties)
