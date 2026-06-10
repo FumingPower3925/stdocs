@@ -28,6 +28,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 - [UIs](#uis)
 - [Using the spec downstream](#using-the-spec-downstream)
 - [How it works](#how-it-works)
+- [Scope and non-goals](#scope-and-non-goals)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -309,6 +310,17 @@ A runnable demo lives in [`cmd/demo`](./cmd/demo):
 go run ./cmd/demo
 # open http://localhost:8080/docs/
 ```
+
+## Scope and non-goals
+
+stdocs does one thing: it documents stdlib `net/http.ServeMux` applications and serves the result. Knowing the boundaries up front saves you an evaluation:
+
+- **stdlib only.** There are no gin/echo/chi/fiber integrations and there will be none — the wrapped `ServeMux` is the design, not a first adapter.
+- **Documentation, not enforcement.** stdocs does not validate requests, bind parameters, or check that handlers honor the documented contract. The document describes intent; keeping handlers honest is the application's job (the golden-file workflow above makes drift reviewable).
+- **No code generation, no comment annotations, no dependencies.** Permanently, by design.
+- **The built-in UI stays minimal.** The default page is a ~1.6 KB dependency-free route list without a try-it console — that smallness is its feature. All four rich UIs ship consoles and are one import away.
+
+When something else fits better: if the contract is your deliverable (cross-team spec reviews, multi-language clients, enforced conformance), a spec-first generator like oapi-codegen or ogen is the right tool; if you are greenfield and want validation enforced from types, a typed-handler framework like huma is. stdocs is for the code you already have.
 
 ## Contributing
 

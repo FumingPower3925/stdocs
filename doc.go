@@ -64,6 +64,15 @@
 // are named With* ([WithBody], [WithResponse], [WithParam],
 // [WithSecurity], ...).
 //
+// # Scope and non-goals
+//
+// stdocs documents stdlib ServeMux applications; it does not
+// integrate with third-party routers, does not validate requests or
+// enforce the documented contract at runtime, and uses no code
+// generation, comment annotations, or dependencies — permanently, by
+// design. The document describes intent; keeping handlers honest is
+// the application's job.
+//
 // # OpenAPI versions
 //
 // stdocs emits the latest patch of each supported minor: [OpenAPI30]
