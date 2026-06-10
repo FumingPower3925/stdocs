@@ -123,7 +123,7 @@ project has not been tagged before.
   per-document `Reflector`.
 - The three emitters share a single `emitter` struct; the per-version
   files are thin wrappers that pick the right schema builder.
-- Module floor raised to Go 1.26 (`go 1.26.0`); CI derives its
-  toolchain from `go.mod`.
+- Module floor pinned at Go 1.26.4 (`go 1.26.4` in both modules);
+  CI derives its toolchain from `go.mod`.
 
 [Unreleased]: https://github.com/FumingPower3925/stdocs/commits/main
