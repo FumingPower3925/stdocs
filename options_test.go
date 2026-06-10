@@ -43,19 +43,25 @@ func TestWithTitle(t *testing.T) {
 }
 
 func TestWithVersion_Valid(t *testing.T) {
-	for _, v := range []string{"3.0.3", "3.1.0"} {
+	for _, v := range []SpecVersion{"3.0.3", "3.1.0"} {
 		c := applyOptions([]Option{WithVersion(v)})
-		if string(c.Version) != v {
+		if c.Version != v {
 			t.Errorf("WithVersion(%q): Version = %q, want %q", v, c.Version, v)
 		}
 	}
 }
 
+// TestWithVersion_Invalid asserts that an unknown version string
+// panics. The previous behavior — silently coercing to 3.0.3 — was
+// a footgun: a user typo (e.g. "3.1") would produce a different spec
+// than the one they expected, with no error.
 func TestWithVersion_Invalid(t *testing.T) {
-	c := applyOptions([]Option{WithVersion("2.0")})
-	if c.Version != OpenAPI30 {
-		t.Errorf("invalid version should fall back to 3.0.3, got %q", c.Version)
-	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on unknown version, got none")
+		}
+	}()
+	_ = applyOptions([]Option{WithVersion(SpecVersion("2.0"))})
 }
 
 func TestWithDescription(t *testing.T) {
@@ -167,10 +173,10 @@ func TestDefaultOperationID(t *testing.T) {
 		want    string
 	}{
 		{"GET /users", "get_users"},
-		{"GET /users/{id}", "get_users_id"},
-		{"POST /v1/orders/{id}/items", "post_v1_orders_id_items"},
-		{"/files/{path...}", "any_files_path"},
-		{"DELETE /users/{id}", "delete_users_id"},
+		{"GET /users/{id}", "get_users_by_id"},
+		{"POST /v1/orders/{id}/items", "post_v1_orders_by_id_items"},
+		{"/files/{path...}", "any_files_by_path_rest"},
+		{"DELETE /users/{id}", "delete_users_by_id"},
 	}
 	for _, c := range cases {
 		p := MustParsePattern(c.pattern)
@@ -251,8 +257,42 @@ func TestRegistry_Finalize_DefaultOperationID(t *testing.T) {
 	p := MustParsePattern("GET /users/{id}")
 	r.add("GET /users/{id}", "getUser", p, OpenAPI30, nil)
 	r.finalize(newConfig())
-	if r.routes[0].op.OperationID != "get_users_id" {
+	if r.routes[0].op.OperationID != "get_users_by_id" {
 		t.Errorf("OperationID = %q", r.routes[0].op.OperationID)
+	}
+}
+
+func TestRegistry_Finalize_OperationIDCollision(t *testing.T) {
+	r := &registry{}
+	r.add("GET /users/{id}", "getUser", MustParsePattern("GET /users/{id}"), OpenAPI30, nil)
+	r.add("GET /users/{name}", "getUser", MustParsePattern("GET /users/{name}"), OpenAPI30, nil)
+	r.add("GET /posts/{id}", "getPost", MustParsePattern("GET /posts/{id}"), OpenAPI30, nil)
+	r.finalize(newConfig())
+	got := []string{
+		r.routes[0].op.OperationID,
+		r.routes[1].op.OperationID,
+		r.routes[2].op.OperationID,
+	}
+	want := []string{"get_users_by_id", "get_users_by_name", "get_posts_by_id"}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("routes[%d].operationId = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestRegistry_Finalize_OperationIDUserOverride(t *testing.T) {
+	r := &registry{}
+	r.add("GET /a", "getA", MustParsePattern("GET /a"), OpenAPI30, nil)
+	r.add("GET /b", "getB", MustParsePattern("GET /b"), OpenAPI30, nil)
+	r.routes[0].op.OperationID = "do"
+	r.routes[1].op.OperationID = "do"
+	r.finalize(newConfig())
+	if r.routes[0].op.OperationID != "do" {
+		t.Errorf("first user-override changed: %q", r.routes[0].op.OperationID)
+	}
+	if r.routes[1].op.OperationID != "do_2" {
+		t.Errorf("second collision not suffixed: %q", r.routes[1].op.OperationID)
 	}
 }
 

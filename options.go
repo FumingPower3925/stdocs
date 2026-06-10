@@ -59,15 +59,23 @@ func WithTitle(title string) Option {
 	return func(c *Config) { c.Info.Title = title }
 }
 
-// WithVersion sets the OpenAPI version. Accepts "3.0.3" or "3.1.0".
-// Unknown values fall back to 3.0.3.
-func WithVersion(v string) Option {
+// WithVersion sets the OpenAPI spec version. Accepts OpenAPI30
+// (3.0.3) or OpenAPI31 (3.1.0). A string literal like "3.0.3" is also
+// accepted because SpecVersion is a defined string type with the
+// same underlying values.
+//
+// WithVersion panics on an unknown version string. Options run at
+// New()/Mount() time, the same fail-fast window where bad patterns
+// already panic; silently coercing to a default would mask user
+// errors.
+func WithVersion(v SpecVersion) Option {
 	return func(c *Config) {
-		switch SpecVersion(v) {
+		switch v {
 		case OpenAPI30, OpenAPI31:
-			c.Version = SpecVersion(v)
+			c.Version = v
 		default:
-			c.Version = OpenAPI30
+			panic("stdocs: WithVersion: unknown OpenAPI version " + string(v) +
+				" (expected " + string(OpenAPI30) + " or " + string(OpenAPI31) + ")")
 		}
 	}
 }

@@ -64,6 +64,22 @@ func (r *registry) finalize(cfg *Config) {
 		if rt.op.Method == "" {
 			rt.op.Method = rt.parsed.Method
 		}
+		// Custom HTTP methods (PURGE, etc.) are valid in stdlib
+		// ServeMux but are not legal as keys of an OpenAPI Path Item
+		// Object. We accept the registration (the user is going to
+		// need the route to actually work) but record a warning
+		// in the spec via an x-stdocs-warning extension on the
+		// operation, and the operation key the emitter produces
+		// is still the lowercased method. Strict validators
+		// (Spectral, openapi-spec-validator) will flag this; the
+		// extension makes the cause visible.
+		if rt.parsed.Method != "" && !pattern.IsOpenAPIMethod(rt.parsed.Method) {
+			if rt.op.Extensions == nil {
+				rt.op.Extensions = map[string]any{}
+			}
+			rt.op.Extensions["x-stdocs-warning"] = "method " + rt.parsed.Method +
+				" is not a legal OpenAPI Path Item key; the spec may fail strict validation"
+		}
 
 		// Path-level parameters (shared across methods of the same path)
 		// come from wildcards in the pattern. We add them only at the
@@ -77,6 +93,13 @@ func (r *registry) finalize(cfg *Config) {
 			existingNames[p.Name] = true
 		}
 		for _, name := range rt.parsed.WildcardNames() {
+			if name == "" {
+				// Defensive: anonymous wildcards (e.g. the implicit
+				// multi from "/") should not be emitted as parameters.
+				// WildcardNames already filters these, but be
+				// defensive at the use site too.
+				continue
+			}
 			if existingNames[name] {
 				continue
 			}
@@ -112,11 +135,46 @@ func (r *registry) finalize(cfg *Config) {
 			rt.op.OperationID = defaultOperationID(rt.parsed)
 		}
 	}
+
+	// Operation-IDs must be document-wide unique. Disambiguate
+	// collisions with a numeric suffix. The first occurrence keeps
+	// its name; subsequent collisions become "id", "id_2", "id_3"...
+	seen := make(map[string]int)
+	for _, rt := range r.routes {
+		id := rt.op.OperationID
+		if n, exists := seen[id]; exists {
+			rt.op.OperationID = id + "_" + itoa(n+1)
+			seen[id] = n + 1
+		} else {
+			seen[id] = 1
+		}
+	}
 }
 
-// defaultOperationID builds an operationId like "get_users_id" from a
-// parsed pattern. The method lower-cased, then the path segments joined
-// by underscores, with wildcards keeping their names.
+// itoa is a small allocation-free int-to-string converter used by
+// the operation-Id disambiguator. It avoids pulling in strconv for
+// the same reason schema/Schema doesn't.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
+}
+
+// defaultOperationID builds an operationId like "get_users_by_id"
+// from a parsed pattern. The method is lower-cased; path segments are
+// joined by underscores; wildcards are prefixed with "by_" to
+// distinguish them from same-named literals (e.g. "GET /users/{id}"
+// and "GET /users/id" produce different ids: "get_users_by_id" and
+// "get_users_id"). When the wildcard is the trailing multi, we
+// append "rest" to mark the rest-of-path semantics.
 func defaultOperationID(p *pattern.Pattern) string {
 	method := strings.ToLower(p.Method)
 	if method == "" {
@@ -128,8 +186,15 @@ func defaultOperationID(p *pattern.Pattern) string {
 		switch s.Kind {
 		case pattern.KindLiteral:
 			v = s.Value
-		case pattern.KindWildcard, pattern.KindMulti:
-			v = s.Value
+		case pattern.KindWildcard:
+			v = "by_" + s.Value
+		case pattern.KindMulti:
+			if s.Value == "" {
+				// Anonymous trailing multi from "/posts/".
+				v = "rest"
+			} else {
+				v = "by_" + s.Value + "_rest"
+			}
 		case pattern.KindTrailing:
 			v = "root"
 		}
@@ -184,6 +249,10 @@ func (r *registry) toPathItems() []PathItem {
 			}
 		}
 		for n := range wildNames {
+			if n == "" {
+				// Defensive: skip anonymous wildcards at path level too.
+				continue
+			}
 			pi.Parameters = append(pi.Parameters, Param{
 				Name:     n,
 				In:       "path",

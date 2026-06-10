@@ -117,11 +117,14 @@ func WithSecurity(name string, scopes ...string) RouteOpt {
 	}
 }
 
-// WithNoSecurity clears any security on this operation. Useful for
-// routes that should bypass a globally-applied scheme.
+// WithNoSecurity opts the operation out of any security requirement.
+// This emits an empty `security: []` array at the operation level,
+// which the OpenAPI spec defines as overriding a globally-applied
+// scheme. Without this (i.e. leaving Security empty), the operation
+// inherits the global security requirement.
 func WithNoSecurity() RouteOpt {
 	return func(r *route) {
-		r.op.Security = []SecurityRequirement{}
+		r.op.NoSecurity = true
 	}
 }
 

@@ -89,3 +89,21 @@ func TestScalar_DefaultUIDocIsRaw(t *testing.T) {
 		t.Errorf("default UI should not contain Scalar CDN reference")
 	}
 }
+
+// TestScalar_UsesDataURL guards the regression where Scalar received
+// the spec URL as <script> element content (which it interpreted as
+// the spec document, not a URL) instead of in the data-url attribute
+// (which it interprets as "fetch the spec from this URL"). The bug
+// produced a blank page with "Invalid YAML object" in the console.
+func TestScalar_UsesDataURL(t *testing.T) {
+	cfg := &stdocs.Config{}
+	scalar.WithUI()(cfg)
+	// data-url must be present.
+	if !strings.Contains(cfg.UIDoc, `data-url="{{.SpecURL}}"`) {
+		t.Errorf("Scalar HTML must use data-url attribute; got: %s", cfg.UIDoc)
+	}
+	// The wrong form (URL as <script> content) must NOT be present.
+	if strings.Contains(cfg.UIDoc, `type="application/json"`) {
+		t.Errorf("Scalar HTML must not embed the URL as <script> element content; got: %s", cfg.UIDoc)
+	}
+}

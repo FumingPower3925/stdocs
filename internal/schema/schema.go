@@ -13,20 +13,15 @@ import (
 // Schema is a version-agnostic JSON Schema (Draft 2020-12 / OpenAPI 3.1 flavour)
 // value. The OpenAPI 3.0.3 emitter in openapi30.go and the 3.1.0 emitter in
 // openapi31.go serialize the same Schema value into their respective JSON
-// representations.
-//
-// Fields that only make sense in 3.1 (TypeArray) or only in 3.0 (Nullable) are
-// populated based on the target version when the schema is built; see
-// ReflectSchema's version parameter.
+// representations. The model is version-agnostic: Nullable is
+// rendered differently in 3.0.3 ("nullable": true) and 3.1.0
+// (a "type" array including "null") at serialization time, without
+// mutating the model.
 type Schema struct {
 	// Type is the JSON Schema type: "object", "array", "string", "number",
 	// "integer", "boolean", or "null". Empty means "no type constraint"
 	// (matches anything). For interfaces, Type is left empty.
 	Type string
-	// TypeArray is the JSON Schema 2020-12 / OpenAPI 3.1 form of a union
-	// type, e.g. ["string", "null"]. The 3.0.3 emitter does not emit this
-	// field; the 3.1.0 emitter does.
-	TypeArray []string
 	// Format is the JSON Schema format hint: "int32", "int64", "float",
 	// "double", "date-time", "date", "time", "byte", "binary", "email", etc.
 	Format string
@@ -70,6 +65,103 @@ type reflector struct {
 	seen    map[reflect.Type]string // type -> component schema name
 	counter int
 	out     map[string]*Schema // accumulated components
+}
+
+// reserveName returns a unique component name based on claimed. If
+// claimed is already in use, a numeric suffix is appended (e.g.
+// "User" -> "User", then "User" again -> "User_2", "User_3"...).
+// The reserved name is recorded in r.out's keys for collision detection.
+func (r *reflector) reserveName(claimed string) string {
+	name := claimed
+	for i := 2; ; i++ {
+		if _, exists := r.out[name]; !exists {
+			return name
+		}
+		name = claimed + "_" + itoa(i)
+	}
+}
+
+// itoa is a small, allocation-free int-to-string converter used only
+// for component-name suffixes.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	if neg {
+		i--
+		buf[i] = '-'
+	}
+	return string(buf[i:])
+}
+
+// sanitizeComponentName returns a name suitable for use as a JSON
+// pointer fragment (after "#/components/schemas/") and as a Go-style
+// identifier in the schema doc. It replaces illegal characters:
+//
+//   - '[' ']' are replaced with '_' (handles "Page[Foo]" -> "Page_Foo_")
+//   - '.' is replaced with '_' (handles "pkg.Type" -> "pkg_Type")
+//   - '/' is replaced with '_' (handles "pkg/with/slash.Type")
+//   - leading digits and other characters illegal in identifiers are
+//     replaced with '_'
+//
+// If the result is empty or starts with a digit, "Schema" is
+// prepended.
+func sanitizeComponentName(name string) string {
+	if name == "" {
+		return "Schema"
+	}
+	var b strings.Builder
+	b.Grow(len(name) + 8)
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	out := b.String()
+	if out[0] >= '0' && out[0] <= '9' {
+		out = "Schema_" + out
+	}
+	// Collapse runs of underscores to a single underscore; trim
+	// trailing underscores.
+	var b2 strings.Builder
+	b2.Grow(len(out))
+	prevUnderscore := false
+	for _, r := range out {
+		if r == '_' {
+			if !prevUnderscore && b2.Len() > 0 {
+				b2.WriteRune('_')
+			}
+			prevUnderscore = true
+			continue
+		}
+		prevUnderscore = false
+		b2.WriteRune(r)
+	}
+	s := b2.String()
+	for len(s) > 0 && s[len(s)-1] == '_' {
+		s = s[:len(s)-1]
+	}
+	if s == "" {
+		return "Schema"
+	}
+	return s
 }
 
 // ReflectSchema produces a JSON Schema for the given Go type. The version
@@ -217,13 +309,65 @@ func (r *reflector) reflectStruct(t reflect.Type, nullable bool) *Schema {
 	}
 	// Named struct: register and return a ref. The build happens here
 	// (not lazily) so that the component is always populated.
-	name := t.Name()
+	//
+	// Component name selection strategy:
+	//
+	//  1. For the common case — a single named type in the user's
+	//     package, no generic parameters, no collision — use t.Name()
+	//     (e.g. "User"). This keeps the generated spec readable and
+	//     matches what the user wrote.
+	//
+	//  2. If t.Name() is not a valid OpenAPI pointer-fragment
+	//     character set (which it is not for generic instantiations
+	//     like "Page[Foo]"), fall back to a sanitized version of
+	//     t.String() (e.g. "Page_Foo_").
+	//
+	//  3. If the resulting name is already in use (a name collision
+	//     between two same-named types from different packages),
+	//     append a numeric suffix.
+	name := componentNameFor(t, r)
 	r.seen[t] = name
-	s := r.buildStructSchema(t, name, nullable)
+	s := r.buildStructSchema(t, name, false)
 	r.out[name] = s
+	// The returned use-site schema is a bare $ref with Nullable set;
+	// the emitter is responsible for producing the correct wrapper
+	// (allOf/anyOf/nullable) at serialization time.
 	ref := &Schema{Ref: "#/components/schemas/" + name, Nullable: nullable}
 	applyVersion(ref, r.version)
 	return ref
+}
+
+// componentNameFor picks a unique component name for t. The selection
+// rules are documented on reflectStruct. It mutates r.out to record
+// the reservation indirectly (via r.reserveName).
+func componentNameFor(t reflect.Type, r *reflector) string {
+	candidate := t.Name()
+	if !isValidComponentName(candidate) {
+		// Generic instantiations (or anything with illegal chars)
+		// fall back to a sanitized form of the full type expression.
+		candidate = sanitizeComponentName(t.String())
+	}
+	return r.reserveName(candidate)
+}
+
+// isValidComponentName reports whether s is a valid OpenAPI 3.x
+// pointer fragment (after "#/components/schemas/"). The spec
+// restricts these to the character set [a-zA-Z0-9._-].
+func isValidComponentName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '.', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // buildStructSchema walks the fields of a struct and produces the
@@ -309,7 +453,25 @@ func (r *reflector) buildStructSchema(t reflect.Type, name string, nullable bool
 			required = append(required, name)
 		}
 	}
-	s.Required = required
+	// Dedupe required: embedded fields can include the same key
+	// as a same-named non-embedded field. The first occurrence
+	// wins; later duplicates are removed. We also strip any
+	// required entries that aren't present in Properties, which
+	// can happen if a "required" key is computed from a named
+	// component that we then drop during flattening.
+	seen := make(map[string]struct{}, len(required))
+	deduped := required[:0]
+	for _, k := range required {
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		if _, exists := s.Properties[k]; !exists {
+			continue
+		}
+		seen[k] = struct{}{}
+		deduped = append(deduped, k)
+	}
+	s.Required = deduped
 	applyVersion(s, r.version)
 	return s
 }
@@ -324,23 +486,20 @@ func (r *reflector) resolveRef(ref string) *Schema {
 	return r.out[ref[len(prefix):]]
 }
 
-// applyVersion adjusts schema fields that differ between 3.0.3 and 3.1.0.
-// Specifically, Nullable=true is rendered as type-array in 3.1.0.
+// applyVersion is intentionally a no-op. Earlier it mutated
+// s.Type and s.TypeArray to prepare for 3.1.0 serialization, but
+// that mutation caused nullable object/array/map schemas to lose
+// all structural information: buildSchema31 gated on s.Type ==
+// "object" / "array" which had been cleared. The 3.1.0 emitter now
+// reads both s.Type and s.Nullable directly, so no model mutation
+// is needed and the version-agnostic Schema stays clean.
+//
+// The function is kept as a no-op so the call sites in the
+// reflectors remain readable and so future version-specific
+// adjustments have a clear place to live.
 func applyVersion(s *Schema, v version.SpecVersion) {
-	if s == nil {
-		return
-	}
-	if s.Nullable && v == version.OpenAPI31 {
-		base := s.Type
-		if base == "" {
-			// For schemas with no type (e.g. interfaces), there is no
-			// base to combine with "null". Leave the type empty and
-			// rely on the extension to convey the meaning.
-			return
-		}
-		s.TypeArray = []string{base, "null"}
-		s.Type = "" // 3.1 prefers TypeArray; Type is mutually exclusive
-	}
+	_ = s
+	_ = v
 }
 
 // parseJSONTag splits a struct tag's json value into the field name and

@@ -2,6 +2,7 @@ package stdocs
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -113,10 +114,15 @@ func TestWithSecurity_PerRoute(t *testing.T) {
 	)
 	b, _ := m.JSON()
 	doc := jx(t, b)
-	// /public has no security; the security key is absent.
+	// /public has an empty `security: []` array (opt-out).
 	pubOp := jget(t, doc, "paths", "/public", "get").(map[string]any)
-	if _, has := pubOp["security"]; has {
-		t.Errorf("/public should not have security, got %v", pubOp["security"])
+	secPub, has := pubOp["security"]
+	if !has {
+		t.Errorf("/public should have a security key (empty array), got nothing")
+	}
+	arrPub, ok := secPub.([]any)
+	if !ok || len(arrPub) != 0 {
+		t.Errorf("/public.security = %v, want empty array (opt-out)", secPub)
 	}
 	// /private has the bearer requirement.
 	privOp := jget(t, doc, "paths", "/private", "get").(map[string]any)
@@ -182,10 +188,20 @@ func TestWithGlobalSecurity_OverriddenByRoute(t *testing.T) {
 	b, _ := m.JSON()
 	doc := jx(t, b)
 	pubOp := jget(t, doc, "paths", "/public", "get").(map[string]any)
-	// WithNoSecurity should clear security on the operation even
-	// though a global security is set.
-	if _, has := pubOp["security"]; has {
-		t.Errorf("/public should have no security, got %v", pubOp["security"])
+	// WithNoSecurity emits an empty `security: []` array on the
+	// operation, overriding the globally-applied bearerAuth. The
+	// presence of the key (with an empty array) is what does the
+	// override; a missing key would inherit.
+	sec, has := pubOp["security"]
+	if !has {
+		t.Fatalf("/public should have a security key, got nothing")
+	}
+	arr, ok := sec.([]any)
+	if !ok {
+		t.Fatalf("/public.security = %T, want []any", sec)
+	}
+	if len(arr) != 0 {
+		t.Errorf("/public.security = %v, want empty array (opt-out)", arr)
 	}
 }
 
@@ -205,6 +221,37 @@ func TestWithSecurityScheme_Custom(t *testing.T) {
 	}
 	if scheme["in"] != "cookie" {
 		t.Errorf("in = %v", scheme["in"])
+	}
+}
+
+// TestWithSecurity_UnregisteredScheme guards the new validation:
+// a security requirement that references a scheme name not
+// registered in components.securitySchemes is an invalid spec
+// and JSON() should return an error.
+func TestWithSecurity_UnregisteredScheme(t *testing.T) {
+	m := New(WithTitle("T"))
+	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {},
+		WithSecurity("missingScheme"),
+	)
+	_, err := m.JSON()
+	if err == nil {
+		t.Fatal("expected error for unregistered security scheme, got nil")
+	}
+	if !strings.Contains(err.Error(), "missingScheme") {
+		t.Errorf("error = %q, expected it to mention the missing scheme name", err)
+	}
+}
+
+// TestWithSecurity_RegisteredScheme passes validation: the scheme
+// is in components.securitySchemes, so JSON() succeeds.
+func TestWithSecurity_RegisteredScheme(t *testing.T) {
+	m := New(WithTitle("T"), WithBearerAuth("bearerAuth", "JWT"))
+	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {},
+		WithSecurity("bearerAuth"),
+	)
+	_, err := m.JSON()
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 

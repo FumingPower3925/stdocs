@@ -97,14 +97,16 @@ func TestReflectSchema_Pointer(t *testing.T) {
 	if !s.Nullable {
 		t.Errorf("Nullable = false, want true")
 	}
-	// In 3.0.3, Nullable stays as a separate field; in 3.1.0, it becomes
-	// a type array.
+	// In 3.0.3, Nullable stays as a separate field; in 3.1.0, the
+	// emitter renders it as a "type" array at serialization time.
+	// The model preserves Type="string" + Nullable=true and lets
+	// buildSchema31 produce the type array.
 	s31, _ := schema31(t, v)
-	if len(s31.TypeArray) != 2 || s31.TypeArray[0] != "string" || s31.TypeArray[1] != "null" {
-		t.Errorf("TypeArray = %v, want [string null]", s31.TypeArray)
+	if s31.Type != "string" {
+		t.Errorf("Type = %q, want string (preserved in 3.1 for type-array rendering)", s31.Type)
 	}
-	if s31.Type != "" {
-		t.Errorf("Type = %q, want empty in 3.1", s31.Type)
+	if !s31.Nullable {
+		t.Errorf("Nullable = false, want true (preserved in 3.1)")
 	}
 }
 
@@ -343,6 +345,34 @@ func TestReflectSchema_EmbeddedStructFlattened(t *testing.T) {
 	}
 }
 
+func TestReflectSchema_EmbeddedStructFlattened_RequiredDedup(t *testing.T) {
+	type Base struct {
+		ID    string `json:"id"`
+		Owner string `json:"owner"`
+	}
+	type User struct {
+		Base
+		// Same name as in Base — non-embedded should win for the
+		// property, but the "required" list must contain "id" only once.
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	_, out := schema30(t, User{})
+	comp := out["User"]
+	if comp == nil {
+		t.Fatal("User component missing")
+	}
+	count := 0
+	for _, r := range comp.Required {
+		if r == "id" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("required contains id %d times, want 1; got %v", count, comp.Required)
+	}
+}
+
 func TestReflectSchema_RecursiveType(t *testing.T) {
 	type Node struct {
 		Value    string  `json:"value"`
@@ -426,18 +456,20 @@ func TestReflectSchema_GenericInstantiation(t *testing.T) {
 	if ints == nil {
 		t.Fatal("ints property missing")
 	}
-	// ints is a $ref to a Box[int] component. The component itself has
-	// a value field typed as integer.
-	if ints.Ref != "#/components/schemas/Box[int]" {
-		t.Errorf("ints.Ref = %q, want #/components/schemas/Box[int]", ints.Ref)
+	// ints is a $ref to a sanitized component name (the raw
+	// "Box[int]" is not a valid OpenAPI pointer fragment; brackets
+	// are replaced with underscores and trailing underscores are
+	// trimmed).
+	if ints.Ref != "#/components/schemas/schema_Box_int" {
+		t.Errorf("ints.Ref = %q, want #/components/schemas/schema_Box_int", ints.Ref)
 	}
-	boxInt := out["Box[int]"]
+	boxInt := out["schema_Box_int"]
 	if boxInt == nil {
-		t.Fatal("Box[int] component missing")
+		t.Fatal("schema_Box_int component missing")
 	}
 	v := boxInt.Properties["value"]
 	if v == nil || v.Type != "integer" {
-		t.Errorf("Box[int].value.Type = %v, want integer", v)
+		t.Errorf("schema_Box_int.value.Type = %v, want integer", v)
 	}
 }
 
@@ -451,12 +483,13 @@ func TestReflectSchema_31NullableAsTypeArray(t *testing.T) {
 	if name == nil {
 		t.Fatal("name missing")
 	}
-	// In 3.1.0, the Type field is cleared and TypeArray is populated.
-	if name.Type != "" {
-		t.Errorf("name.Type = %q, want empty in 3.1", name.Type)
+	// In 3.1.0, the model keeps Type="string" + Nullable=true; the
+	// emitter renders the type array at serialization time.
+	if name.Type != "string" {
+		t.Errorf("name.Type = %q, want string (preserved in 3.1 for type-array rendering)", name.Type)
 	}
-	if len(name.TypeArray) != 2 || name.TypeArray[0] != "string" || name.TypeArray[1] != "null" {
-		t.Errorf("name.TypeArray = %v, want [string null]", name.TypeArray)
+	if !name.Nullable {
+		t.Errorf("name.Nullable = false, want true (preserved in 3.1)")
 	}
 	_ = s
 }
@@ -504,6 +537,194 @@ func TestReflectSchema_PointerToStructIsRef(t *testing.T) {
 		// It's nullable, so it should still be a $ref but with
 		// the nullable flag set.
 		t.Errorf("i = %+v, want object or ref", i)
+	}
+}
+
+// TestReflectSchema_31NullableStructKeepsStructure guards the
+// regression where a nullable struct field in 3.1 mode produced a
+// bare `{"type":["object","null"]}` with no properties, because
+// the reflector mutated Type to "" and TypeArray, and the 3.1
+// emitter gated structural emission on s.Type == "object".
+//
+// For named structs, the model emits a $ref to a shared component
+// (not an inlined object). The use-site nullability is wrapped at
+// serialization time (allOf for 3.0, anyOf for 3.1) — see Phase 4's
+// follow-up work for showstopper 8. Here we just confirm the
+// *model* is consistent.
+func TestReflectSchema_31NullableStructKeepsStructure(t *testing.T) {
+	type Inner struct {
+		X int    `json:"x"`
+		Y string `json:"y"`
+	}
+	type Outer struct {
+		I *Inner `json:"i"`
+	}
+	s, out := schema31(t, Outer{})
+	if s.Ref == "" {
+		t.Fatalf("Outer should be a $ref, got %+v", s)
+	}
+	comp := out["Outer"]
+	if comp == nil {
+		t.Fatal("Outer component missing")
+	}
+	i := comp.Properties["i"]
+	if i == nil {
+		t.Fatal("i property missing")
+	}
+	// Pointer-to-named-struct: emit a $ref. The model must NOT
+	// bake nullability into the shared Inner component.
+	inner := out["Inner"]
+	if inner == nil {
+		t.Fatal("Inner component missing")
+	}
+	if inner.Nullable {
+		t.Errorf("Inner component should NOT be nullable; use-site handles nullability")
+	}
+	// The use site is a $ref. The emitter is responsible for
+	// wrapping it in anyOf/nullable at serialization time
+	// (handled in the emitter pass).
+	if i.Ref != "#/components/schemas/Inner" {
+		t.Errorf("i.Ref = %q, want #/components/schemas/Inner", i.Ref)
+	}
+	_ = i.Nullable // intentionally not asserted: the model
+	// preserves Nullable=true on the use-site ref, and the
+	// emitter serializes it as the wrapper form.
+}
+
+// TestReflectSchema_31NullableSliceKeepsItems guards the same bug
+// for slices: a `[]int` (or `*[]int`) field in 3.1 mode must keep
+// its `items` schema.
+func TestReflectSchema_31NullableSliceKeepsItems(t *testing.T) {
+	type Outer struct {
+		IDs *[]int `json:"ids"`
+	}
+	_, out := schema31(t, Outer{})
+	comp := out["Outer"]
+	if comp == nil {
+		t.Fatal("Outer component missing")
+	}
+	ids := comp.Properties["ids"]
+	if ids == nil {
+		t.Fatal("ids property missing")
+	}
+	if ids.Type != "array" {
+		t.Errorf("ids.Type = %q, want array (preserved in 3.1 for type-array rendering)", ids.Type)
+	}
+	if !ids.Nullable {
+		t.Errorf("ids.Nullable = false, want true")
+	}
+	if ids.Items == nil {
+		t.Fatal("ids.Items missing — the bug cleared Type and the emitter dropped the items branch")
+	}
+	if ids.Items.Type != "integer" {
+		t.Errorf("ids.Items.Type = %q, want integer", ids.Items.Type)
+	}
+}
+
+// TestReflectSchema_31NullableMapKeepsValue guards the same bug
+// for maps: a `*map[string]int` field in 3.1 mode must keep its
+// additionalProperties schema.
+func TestReflectSchema_31NullableMapKeepsValue(t *testing.T) {
+	type Outer struct {
+		Bag *map[string]int `json:"bag"`
+	}
+	_, out := schema31(t, Outer{})
+	comp := out["Outer"]
+	if comp == nil {
+		t.Fatal("Outer component missing")
+	}
+	bag := comp.Properties["bag"]
+	if bag == nil {
+		t.Fatal("bag property missing")
+	}
+	if bag.Type != "object" {
+		t.Errorf("bag.Type = %q, want object (preserved in 3.1)", bag.Type)
+	}
+	if !bag.Nullable {
+		t.Errorf("bag.Nullable = false, want true")
+	}
+	if bag.AdditionalProperties == nil {
+		t.Fatal("bag.AdditionalProperties missing — the bug cleared Type and the emitter dropped the additionalProperties branch")
+	}
+	if bag.AdditionalProperties.Type != "integer" {
+		t.Errorf("bag.AdditionalProperties.Type = %q, want integer", bag.AdditionalProperties.Type)
+	}
+}
+
+// TestReflectSchema_ComponentNameCollision guards showstopper 9:
+// when the *requested* name is already taken in r.out, the
+// reflector must pick a suffixed name rather than overwriting the
+// existing component.
+func TestReflectSchema_ComponentNameCollision(t *testing.T) {
+	// The reflector chooses a name by: try t.Name() (or the
+	// sanitized form for generic types), then walk "User",
+	// "User_2", "User_3"... until a free slot is found. We
+	// exercise that walk directly via the reservation helper.
+	r := &reflector{
+		seen: make(map[reflect.Type]string),
+		out:  make(map[string]*Schema),
+	}
+	if got := r.reserveName("User"); got != "User" {
+		t.Errorf("first reserveName(User) = %q, want User", got)
+	}
+	r.out["User"] = &Schema{Type: "object"}
+	if got := r.reserveName("User"); got != "User_2" {
+		t.Errorf("second reserveName(User) = %q, want User_2", got)
+	}
+	r.out["User_2"] = &Schema{Type: "object"}
+	if got := r.reserveName("User"); got != "User_3" {
+		t.Errorf("third reserveName(User) = %q, want User_3", got)
+	}
+}
+
+// TestIsValidComponentName guards the OpenAPI 3.x pointer-fragment
+// character-class rule: [a-zA-Z0-9._-]. Anything else (notably
+// "[" and "]" from generic instantiations) must trigger the
+// sanitization path.
+func TestIsValidComponentName(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want bool
+	}{
+		{"User", true},
+		{"Page_int_", true},
+		{"User_2", true},
+		{"pkg.Type", true},
+		{"a-b-c", true},
+		{"Box[int]", false},
+		{"Page[T]", false},
+		{"", false},
+		{"foo bar", false},
+		{"foo/bar", false},
+		{"foo:bar", false},
+	} {
+		if got := isValidComponentName(tc.in); got != tc.want {
+			t.Errorf("isValidComponentName(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestSanitizeComponentName verifies the character replacements.
+func TestSanitizeComponentName(t *testing.T) {
+	for _, tc := range []struct {
+		in, want string
+	}{
+		// Each illegal char becomes a single underscore; runs are
+		// collapsed and trailing underscores trimmed.
+		{"Page[Foo]", "Page_Foo"},
+		{"Page[pkg.User]", "Page_pkg_User"},
+		{"pkg/with/slash.Type", "pkg_with_slash_Type"},
+		{"", "Schema"},
+		{"  ", "Schema"},
+		{"[", "Schema"},
+		{"foo bar baz", "foo_bar_baz"},
+		{"  foo  ", "foo"},
+		{"123", "Schema_123"}, // leading digit is illegal as a JSON
+		// pointer-fragment start; "Schema_" prefix makes it valid.
+	} {
+		if got := sanitizeComponentName(tc.in); got != tc.want {
+			t.Errorf("sanitizeComponentName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
