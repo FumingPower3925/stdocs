@@ -77,6 +77,11 @@ type Config struct {
 	// every operation that does not itself declare the same status.
 	// Populated via WithDefaultResponse.
 	DefaultResponses []DefaultResponse
+	// DisableAutoUnauthorized turns off the automatic 401 response
+	// documented on operations that carry a security requirement.
+	// The zero value keeps the feature on; set via
+	// WithAutoUnauthorized(false).
+	DisableAutoUnauthorized bool
 }
 
 // DefaultResponse is a mux-level response declaration applied to
@@ -94,6 +99,20 @@ type DefaultResponse struct {
 // Option is a function that mutates a config. Options are applied by
 // New and DocsHandler at construction time.
 type Option func(*Config)
+
+// WithAutoUnauthorized controls the automatic 401 response: by
+// default, every operation that carries a security requirement —
+// per-route via WithSecurity, or inherited from WithGlobalSecurity
+// and not opted out with WithNoSecurity — documents a 401
+// ("Unauthorized") response, since an authenticated endpoint can
+// always reject the credentials. A per-route WithResponse(401, ...)
+// or a WithDefaultResponse(401, ...) body wins over the bare entry.
+// Pass false to suppress the automatic 401 mux-wide.
+func WithAutoUnauthorized(enabled bool) Option {
+	return func(c *Config) {
+		c.DisableAutoUnauthorized = !enabled
+	}
+}
 
 // WithDefaultResponse documents a response on every operation that
 // does not itself declare the same status — typically the API's
