@@ -25,6 +25,24 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+  roundtrip:
+    # The YAML round-trip test lives in its own go module under
+    # internal/spec/yaml/roundtrip_test/ so that gopkg.in/yaml.v3
+    # does not appear in the main module's dep graph. Run it
+    # separately to verify the hand-rolled YAML emitter parses
+    # with a real YAML parser.
+    name: YAML Roundtrip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: Run roundtrip tests
+        working-directory: internal/spec/yaml/roundtrip_test
+        run: go test -count=1 -timeout 30s ./...
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

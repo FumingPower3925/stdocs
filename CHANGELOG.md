@@ -59,8 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `BodyContentType(ct)` route opt.
 - `WithDefaultSummary` template now substitutes `{resource}`
   with the first path segment.
-- `gopkg.in/yaml.v3` as a test-only dependency, used to
-  verify the hand-rolled YAML emitter round-trips.
+- `gopkg.in/yaml.v3` test-only dependency, used to verify the
+  hand-rolled YAML emitter round-trips. Lives in its own
+  submodule (`internal/spec/yaml/roundtrip_test/`) so it does
+  not appear in the main module's `go.mod`.
 - Fuzz test for `pattern.ParsePattern` to ensure no input
   panics and well-formed invariants on success.
 - 3.0/3.1 parity test.
