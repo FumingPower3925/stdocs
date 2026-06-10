@@ -730,3 +730,45 @@ func TestAutoUnauthorized(t *testing.T) {
 		t.Errorf("WithAutoUnauthorized(false) must suppress the 401")
 	}
 }
+
+// WithPathPrefix prefixes documented paths without touching routing,
+// operation ids, or the docs-prefix exclusion.
+func TestPathPrefix(t *testing.T) {
+	mux := New(WithTitle("T"), WithPathPrefix("api/"))
+	mux.HandleFunc("GET /users/{id}", noop)
+	mux.HandleFunc("GET /", noop)
+	mux.Mount()
+	doc := buildDocMap(t, mux)
+	paths := doc["paths"].(map[string]any)
+	if _, ok := paths["/api/users/{id}"]; !ok {
+		t.Errorf("documented paths = %v, want /api/users/{id}", mapKeysOf(paths))
+	}
+	if _, ok := paths["/users/{id}"]; ok {
+		t.Errorf("unprefixed path must not appear")
+	}
+	if _, ok := paths["/api/"]; !ok {
+		t.Errorf("root route should document as /api/, got %v", mapKeysOf(paths))
+	}
+	op := paths["/api/users/{id}"].(map[string]any)["get"].(map[string]any)
+	if op["operationId"] != "get_users_by_id" {
+		t.Errorf("operationId = %v; ids must not absorb the prefix", op["operationId"])
+	}
+	for p := range paths {
+		if strings.Contains(p, "/docs") {
+			t.Errorf("docs routes must stay excluded, found %s", p)
+		}
+	}
+	// Routing is untouched: the route answers at its registered path.
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest("GET", "/users/7", nil))
+	if rr.Code != http.StatusOK {
+		t.Errorf("GET /users/7 = %d; routing must be unaffected", rr.Code)
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Errorf("WithPathPrefix(\"/\") should panic")
+		}
+	}()
+	New(WithTitle("T"), WithPathPrefix("/"))
+}

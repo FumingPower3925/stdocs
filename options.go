@@ -82,6 +82,9 @@ type Config struct {
 	// The zero value keeps the feature on; set via
 	// WithAutoUnauthorized(false).
 	DisableAutoUnauthorized bool
+	// PathPrefix is prepended to every documented path. Documentation
+	// only — routing is unaffected. Set via WithPathPrefix.
+	PathPrefix string
 }
 
 // DefaultResponse is a mux-level response declaration applied to
@@ -99,6 +102,36 @@ type DefaultResponse struct {
 // Option is a function that mutates a config. Options are applied by
 // New and DocsHandler at construction time.
 type Option func(*Config)
+
+// WithPathPrefix prepends prefix to every path in the generated
+// document. Use it when the mux is mounted under a prefix the
+// application never sees — http.StripPrefix("/api", mux) or a
+// reverse proxy that strips "/api" — so the documented paths match
+// the URLs clients actually call:
+//
+//	mux := stdocs.New(
+//	    stdocs.WithTitle("My API"),
+//	    stdocs.WithPathPrefix("/api"),
+//	)
+//	// GET /users is documented as /api/users.
+//
+// Documentation only: routing, the docs prefix, and FromDocs are
+// unaffected. The value is normalized like WithDocsPrefix (leading
+// slash added, trailing slash removed); an empty value means no
+// prefix and the root prefix "/" is rejected with a panic.
+func WithPathPrefix(prefix string) Option {
+	return func(c *Config) {
+		if prefix == "" {
+			c.PathPrefix = ""
+			return
+		}
+		normalized := "/" + strings.Trim(prefix, "/")
+		if normalized == "/" {
+			panic(`stdocs: WithPathPrefix("/") is not supported; use no prefix instead`)
+		}
+		c.PathPrefix = normalized
+	}
+}
 
 // WithAutoUnauthorized controls the automatic 401 response: by
 // default, every operation that carries a security requirement —
