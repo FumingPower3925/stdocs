@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `FromDocs(r, docsPrefix)` and `Mux.FromDocs(r)` report whether a
+  request appears to originate from the docs UI's try-it consoles
+  (best-effort, Referer-based), so teams can apply their own policy —
+  block writes, divert to scratch storage, tag for observability.
+  Documented with a guard-middleware example and an explicit
+  not-a-security-control caveat: the signal is client-controlled and
+  must only ever gate restrictions.
 
 ## [0.1.1] - 2026-06-10
 

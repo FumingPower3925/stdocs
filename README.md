@@ -40,6 +40,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 - **Smart defaults** — function names become summaries, the first path segment becomes the tag, path params are auto-included.
 - **Security** — bearer, basic, API key, OAuth 2.0 (including the 3.2 device flow). Unregistered scheme names are reported as errors.
 - **Environment toggling** — `mux.Mount(enabled)`/`mux.Docs(enabled)` and `WithDisabled(true)` turn the docs on or off per environment, and `Hidden()`/`Internal()` + `WithInternal(show)` control per-route visibility — all without changing registered routes.
+- **Try-it detection** — `FromDocs` identifies requests coming from the docs consoles so your middleware can decide what they may do.
 - **XSS-safe** — the docs HTML is rendered through `html/template`.
 - **Zero deps** — only the Go standard library at runtime.
 
@@ -169,6 +170,25 @@ mux.Mount()
 ```
 
 Excluded routes leave no trace in the document — no paths, no schemas, no operation ids. Visibility only shapes the published documentation: hidden and internal routes **still serve traffic in every environment**. It is not access control; protect sensitive endpoints with real authentication.
+
+### Detecting try-it requests
+
+The rich UIs' "Try it out" / "Test Request" consoles send **real requests** to your backend — on the wire they are indistinguishable from any other client. `FromDocs` identifies them (best-effort, via the `Referer` header the browser attaches to the docs page's fetches) so your team can decide the policy: block writes, route them to a scratch datastore, tag them for observability, or anything else.
+
+```go
+guard := func(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if r.Method != http.MethodGet && mux.FromDocs(r) {
+            http.Error(w, "try-it requests cannot modify data", http.StatusForbidden)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+log.Fatal(http.ListenAndServe(":8080", guard(mux)))
+```
+
+`FromDocs` is a guardrail against accidents, **not a security control**: the `Referer` header is client-controlled (it can be forged) and strippable (privacy extensions, a strict `Referrer-Policy`). It also only works when the docs page and the API share an origin — with an absolute `WithServer` URL on another host, browsers send an origin-only `Referer` by default and detection reports false. Use it only to *restrict* what docs-originated traffic may do — never to grant access or skip authentication.
 
 If you have a hand-written OpenAPI document instead of generated routes, serve it with `DocsHandler` + `WithSpec`:
 
