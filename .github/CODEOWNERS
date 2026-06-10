@@ -15,6 +15,5 @@
 # project-owner review strictly required for prose changes). The
 # project owner remains the fallback so a PR can still be merged
 # when the translator is unavailable.
-/docs/es/                 @FumingPower3925
-/docs/ca/                 @FumingPower3925
-/docs/                    @FumingPower3925
+/README.es.md            @FumingPower3925
+/README.ca.md            @FumingPower3925

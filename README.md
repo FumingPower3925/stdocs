@@ -1,6 +1,6 @@
 # stdocs
 
-**Languages:** [English](README.md) (canonical) · [Español](docs/es/README.md) · [Català](docs/ca/README.md)
+**Languages:** [English](README.md) (canonical) · [Español](README.es.md) · [Català](README.ca.md)
 
 [![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FumingPower3925/stdocs)](https://goreportcard.com/report/github.com/FumingPower3925/stdocs)
