@@ -31,7 +31,7 @@ That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from
 ## Features
 
 - **Zero deps** — only the Go standard library at runtime.
-- **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all tested. Older patches (3.0.3, 3.1.0) are not exposed as constants: per the OpenAPI spec, tooling should accept any 3.0.\* / 3.1.\*, so a single "latest patch" per minor is the right default.
+- **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all tested.
 - **Reflection** — Go types become JSON Schemas: pointers, slices, maps, generics, embedded structs, recursive types via `$ref`, `json` tags (including `omitempty`, `omitzero`, and `,string`), `json.Marshaler`/`encoding.TextMarshaler` awareness.
 - **Smart defaults** — function names become summaries, the first path segment becomes the tag, path params are auto-included.
 - **Security** — bearer, basic, API key, OAuth 2.0 (including the 3.2 device flow). Unregistered scheme names are reported as errors.
@@ -120,20 +120,14 @@ mux := stdocs.New(
 
 The full option list lives on [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs).
 
-### Disabling the docs UI
+### Mounting and disabling the docs
 
-The docs UI and the spec endpoints (`openapi.json`, `openapi.yaml`) can be turned off without unregistering routes. The decision is taken when `Docs()`/`Mount()` is called (wrap the handler yourself if you need a per-request switch):
+`mux.Mount()` is shorthand for registering the handler returned by `mux.Docs()` on the mux itself at the configured docs prefix — there is one docs handler, two ways to place it. Use `Mount()` unless you need the handler directly (to wrap it in auth middleware, mount it on another mux, or pass the per-call toggle).
 
-```go
-// 1) Per-call: pass the condition to mux.Docs at the call site.
-//    An explicit bool wins over WithDisabled in both directions.
-mux := stdocs.New(stdocs.WithTitle("My API"))
-mux.HandleFunc("GET /users", listUsers)
-mux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
-```
+The docs UI and the spec endpoints (`openapi.json`, `openapi.yaml`) can be turned off without unregistering routes. The decision is taken when `Mount()`/`Docs()` is called (wrap the handler yourself if you need a per-request switch):
 
 ```go
-// 2) Per-mux: WithDisabled(true) makes Mount a no-op and Docs return
+// 1) Per-mux: WithDisabled(true) makes Mount a no-op and Docs return
 //    a 404 handler everywhere.
 mux := stdocs.New(
     stdocs.WithTitle("My API"),
@@ -141,6 +135,15 @@ mux := stdocs.New(
 )
 mux.HandleFunc("GET /users", listUsers)
 mux.Mount() // registers nothing when disabled
+```
+
+```go
+// 2) Per-call, when mounting manually: pass the condition to
+//    mux.Docs. An explicit bool wins over WithDisabled in both
+//    directions.
+mux := stdocs.New(stdocs.WithTitle("My API"))
+mux.HandleFunc("GET /users", listUsers)
+mux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
 ```
 
 When disabled, every request under the docs prefix gets a 404. The spec is still buildable via `mux.JSON()` and `mux.YAML()` — disabling the UI does not stop spec generation. Routes registered under the docs prefix (the docs page itself, asset handlers) never appear in the generated spec.
