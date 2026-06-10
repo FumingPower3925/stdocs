@@ -184,8 +184,14 @@ func buildOperation31(op *Operation) map[string]any {
 			"200": map[string]any{"description": "OK"},
 		}
 	}
-	if len(op.Security) > 0 {
+	switch {
+	case op.NoSecurity:
+		m["security"] = []any{}
+	case len(op.Security) > 0:
 		m["security"] = buildSecurity(op.Security)
+	}
+	for k, v := range op.Extensions {
+		m[k] = v
 	}
 	return m
 }
@@ -285,20 +291,32 @@ func buildComponents31WithSecurity(components map[string]*schema.Schema, schemes
 }
 
 // buildSchema31 converts a *schema.Schema into the map[string]any form for 3.1.0.
-// The Nullable field is NOT emitted; the reflector's applyVersion converts
-// it into a TypeArray ("type": ["T", "null"]) in 3.1 mode.
+//
+// Nullability for $ref uses the OpenAPI 3.1 anyOf + null pattern:
+// the shared component is non-nullable, and the use site wraps it
+// in {"anyOf": [{"$ref": "..."}, {"type": "null"}]}. This keeps
+// the shared component clean across multiple use sites with
+// different nullability.
 func buildSchema31(s *schema.Schema) map[string]any {
 	if s == nil {
 		return nil
 	}
 	if s.Ref != "" {
+		if s.Nullable {
+			return map[string]any{
+				"anyOf": []any{
+					map[string]any{"$ref": s.Ref},
+					map[string]any{"type": "null"},
+				},
+			}
+		}
 		return map[string]any{"$ref": s.Ref}
 	}
 	m := make(map[string]any)
-	// Prefer TypeArray if set (3.1 nullable form).
-	if len(s.TypeArray) > 0 {
-		m["type"] = s.TypeArray
-	} else if s.Type != "" {
+	switch {
+	case s.Type != "" && s.Nullable:
+		m["type"] = []string{s.Type, "null"}
+	case s.Type != "":
 		m["type"] = s.Type
 	}
 	if s.Format != "" {

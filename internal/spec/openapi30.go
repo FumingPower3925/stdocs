@@ -52,17 +52,27 @@ func buildInfo30(i Info) map[string]any {
 		m["termsOfService"] = i.TermsOfService
 	}
 	if i.Contact != nil && (i.Contact.Name != "" || i.Contact.URL != "" || i.Contact.Email != "") {
-		m["contact"] = map[string]any{
-			"name":  i.Contact.Name,
-			"url":   i.Contact.URL,
-			"email": i.Contact.Email,
+		c := map[string]any{}
+		if i.Contact.Name != "" {
+			c["name"] = i.Contact.Name
 		}
+		if i.Contact.URL != "" {
+			c["url"] = i.Contact.URL
+		}
+		if i.Contact.Email != "" {
+			c["email"] = i.Contact.Email
+		}
+		m["contact"] = c
 	}
-	if i.License != nil && i.License.Name != "" {
-		m["license"] = map[string]any{
-			"name": i.License.Name,
-			"url":  i.License.URL,
+	if i.License != nil && (i.License.Name != "" || i.License.URL != "") {
+		l := map[string]any{}
+		if i.License.Name != "" {
+			l["name"] = i.License.Name
 		}
+		if i.License.URL != "" {
+			l["url"] = i.License.URL
+		}
+		m["license"] = l
 	}
 	return m
 }
@@ -194,8 +204,16 @@ func buildOperation30(op *Operation) map[string]any {
 			"200": map[string]any{"description": "OK"},
 		}
 	}
-	if len(op.Security) > 0 {
+	switch {
+	case op.NoSecurity:
+		// Explicit opt-out. An empty array overrides the global
+		// security requirement at this operation.
+		m["security"] = []any{}
+	case len(op.Security) > 0:
 		m["security"] = buildSecurity(op.Security)
+	}
+	for k, v := range op.Extensions {
+		m[k] = v
 	}
 	return m
 }
@@ -337,6 +355,10 @@ func buildSecurityScheme(s SecurityScheme) map[string]any {
 	}
 	switch s.Type {
 	case SecurityHTTP:
+		// `scheme` is required for "http" type. The stddocs API does
+		// not allow constructing an "http" scheme without setting
+		// it (e.g. WithBearerAuth sets "bearer", WithBasicAuth sets
+		// "basic"), so emitting unconditionally is correct.
 		if s.Scheme != "" {
 			m["scheme"] = s.Scheme
 		}
@@ -344,6 +366,8 @@ func buildSecurityScheme(s SecurityScheme) map[string]any {
 			m["bearerFormat"] = s.BearerFormat
 		}
 	case SecurityAPIKey:
+		// `in` and `name` are both required for "apiKey". Same
+		// reasoning: the stddocs API requires them at construction.
 		if s.In != "" {
 			m["in"] = s.In
 		}
@@ -382,6 +406,22 @@ func buildOAuthFlows(f OAuthFlows) map[string]any {
 
 func buildOAuthFlow(f OAuthFlow) map[string]any {
 	m := map[string]any{}
+	// Per the OpenAPI 3.0.3 spec, `scopes` is a required field
+	// on every flow object (it may be empty but must be present).
+	// The `authorizationUrl` and `tokenUrl` fields are required on
+	// specific flows, but only when the flow type requires them;
+	// we still emit them only when set to avoid producing
+	// misconfigured specs for flows that don't need them.
+	keys := make([]string, 0, len(f.Scopes))
+	for k := range f.Scopes {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	scopes := make(map[string]string, len(f.Scopes))
+	for _, k := range keys {
+		scopes[k] = f.Scopes[k]
+	}
+	m["scopes"] = scopes
 	if f.AuthorizationURL != "" {
 		m["authorizationUrl"] = f.AuthorizationURL
 	}
@@ -391,31 +431,29 @@ func buildOAuthFlow(f OAuthFlow) map[string]any {
 	if f.RefreshURL != "" {
 		m["refreshUrl"] = f.RefreshURL
 	}
-	if len(f.Scopes) > 0 {
-		// Sort scopes for determinism.
-		keys := make([]string, 0, len(f.Scopes))
-		for k := range f.Scopes {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		scopes := make(map[string]string, len(f.Scopes))
-		for _, k := range keys {
-			scopes[k] = f.Scopes[k]
-		}
-		m["scopes"] = scopes
-	}
 	return m
 }
 
 // buildSchema30 converts a *schema.Schema into the map[string]any form for 3.0.3.
-// Nullable is rendered as "nullable": true. TypeArray is ignored (3.0.3
-// has no concept of type arrays).
+//
+// Nullability for $ref uses the OpenAPI 3.0 allOf + nullable
+// pattern: the shared component is non-nullable, and the use site
+// wraps it in {"allOf": [{"$ref": "..."}], "nullable": true}. This
+// is required so that two routes — one with *T and one with T —
+// both reference the same component without one contaminating the
+// other.
 func buildSchema30(s *schema.Schema) map[string]any {
 	if s == nil {
 		return nil
 	}
 	// $ref is the simplest case: emit just the ref.
 	if s.Ref != "" {
+		if s.Nullable {
+			return map[string]any{
+				"allOf":     []any{map[string]any{"$ref": s.Ref}},
+				"nullable":  true,
+			}
+		}
 		return map[string]any{"$ref": s.Ref}
 	}
 	m := make(map[string]any)

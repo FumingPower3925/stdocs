@@ -96,12 +96,24 @@ type Operation struct {
 	// Security is the list of security requirements for this
 	// operation. Each requirement is a map of scheme name to scopes.
 	// An empty Security slice means "use the global security"; to
-	// opt out of auth on a specific route, use WithSecurity(nil).
+	// opt out of auth on a specific route, set NoSecurity to true
+	// (which emits an empty `security: []` array — required by the
+	// OpenAPI spec to override a globally-applied scheme).
 	Security []SecurityRequirement
+	// NoSecurity, when true, emits an empty `security` array on
+	// this operation, overriding any global security requirement.
+	// See WithNoSecurity in the root package.
+	NoSecurity bool
 	// ResponseOrder tracks the order in which responses were added
 	// to the Responses map. Used by WithExample to pick the
 	// "most recent" response when no explicit status is given.
 	ResponseOrder []string
+	// Extensions is a map of x-* extension fields. These are
+	// emitted directly onto the operation object. The reflector
+	// uses this to surface warnings about non-standard method
+	// names, custom status codes, etc. The map is never modified
+	// by the emitter.
+	Extensions map[string]any
 }
 
 // PathItem groups operations for a single path across HTTP methods.

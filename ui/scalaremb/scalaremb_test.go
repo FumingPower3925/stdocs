@@ -24,6 +24,15 @@ func TestWithUI_ReplacesUIDoc(t *testing.T) {
 	if strings.Contains(cfg.UIDoc, "cdn.jsdelivr.net") {
 		t.Errorf("embedded HTML should not reference CDN: %s", cfg.UIDoc)
 	}
+	// Scalar must receive the spec URL via the data-url attribute,
+	// not as <script> element content. Otherwise the bundle treats
+	// the URL as the document and fails with "Invalid YAML object".
+	if !strings.Contains(cfg.UIDoc, `data-url="{{.SpecURL}}"`) {
+		t.Errorf("HTML must use data-url attribute: %s", cfg.UIDoc)
+	}
+	if strings.Contains(cfg.UIDoc, `type="application/json"`) {
+		t.Errorf("HTML must not embed the URL as <script> element content: %s", cfg.UIDoc)
+	}
 }
 
 func TestWithUI_EndToEnd(t *testing.T) {
