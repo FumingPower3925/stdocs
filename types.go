@@ -21,12 +21,14 @@ type (
 	SpecInput   = spec.SpecInput
 )
 
-// SpecVersion is the OpenAPI spec version (3.0.3 or 3.1.0).
+// SpecVersion is the OpenAPI spec version (3.0.4, 3.1.2, or 3.2.0).
 type SpecVersion = version.SpecVersion
 
-// OpenAPI30 and OpenAPI31 are the version constants for the supported
-// OpenAPI spec versions.
+// OpenAPI30, OpenAPI31, and OpenAPI32 are the version constants for
+// the supported OpenAPI spec versions (3.0.4, 3.1.2, 3.2.0
+// respectively). stdocs only ships the latest patch of each minor.
 const (
 	OpenAPI30 = version.OpenAPI30
 	OpenAPI31 = version.OpenAPI31
+	OpenAPI32 = version.OpenAPI32
 )

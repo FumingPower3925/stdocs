@@ -19,8 +19,8 @@ func TestEmitOpenAPI31_TopLevelShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := jx(t, b)
-	if got := m["openapi"]; got != "3.1.0" {
-		t.Errorf("openapi = %v, want 3.1.0", got)
+	if got := m["openapi"]; got != "3.1.2" {
+		t.Errorf("openapi = %v, want 3.1.2", got)
 	}
 }
 
@@ -279,12 +279,12 @@ func TestEmitOpenAPI31_CrossVersionDifferences(t *testing.T) {
 	field30 := jget(t, m30, "components", "schemas", "T", "properties", "field").(map[string]any)
 	field31 := jget(t, m31, "components", "schemas", "T", "properties", "field").(map[string]any)
 	if _, ok := field30["nullable"]; !ok {
-		t.Errorf("3.0.3 should have nullable: true on field")
+		t.Errorf("3.0.4 should have nullable: true on field")
 	}
 	if _, ok := field31["nullable"]; ok {
-		t.Errorf("3.1.0 should NOT have nullable on field")
+		t.Errorf("3.1.2 should NOT have nullable on field")
 	}
 	if _, ok := field31["type"].([]any); !ok {
-		t.Errorf("3.1.0 field type should be a JSON array")
+		t.Errorf("3.1.2 field type should be a JSON array")
 	}
 }
