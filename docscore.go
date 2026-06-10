@@ -49,9 +49,13 @@ func (d *docsCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "" || path == "/":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		var b strings.Builder
+		// The spec URL is relative: the browser is already at
+		// <prefix>/, so "openapi.json" resolves to
+		// <prefix>/openapi.json. This works under any reverse
+		// proxy path prefix without further configuration.
 		err := d.ui.Execute(&b, docsHTML{
 			Title:   d.cfg.Info.Title,
-			SpecURL: d.cfg.DocsPrefix + "/openapi.json",
+			SpecURL: "openapi.json",
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

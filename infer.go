@@ -39,54 +39,103 @@ func summaryFromFuncName(name string) string {
 			break
 		}
 	}
-	// Insert spaces at case boundaries: "getUser" -> "get User", etc.
+	// Insert spaces at case boundaries: "getUser" -> "get User".
+	// We also remember which output positions are part of an
+	// acronym (a run of 2+ letters at a word start where every
+	// source rune was upper-case) so we can re-uppercase them
+	// after lowercasing.
 	var b strings.Builder
+	var acronymSpans []span
 	runes := []rune(name)
+	wordStart := true
+	wordUpperCount := 0
+	wordStartIdx := 0
+	// flushWord records the current run as an acronym if it
+	// qualifies.
+	flushWord := func() {
+		if wordUpperCount >= 2 {
+			acronymSpans = append(acronymSpans, span{wordStartIdx, wordStartIdx + wordUpperCount})
+		}
+	}
 	for i, r := range runes {
-		if i > 0 && unicode.IsUpper(r) {
+		if i > 0 {
 			prev := runes[i-1]
-			if unicode.IsLower(prev) || unicode.IsDigit(prev) {
+			// Boundary 1: a lower- or digit-preceded upper. Always a
+			// new word.
+			if unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)) {
+				flushWord()
 				b.WriteRune(' ')
-			} else if i+1 < len(runes) && unicode.IsLower(r) && unicode.IsUpper(prev) {
-				// "HTTPHandler" -> between P and H, no space (we want HTTP).
-				// Between T and T, no space. The case for inserting a
-				// space here is "XMLParser" -> "XML Parser": we want a
-				// break before P.
-				// Detected: previous is upper, current is upper,
-				// next is lower -> insert space.
+				wordStart = true
+				wordUpperCount = 0
+			} else if unicode.IsUpper(r) && unicode.IsUpper(prev) && i+1 < len(runes) && unicode.IsLower(runes[i+1]) {
+				// Boundary 2: an upper-preceded upper where the NEXT
+				// rune is lower. "XMLParser" -> "XML Parser"; this
+				// breaks the acronym.
+				flushWord()
 				b.WriteRune(' ')
+				wordStart = true
+				wordUpperCount = 0
 			}
+		}
+		if wordStart {
+			wordStartIdx = b.Len()
+			wordStart = false
+			wordUpperCount = 0
+		}
+		if unicode.IsUpper(r) {
+			wordUpperCount++
+		} else if unicode.IsLetter(r) {
+			// A non-uppercase letter ends the acronym run for
+			// this word.
+			wordUpperCount = 0
 		}
 		b.WriteRune(r)
 	}
+	flushWord()
 	out := strings.TrimSpace(b.String())
 	if out == "" {
 		return ""
 	}
-	// Capitalize the first letter, lowercase the rest of the first word.
-	out = strings.ToLower(out)
-	if out[0] >= 'a' && out[0] <= 'z' {
-		out = string(out[0]-32) + out[1:]
-	}
-	// "Xml parser" -> "XML parser": uppercase any all-caps run at the
-	// start of the string. We do a simple pass: find the first
-	// non-letter, then if letters before it form an acronym, upper-case.
-	runes = []rune(out)
-	for i, r := range runes {
-		if !unicode.IsLetter(r) {
-			if i >= 2 {
-				// Check if the prefix is short and acronym-like.
-				// Heuristic: 2+ letters all uppercase after lowercasing
-				// were the same. We approximate: if any are 3+ chars
-				// in a row, treat as acronym.
-				// Skip this complexity for v0 — return as-is.
+	// Lowercase the whole string, then re-uppercase the acronym
+	// spans. The spans are byte indices in the lowercased string
+	// (b.String() above is the original case; lowercasing does
+	// not change byte length for ASCII, and our runs are ASCII).
+	outLower := strings.ToLower(out)
+	if len(acronymSpans) > 0 {
+		outBytes := []byte(outLower)
+		for _, s := range acronymSpans {
+			// Bounds-check defensively: the span is a byte index
+			// into b.String(); trim may have shifted left by at
+			// most a few leading spaces. Clamp.
+			start, end := s.start, s.end
+			if start > len(outBytes) {
+				continue
 			}
-			break
+			if end > len(outBytes) {
+				end = len(outBytes)
+			}
+			for k := start; k < end; k++ {
+				if c := outBytes[k]; c >= 'a' && c <= 'z' {
+					outBytes[k] = c - 32
+				}
+			}
 		}
+		outLower = string(outBytes)
 	}
-	return out
+	// Capitalize the first letter of the first word.
+	if outLower != "" && outLower[0] >= 'a' && outLower[0] <= 'z' {
+		outLower = string(outLower[0]-32) + outLower[1:]
+	}
+	return outLower
 }
 
+type span struct {
+	start, end int
+}
+
+// sourceRun maps a position in the post-splitter output back to a
+// position in the original function name. The splitter wrote
+// only the runes of `name`, in order, optionally with ' '
 // tagFromPath returns a default tag for a route based on the first path
 // segment. "/users/{id}" -> "users"; "/" -> ""; "/v1/users" -> "v1".
 func tagFromPath(path string) string {
