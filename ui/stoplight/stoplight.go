@@ -17,9 +17,21 @@
 // This sub-package adds the Stoplight HTML to the docs handler. The
 // Stoplight web components are loaded from cdn.jsdelivr.net at page
 // load time, so an internet connection is required.
+//
+// The CDN URL is pinned to a specific version (9.0.22). SRI
+// integrity is NOT pinned because jsDelivr's @stoplight/elements
+// web-components.min.js is generated on the fly; the file's bytes
+// differ between requests. For an air-gapped build with SRI,
+// this package would need a vendored variant (we do not currently
+// provide one).
 package stoplight
 
 import "github.com/FumingPower3925/stdocs"
+
+// stoplightVersion is the version of @stoplight/elements this
+// package is pinned to. Bumping this requires updating the
+// constant below.
+const stoplightVersion = "9.0.22"
 
 // WithUI returns a stdocs.Option that replaces the default zero-JS
 // docs page with Stoplight Elements.
@@ -36,7 +48,7 @@ const stoplightHTML = `<!doctype html>
 <title>{{.Title}}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{margin:0;padding:0}</style>
-<script src="https://cdn.jsdelivr.net/npm/@stoplight/elements/web-components.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@stoplight/elements@9.0.22/web-components.min.js"></script>
 </head>
 <body>
 <elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash" layout="sidebar"></elements-api>
