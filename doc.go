@@ -67,7 +67,7 @@
 //
 // Undocumented routes still document themselves: the summary is
 // inferred from the handler's function name (getUser → "Get user";
-// closures and method values excluded), the tag from the first path
+// closures excluded), the tag from the first path
 // segment (adopting the casing of a matching [WithTag] declaration),
 // path parameters from the pattern's wildcards, a 200 response when
 // none is declared, and a document-unique operationId from the
@@ -101,7 +101,9 @@
 // enum, default, example, format (any scalar field). Values are
 // parsed according to the field's type — enum:"1,2,3" on an int
 // emits numbers — and validated against it; a misapplied or
-// unparseable constraint panics at document-build time. Exclusive
+// unparseable constraint panics at registration ([WithParams]
+// structs) or document-build time (bodies, responses, webhooks).
+// Exclusive
 // bounds render per version: the boolean draft-4 form on 3.0,
 // numeric 2020-12 keywords on 3.1/3.2.
 //

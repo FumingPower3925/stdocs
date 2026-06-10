@@ -66,9 +66,14 @@ func emitYAML(buf *bytes.Buffer, v any, indent int) error {
 			buf.WriteString("false")
 		}
 	case json.Number:
-		// A JSON number literal is also a valid YAML scalar; emit it
-		// verbatim so large integers keep full precision.
-		buf.WriteString(x.String())
+		// A JSON number literal is also a valid YAML scalar, but YAML
+		// 1.1 resolvers (PyYAML and friends) only treat exponent forms
+		// as numbers when the mantissa has a dot AND the exponent a
+		// sign ("1e3" parses as a string, "1.0e+3" as a number).
+		// Verbatim emission keeps full precision for the common
+		// plain-integer/decimal case; exponent forms are reformatted
+		// to the 1.1-safe shape.
+		buf.WriteString(yamlSafeNumber(x.String()))
 	case float64:
 		// Defensive: FromJSON decodes numbers as json.Number, but a
 		// caller-constructed value may still carry float64.
@@ -166,6 +171,27 @@ func isEmptyCollection(v any) bool {
 		return len(x) == 0
 	}
 	return false
+}
+
+// yamlSafeNumber returns a JSON number literal in a form that YAML
+// 1.1 resolvers type as a number. Literals without an exponent pass
+// through verbatim (full precision); exponent forms are rewritten so
+// the mantissa carries a dot and the exponent a sign.
+func yamlSafeNumber(s string) string {
+	if !strings.ContainsAny(s, "eE") {
+		return s
+	}
+	mantissa, exp, _ := strings.Cut(s, "e")
+	if !strings.ContainsAny(s, "e") {
+		mantissa, exp, _ = strings.Cut(s, "E")
+	}
+	if !strings.Contains(mantissa, ".") {
+		mantissa += ".0"
+	}
+	if exp != "" && exp[0] != '+' && exp[0] != '-' {
+		exp = "+" + exp
+	}
+	return mantissa + "e" + exp
 }
 
 // plainSafeKey reports whether k can be written as a plain (unquoted)
