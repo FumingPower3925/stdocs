@@ -85,6 +85,18 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 		ensureResponse(rt.op, key).BodyValue = dr.Body
 	}
 
+	// Auto-401: an operation that requires authentication can always
+	// reject the credentials, so document that. Runs after the
+	// default responses so a WithDefaultResponse(401, body) entry
+	// keeps its body; a per-route 401 wins over both.
+	if !cfg.DisableAutoUnauthorized {
+		secured := !rt.op.NoSecurity &&
+			(len(rt.op.Security) > 0 || len(cfg.GlobalSecurity) > 0)
+		if _, ok := rt.op.Responses["401"]; secured && !ok {
+			ensureResponse(rt.op, "401")
+		}
+	}
+
 	// Method from pattern.
 	if rt.op.Method == "" {
 		rt.op.Method = rt.parsed.Method
