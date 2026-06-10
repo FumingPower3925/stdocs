@@ -208,10 +208,14 @@ func (m *Mux) buildDoc() map[string]any {
 		}
 	}
 	in.Components = comps
-	if m.cfg.Version == OpenAPI31 {
+	switch m.cfg.Version {
+	case OpenAPI31:
 		return spec.BuildRoot31(in)
+	case OpenAPI32:
+		return spec.BuildRoot32(in, m.cfg.SelfURL)
+	default:
+		return spec.BuildRoot30(in)
 	}
-	return spec.BuildRoot30(in)
 }
 
 // Refresh invalidates the spec cache, forcing the next call to JSON or
