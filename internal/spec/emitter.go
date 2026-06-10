@@ -13,8 +13,6 @@
 package spec
 
 import (
-	"maps"
-	"slices"
 	"sort"
 	"strings"
 
@@ -29,6 +27,16 @@ import (
 type emitter struct {
 	openapi     string
 	buildSchema func(*schema.Schema) map[string]any
+}
+
+// sortedKeys returns m's keys in ascending order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // is32 reports whether the emitter targets OpenAPI 3.2.x.
@@ -181,7 +189,7 @@ func (e *emitter) buildPathItem(p PathItem) map[string]any {
 	// x-stdocs-additionalOperations extension instead, so one exotic
 	// route cannot invalidate the whole document.
 	var additional map[string]any
-	for _, method := range slices.Sorted(maps.Keys(p.Operations)) {
+	for _, method := range sortedKeys(p.Operations) {
 		op := p.Operations[method]
 		if e.isStandardOperationKey(method) {
 			m[method] = e.buildOperation(op)

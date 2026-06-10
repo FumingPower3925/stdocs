@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   traffic — visibility is documentation shaping, not access
   control.
 
+### Changed
+
+- Go support now follows the Go project's release policy: the two
+  most recent Go releases (currently 1.25 and 1.26; `go` directive
+  1.25.0, down from 1.26.4). CI computes every supported patch
+  release from the go.mod floor and runs build, vet, the race-enabled
+  test suite, and the YAML round-trip module on each.
+
 ## [0.1.0] - 2026-06-10
 
 Initial release.
