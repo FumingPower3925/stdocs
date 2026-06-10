@@ -17,9 +17,11 @@ import (
 //   - A "$self" field MAY be set to the canonical URI of the document
 //     (passed via the selfURL argument, set with WithSelfURL on the
 //     mux). When non-empty, it is emitted at the root of the spec.
-//   - OAuth "implicit" flow was removed in 3.2. stdocs does not emit
-//     a specific OAuth flow type today (it forwards the user's
-//     SecurityScheme as-is), so this is a no-op for us.
+//   - OAuth flows: 3.2 keeps the four 3.0/3.1 flow types (the
+//     "implicit" flow is discouraged by current OAuth guidance but
+//     was NOT removed from the spec) and adds a new
+//     "deviceAuthorization" flow, which OAuthFlows supports via the
+//     DeviceAuthorization field. User flows are forwarded as-is.
 //   - Streaming media type flags, $dynamicRef, multi-content arrays
 //     are 3.2 features we do not yet emit. They are additive and can
 //     land in a follow-up without breaking 3.1 or 3.0.

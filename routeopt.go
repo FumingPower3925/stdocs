@@ -39,19 +39,27 @@ func OperationID(id string) RouteOpt {
 }
 
 // WithBody sets the route's request body. body is a zero value of the
-// type to reflect; its type is used to build the JSON Schema. The
-// default content type is application/json.
+// type to reflect; its type is used to build the JSON Schema when the
+// spec document is assembled. The default content type is
+// application/json (override with WithBodyContentType).
 //
 // Mark the body as not required with Optional().
 func WithBody(body any) RouteOpt {
 	return func(r *route) {
-		s, _ := schema.ReflectSchema(body, r.version)
-		r.op.RequestBody = &RequestBody{
-			Required:  true,
-			Schema:    s,
-			BodyValue: body,
-		}
+		rb := ensureRequestBody(r.op)
+		rb.BodyValue = body
 	}
+}
+
+// ensureRequestBody returns op's request body, creating a default one
+// (required, application/json) if none exists yet. Having a single
+// creation point makes WithBody, Optional, and WithBodyContentType
+// order-independent.
+func ensureRequestBody(op *Operation) *RequestBody {
+	if op.RequestBody == nil {
+		op.RequestBody = &RequestBody{Required: true}
+	}
+	return op.RequestBody
 }
 
 // Optional marks the route's request body as not required. Only
@@ -64,30 +72,37 @@ func Optional() RouteOpt {
 	}
 }
 
-// WithResponse adds a response entry. body is a zero value; pass nil
-// if there is no body (e.g. 204 No Content). Multiple WithResponse
-// calls accumulate.
+// WithResponse adds a response entry. body is a zero value whose type
+// is reflected into a JSON Schema when the spec document is assembled;
+// pass nil if there is no body (e.g. 204 No Content). Multiple
+// WithResponse calls accumulate. Calling WithResponse twice for the
+// same status replaces the body but keeps any description, headers, or
+// example attached via the other response opts.
 func WithResponse(status int, body any) RouteOpt {
 	return func(r *route) {
-		key := statusKey(status)
-		desc := defaultResponseDescription(status)
-		var s *schema.Schema
-		if body != nil {
-			s, _ = schema.ReflectSchema(body, r.version)
-		}
-		if r.op.Responses == nil {
-			r.op.Responses = make(map[string]*Response)
-		}
-		if _, exists := r.op.Responses[key]; !exists {
-			r.op.ResponseOrder = append(r.op.ResponseOrder, key)
-		}
-		r.op.Responses[key] = &Response{
-			Status:      key,
-			Description: desc,
-			Schema:      s,
-			BodyValue:   body,
-		}
+		resp := ensureResponse(r.op, statusKey(status))
+		resp.BodyValue = body
 	}
+}
+
+// ensureResponse returns op's response entry for key, creating one with
+// the default description if none exists yet. Having a single creation
+// point makes WithResponse, WithResponseDescription, WithResponseHeader,
+// and WithResponseExample order-independent.
+func ensureResponse(op *Operation, key string) *Response {
+	if op.Responses == nil {
+		op.Responses = make(map[string]*Response)
+	}
+	if resp, ok := op.Responses[key]; ok {
+		return resp
+	}
+	resp := &Response{
+		Status:      key,
+		Description: defaultResponseDescriptionForKey(key),
+	}
+	op.Responses[key] = resp
+	op.ResponseOrder = append(op.ResponseOrder, key)
+	return resp
 }
 
 // WithSecurity requires the named security scheme on this operation.
@@ -126,13 +141,14 @@ func WithNoSecurity() RouteOpt {
 	}
 }
 
-// WithExample adds an example value to the most recently declared
-// response (via WithResponse) or request body (via WithBody). If neither
-// has been declared, WithExample is a no-op.
+// WithExample adds an example value to the request body if one has
+// been declared (via WithBody), otherwise to the most recently
+// declared response (via WithResponse). If neither has been declared,
+// WithExample is a no-op. To target a specific response regardless of
+// declaration order, use WithResponseExample.
 //
-// The value is encoded as JSON and stored under the standard OpenAPI
-// "example" field on the response's content schema (or
-// "requestBody.content.schema.example" for request bodies).
+// The value is encoded as JSON and stored under the OpenAPI "example"
+// field of the media type object (content.<type>.example).
 //
 // Example:
 //
@@ -163,59 +179,43 @@ func WithExample(value any) RouteOpt {
 }
 
 // WithResponseExample attaches an example to a specific response
-// status. Useful when a route has multiple responses and you want to
-// give each a different example.
+// status, creating the response entry if it does not exist yet. The
+// order relative to WithResponse does not matter.
 //
 //	stdocs.WithResponse(200, User{}),
 //	stdocs.WithResponseExample(200, User{ID: "u-1", Name: "Alice"}),
 func WithResponseExample(status int, value any) RouteOpt {
 	return func(r *route) {
-		key := statusKey(status)
 		encoded, err := encodeExample(value)
 		if err != nil {
 			return
 		}
-		if r.op.Responses == nil {
-			return
-		}
-		if resp, ok := r.op.Responses[key]; ok {
-			resp.Example = encoded
-		}
+		ensureResponse(r.op, statusKey(status)).Example = encoded
 	}
 }
 
-// ResponseDescription sets a custom description for a response
-// status. Use after WithResponse() to override the default.
+// WithResponseDescription sets a custom description for a response
+// status, creating the response entry if it does not exist yet. The
+// order relative to WithResponse does not matter.
 //
 //	stdocs.WithResponse(200, User{}),
-//	stdocs.ResponseDescription(200, "The user, or 404 if not found"),
-func ResponseDescription(status int, description string) RouteOpt {
+//	stdocs.WithResponseDescription(200, "The user, or 404 if not found"),
+func WithResponseDescription(status int, description string) RouteOpt {
 	return func(r *route) {
-		key := statusKey(status)
-		if r.op.Responses == nil {
-			return
-		}
-		if resp, ok := r.op.Responses[key]; ok {
-			resp.Description = description
-		}
+		ensureResponse(r.op, statusKey(status)).Description = description
 	}
 }
 
-// ResponseHeader adds a header entry to a response status. Useful
-// for documenting rate-limit, pagination, or other custom headers.
+// WithResponseHeader adds a header entry to a response status,
+// creating the response entry if it does not exist yet. Useful for
+// documenting rate-limit, pagination, or other custom headers. The
+// order relative to WithResponse does not matter.
 //
 //	stdocs.WithResponse(200, User{}),
-//	stdocs.ResponseHeader(200, "X-RateLimit-Remaining", "integer", "Remaining quota"),
-func ResponseHeader(status int, name, typ, description string) RouteOpt {
+//	stdocs.WithResponseHeader(200, "X-RateLimit-Remaining", "integer", "Remaining quota"),
+func WithResponseHeader(status int, name, typ, description string) RouteOpt {
 	return func(r *route) {
-		key := statusKey(status)
-		if r.op.Responses == nil {
-			return
-		}
-		resp, ok := r.op.Responses[key]
-		if !ok {
-			return
-		}
+		resp := ensureResponse(r.op, statusKey(status))
 		if resp.Headers == nil {
 			resp.Headers = make(map[string]*schema.Schema)
 		}
@@ -226,16 +226,16 @@ func ResponseHeader(status int, name, typ, description string) RouteOpt {
 	}
 }
 
-// BodyContentType sets the content type for the request body. The
-// default is "application/json". Use after WithBody().
+// WithBodyContentType sets the content type for the request body,
+// creating the request-body entry if it does not exist yet. The
+// default is "application/json". The order relative to WithBody does
+// not matter.
 //
 //	stdocs.WithBody(MyRequest{}),
-//	stdocs.BodyContentType("application/xml"),
-func BodyContentType(ct string) RouteOpt {
+//	stdocs.WithBodyContentType("application/xml"),
+func WithBodyContentType(ct string) RouteOpt {
 	return func(r *route) {
-		if r.op.RequestBody != nil {
-			r.op.RequestBody.ContentType = ct
-		}
+		ensureRequestBody(r.op).ContentType = ct
 	}
 }
 
@@ -326,6 +326,18 @@ func statusKey(status int) string {
 // itoa is a small wrapper around strconv.Itoa kept for use by other
 // files in this package (e.g. registry.go).
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// defaultResponseDescriptionForKey is defaultResponseDescription for an
+// already-stringified responses-map key ("200", "default", ...).
+func defaultResponseDescriptionForKey(key string) string {
+	if key == "default" {
+		return "Default response"
+	}
+	if n, err := strconv.Atoi(key); err == nil {
+		return defaultResponseDescription(n)
+	}
+	return "Response"
+}
 
 func defaultResponseDescription(status int) string {
 	switch status {

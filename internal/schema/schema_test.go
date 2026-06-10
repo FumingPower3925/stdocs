@@ -5,20 +5,18 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"github.com/FumingPower3925/stdocs/internal/version"
 )
 
 // Helper: build a schema and assert it has the expected JSON when serialized
 // to OpenAPI 3.0.3.
 func schema30(t *testing.T, value any) (*Schema, map[string]*Schema) {
 	t.Helper()
-	return ReflectSchema(value, version.OpenAPI30)
+	return ReflectSchema(value)
 }
 
 func schema31(t *testing.T, value any) (*Schema, map[string]*Schema) {
 	t.Helper()
-	return ReflectSchema(value, version.OpenAPI31)
+	return ReflectSchema(value)
 }
 
 func mustMarshal(t *testing.T, v any) string {
@@ -650,10 +648,7 @@ func TestReflectSchema_ComponentNameCollision(t *testing.T) {
 	// sanitized form for generic types), then walk "User",
 	// "User_2", "User_3"... until a free slot is found. We
 	// exercise that walk directly via the reservation helper.
-	r := &reflector{
-		seen: make(map[reflect.Type]string),
-		out:  make(map[string]*Schema),
-	}
+	r := NewReflector()
 	if got := r.reserveName("User"); got != "User" {
 		t.Errorf("first reserveName(User) = %q, want User", got)
 	}

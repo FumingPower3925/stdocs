@@ -223,7 +223,7 @@ func TestParsePattern_InvalidPatterns(t *testing.T) {
 	tests := []string{
 		"",                          // empty
 		"users",                     // no slash
-		http.MethodGet,                       // no path
+		http.MethodGet,              // no path
 		"GET example.com",           // host but no path
 		"GET /users/{",              // unterminated wildcard
 		"GET /users/}",              // orphan closing brace

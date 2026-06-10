@@ -73,10 +73,10 @@ func TestYAMLRoundTrip(t *testing.T) {
 // produces well-formed YAML for each.
 func TestYAMLParseable(t *testing.T) {
 	type s struct {
-		A string            `json:"a"`
-		B int               `json:"b"`
-		C []int             `json:"c"`
-		D map[string]any    `json:"d"`
+		A string         `json:"a"`
+		B int            `json:"b"`
+		C []int          `json:"c"`
+		D map[string]any `json:"d"`
 	}
 	m := stdocs.New(stdocs.WithTitle("T"), stdocs.WithVersion(stdocs.OpenAPI30))
 	m.HandleFunc("POST /x", func(w http.ResponseWriter, r *http.Request) {},
@@ -90,6 +90,73 @@ func TestYAMLParseable(t *testing.T) {
 	var v any
 	if err := yaml.Unmarshal(b, &v); err != nil {
 		t.Fatalf("YAML did not parse: %v\nbody:\n%s", err, b)
+	}
+}
+
+// TestYAMLKeysStayStrings walks the emitted YAML as a yaml.Node tree
+// and asserts every mapping key has the !!str tag. JSON object keys
+// are always strings, and the OpenAPI spec requires YAML mapping keys
+// to stay strings — an unquoted "200" response key would resolve to
+// !!int. (A coercing comparison like yamlToJSONString would mask
+// exactly this bug, so this test inspects node tags directly.)
+func TestYAMLKeysStayStrings(t *testing.T) {
+	m := stdocs.New(stdocs.WithTitle("T"), stdocs.WithVersion(stdocs.OpenAPI30))
+	m.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {},
+		stdocs.WithResponse(200, struct {
+			Name string `json:"name"`
+		}{}),
+		stdocs.WithResponse(404, nil),
+	)
+	b, err := m.YAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(b, &root); err != nil {
+		t.Fatalf("YAML did not parse: %v\nbody:\n%s", err, b)
+	}
+	var walk func(n *yaml.Node)
+	walk = func(n *yaml.Node) {
+		if n.Kind == yaml.MappingNode {
+			for i := 0; i < len(n.Content); i += 2 {
+				key := n.Content[i]
+				if key.Tag != "!!str" {
+					t.Errorf("mapping key %q has tag %s, want !!str", key.Value, key.Tag)
+				}
+				walk(n.Content[i+1])
+			}
+			return
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+	}
+	walk(&root)
+}
+
+// TestYAMLControlChars verifies that control characters in
+// user-supplied strings are escaped: the YAML must parse and the
+// value must round-trip exactly (a raw CR would either break the
+// parse or silently fold into a space).
+func TestYAMLControlChars(t *testing.T) {
+	const desc = "bad\rchar and \x01 ctrl and \u0085 nel"
+	m := stdocs.New(
+		stdocs.WithTitle("T"),
+		stdocs.WithDescription(desc),
+		stdocs.WithVersion(stdocs.OpenAPI30),
+	)
+	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {})
+	b, err := m.YAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("YAML did not parse: %v\nbody:\n%s", err, b)
+	}
+	info, _ := doc["info"].(map[string]any)
+	if got, _ := info["description"].(string); got != desc {
+		t.Errorf("description round-tripped to %q, want %q", got, desc)
 	}
 }
 

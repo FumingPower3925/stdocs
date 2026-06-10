@@ -3,9 +3,11 @@ package stdocs
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -15,10 +17,11 @@ import (
 	"github.com/FumingPower3925/stdocs/internal/spec/yaml"
 )
 
-// jsonMarshalIndent marshals v as compact JSON (no whitespace). The
-// emitters already sort keys, so indentation would only inflate the
-// payload without aiding readability (UIs pretty-print on the client).
-func jsonMarshalIndent(v any) ([]byte, error) {
+// marshalSpec marshals the spec document as compact JSON (no
+// whitespace). The emitters already sort keys, so indentation would
+// only inflate the payload without aiding readability (UIs
+// pretty-print on the client).
+func marshalSpec(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
 
@@ -34,6 +37,9 @@ type Mux struct {
 	specJSON []byte
 	specYAML []byte
 	specMu   sync.Mutex
+
+	// mounted guards Mount against double registration.
+	mounted bool
 }
 
 // New returns a *stdocs.Mux ready to register routes on.
@@ -58,13 +64,19 @@ func (m *Mux) HandleFunc(p string, h func(http.ResponseWriter, *http.Request), o
 	if err != nil {
 		panic("stdocs: " + err.Error())
 	}
+	// Register on the ServeMux first: it is the authoritative
+	// validator, and its panic on conflicts must fire before the
+	// route is recorded in the spec registry.
+	m.ServeMux.HandleFunc(p, h)
+	if m.underDocsPrefix(parsed.Path()) {
+		return
+	}
 	// Capture the function name for default summary inference.
 	funcName := ""
 	if h != nil {
 		funcName = funcNameOf(h)
 	}
 	m.reg.add(p, funcName, parsed, m.cfg.Version, opts)
-	m.ServeMux.HandleFunc(p, h)
 }
 
 // Handle registers h for the given pattern. The handler's underlying
@@ -76,8 +88,20 @@ func (m *Mux) Handle(p string, h http.Handler, opts ...RouteOpt) {
 	if err != nil {
 		panic("stdocs: " + err.Error())
 	}
-	m.reg.add(p, "", parsed, m.cfg.Version, opts)
 	m.ServeMux.Handle(p, h)
+	if m.underDocsPrefix(parsed.Path()) {
+		return
+	}
+	m.reg.add(p, "", parsed, m.cfg.Version, opts)
+}
+
+// underDocsPrefix reports whether path is the docs prefix itself or
+// falls under it. Routes in the docs subtree are infrastructure (the
+// docs UI, the spec endpoints, embedded UI assets) and are excluded
+// from the generated spec.
+func (m *Mux) underDocsPrefix(path string) bool {
+	prefix := m.cfg.DocsPrefix
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
 // JSON returns the OpenAPI spec as JSON bytes. The version depends on
@@ -124,7 +148,7 @@ func (m *Mux) cachedJSON() ([]byte, error) {
 	if vErr := validateSecurity(doc); vErr != nil {
 		return nil, vErr
 	}
-	b, err := jsonMarshalIndent(doc)
+	b, err := marshalSpec(doc)
 	if err != nil {
 		return nil, err
 	}
@@ -142,11 +166,25 @@ func (m *Mux) cachedJSON() ([]byte, error) {
 func validateSecurity(doc map[string]any) error {
 	registered, _ := doc["components"].(map[string]any)
 	schemes, _ := registered["securitySchemes"].(map[string]any)
-	// Hooks may have added schemes to the top-level "security"
-	// array without registering them; that path is rare and we
-	// don't validate it. We also don't validate the top-level
-	// "security" key, which is the global default and is
-	// intentionally optional.
+	missing := func(name string) bool {
+		if schemes == nil {
+			return true
+		}
+		_, ok := schemes[name]
+		return !ok
+	}
+	// Top-level (global) security set via WithGlobalSecurity or a
+	// WithOpenAPI hook.
+	if globalSec, ok := doc["security"].([]any); ok {
+		for _, entry := range globalSec {
+			em, _ := entry.(map[string]any)
+			for name := range em {
+				if missing(name) {
+					return fmt.Errorf("stdocs: security scheme %q referenced in the global security requirement is not registered in components.securitySchemes", name)
+				}
+			}
+		}
+	}
 	paths, _ := doc["paths"].(map[string]any)
 	for path, pi := range paths {
 		pim, _ := pi.(map[string]any)
@@ -163,10 +201,7 @@ func validateSecurity(doc map[string]any) error {
 			for _, entry := range arr {
 				em, _ := entry.(map[string]any)
 				for name := range em {
-					if schemes == nil {
-						return fmt.Errorf("stdocs: security scheme %q referenced in %s %s is not registered in components.securitySchemes", name, strings.ToUpper(method), path)
-					}
-					if _, ok := schemes[name]; !ok {
+					if missing(name) {
 						return fmt.Errorf("stdocs: security scheme %q referenced in %s %s is not registered in components.securitySchemes", name, strings.ToUpper(method), path)
 					}
 				}
@@ -178,8 +213,27 @@ func validateSecurity(doc map[string]any) error {
 
 // buildDoc assembles the OpenAPI document as a map[string]any. The
 // returned map is owned by the caller and may be mutated.
+//
+// All body and response schemas across all routes and webhooks are
+// re-derived here through ONE shared schema.Reflector, so component
+// names are unique document-wide: two same-named types from different
+// packages get distinct components (User, User_2) with matching $ref
+// strings at every use site.
 func (m *Mux) buildDoc() map[string]any {
 	m.reg.finalize(m.cfg)
+	ref := schema.NewReflector()
+	for _, rt := range m.reg.routes {
+		if rb := rt.op.RequestBody; rb != nil && rb.BodyValue != nil {
+			rb.Schema = ref.Reflect(rb.BodyValue)
+		}
+		// Iterate responses in sorted-key order so component-name
+		// suffixes are assigned deterministically across rebuilds.
+		for _, key := range slices.Sorted(maps.Keys(rt.op.Responses)) {
+			if resp := rt.op.Responses[key]; resp != nil && resp.BodyValue != nil {
+				resp.Schema = ref.Reflect(resp.BodyValue)
+			}
+		}
+	}
 	in := SpecInput{
 		Info:            m.cfg.Info,
 		Servers:         m.cfg.Servers,
@@ -188,26 +242,9 @@ func (m *Mux) buildDoc() map[string]any {
 		Version:         m.cfg.Version,
 		SecuritySchemes: m.cfg.Security,
 		GlobalSecurity:  m.cfg.GlobalSecurity,
-		Webhooks:        m.cfg.Webhooks,
+		Webhooks:        m.reflectWebhooks(ref),
 	}
-	comps := make(map[string]*schema.Schema)
-	for _, rt := range m.reg.routes {
-		if rb := rt.op.RequestBody; rb != nil && rb.BodyValue != nil {
-			_, c := schema.ReflectSchema(rb.BodyValue, m.cfg.Version)
-			for n, s := range c {
-				comps[n] = s
-			}
-		}
-		for _, resp := range rt.op.Responses {
-			if resp != nil && resp.BodyValue != nil {
-				_, c := schema.ReflectSchema(resp.BodyValue, m.cfg.Version)
-				for n, s := range c {
-					comps[n] = s
-				}
-			}
-		}
-	}
-	in.Components = comps
+	in.Components = ref.Components()
 	switch m.cfg.Version {
 	case OpenAPI31:
 		return spec.BuildRoot31(in)
@@ -216,6 +253,40 @@ func (m *Mux) buildDoc() map[string]any {
 	default:
 		return spec.BuildRoot30(in)
 	}
+}
+
+// reflectWebhooks returns the configured webhooks with every BodyValue
+// reflected into a schema through the shared document reflector. The
+// user's Config is never mutated: request bodies and responses with a
+// BodyValue are copied before their Schema field is filled in.
+func (m *Mux) reflectWebhooks(ref *schema.Reflector) map[string]Webhook {
+	if len(m.cfg.Webhooks) == 0 {
+		return m.cfg.Webhooks
+	}
+	out := make(map[string]Webhook, len(m.cfg.Webhooks))
+	for _, name := range slices.Sorted(maps.Keys(m.cfg.Webhooks)) {
+		hook := m.cfg.Webhooks[name]
+		if rb := hook.RequestBody; rb != nil && rb.BodyValue != nil {
+			rbCopy := *rb
+			rbCopy.Schema = ref.Reflect(rbCopy.BodyValue)
+			hook.RequestBody = &rbCopy
+		}
+		if len(hook.Responses) > 0 {
+			respCopy := make(map[string]*Response, len(hook.Responses))
+			for _, key := range slices.Sorted(maps.Keys(hook.Responses)) {
+				resp := hook.Responses[key]
+				if resp != nil && resp.BodyValue != nil {
+					rc := *resp
+					rc.Schema = ref.Reflect(rc.BodyValue)
+					resp = &rc
+				}
+				respCopy[key] = resp
+			}
+			hook.Responses = respCopy
+		}
+		out[name] = hook
+	}
+	return out
 }
 
 // Refresh invalidates the spec cache, forcing the next call to JSON or
@@ -233,19 +304,26 @@ func (m *Mux) Config() *Config {
 	return m.cfg
 }
 
-// Mount registers the docs handler on the mux itself, at the configured
-// DocsPrefix. It is shorthand for:
+// Mount registers the docs handler on the mux itself, at the
+// configured DocsPrefix (default "/docs"). It registers exact patterns
+// for the docs page and the two spec endpoints — plus a subtree
+// fallback — so a user route like "GET /docs/{file}" can never shadow
+// the spec endpoints (exact literals win over wildcards in ServeMux).
 //
-//	m.ServeMux.Handle("GET "+m.cfg.DocsPrefix+"/", m.Docs())
-//
-// If the mux has been disabled via WithDisabled, Mount is a no-op
-// and registers nothing. Call this after registering all routes.
+// If the mux has been disabled via WithDisabled, Mount is a no-op and
+// registers nothing. Calling Mount more than once is a no-op after the
+// first successful registration. Call it after registering all routes.
 func (m *Mux) Mount() {
-	if m.cfg.Disabled {
+	if m.cfg.Disabled || m.mounted {
 		return
 	}
 	prefix := m.cfg.DocsPrefix
-	m.ServeMux.Handle("GET "+prefix+"/", m.Docs())
+	docs := m.Docs()
+	m.ServeMux.Handle("GET "+prefix+"/{$}", docs)
+	m.ServeMux.Handle("GET "+prefix+"/openapi.json", docs)
+	m.ServeMux.Handle("GET "+prefix+"/openapi.yaml", docs)
+	m.ServeMux.Handle("GET "+prefix+"/", docs)
+	m.mounted = true
 }
 
 // Docs returns an http.Handler that serves the docs UI and the OpenAPI
@@ -256,41 +334,39 @@ func (m *Mux) Mount() {
 //	GET <prefix>/openapi.json -> the spec as JSON
 //	GET <prefix>/openapi.yaml -> the spec as YAML
 //
-// Mount it on a parent mux with mux.Handle("GET "+cfg.DocsPrefix+"/", m.Docs()).
-// The docs prefix defaults to "/docs" but can be changed via
-// WithDocsPrefix.
+// In most setups, call Mount instead, which registers this handler at
+// the configured docs prefix (default "/docs", changeable via
+// WithDocsPrefix). When mounting manually, the registration pattern
+// must match the configured prefix:
+//
+//	mux.ServeMux.Handle("GET /docs/", mux.Docs())
+//
+// (Plain mux.Handle works too — routes under the docs prefix are
+// excluded from the generated spec.)
 //
 // The optional bool argument enables per-call toggling: pass false to
-// get a 404 handler, or omit it (or pass true) to get the normal docs
-// handler. This is useful for runtime conditions the config doesn't
-// capture:
+// get a handler that responds 404 to everything, pass true to force
+// the docs on, or omit it to follow the WithDisabled config. An
+// explicit per-call value wins over WithDisabled in both directions.
+// Only the first value is consulted; passing more than one bool
+// panics.
 //
-//	if os.Getenv("ENV") == "prod" {
-//	    mux.Handle("GET /docs/", mux.Docs(false))
-//	} else {
-//	    mux.Handle("GET /docs/", mux.Docs())
-//	}
+//	mux.ServeMux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
 //
-// The per-call bool overrides any WithDisabled option: passing false
-// always returns a 404 handler, regardless of config.
+// The decision is taken when Docs is called. For a per-request switch,
+// wrap the returned handler in your own middleware.
 func (m *Mux) Docs(enabled ...bool) http.Handler {
-	if len(enabled) > 0 && !enabled[0] {
+	if len(enabled) > 1 {
+		panic("stdocs: Docs accepts at most one bool argument")
+	}
+	on := !m.cfg.Disabled
+	if len(enabled) == 1 {
+		on = enabled[0]
+	}
+	if !on {
 		return http.NotFoundHandler()
 	}
-	if m.cfg.Disabled {
-		return http.NotFoundHandler()
-	}
-	core, err := newDocsCore(m.cfg, func() ([]byte, []byte, error) {
-		jb, err := m.JSON()
-		if err != nil {
-			return nil, nil, err
-		}
-		yb, err := m.YAML()
-		if err != nil {
-			return nil, nil, err
-		}
-		return jb, yb, nil
-	})
+	core, err := newDocsCore(m.cfg, m.JSON, m.YAML)
 	if err != nil {
 		// A malformed UI constant is a programming error; surface
 		// it as a 500 on every request.
@@ -300,9 +376,6 @@ func (m *Mux) Docs(enabled ...bool) http.Handler {
 	}
 	return core
 }
-
-// (buildSpec has been inlined into cachedJSON for clarity and to keep
-// the lock scope small.)
 
 // funcNameOf returns the function name of f via reflection. Returns ""
 // if it cannot be determined.

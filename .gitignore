@@ -19,3 +19,10 @@
 # Dependabot; never installed)
 /node_modules/
 
+
+# Local agent settings
+.claude/
+
+# Coverage output from the CI command run locally
+/coverage.out
+/coverage.txt
