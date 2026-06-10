@@ -32,7 +32,9 @@ El mismo documento generado, mostrado por cada una de las cuatro UI incluidas �
 - [Instalación](#instalación)
 - [Uso](#uso)
 - [UIs](#uis)
+- [Usar el spec en otras herramientas](#usar-el-spec-en-otras-herramientas)
 - [Cómo funciona](#cómo-funciona)
+- [Alcance y non-goals](#alcance-y-non-goals)
 - [Contribuir](#contribuir)
 - [Licencia](#licencia)
 
@@ -92,6 +94,35 @@ mux.HandleFunc("GET /users/{id}", getUser,
 mux.HandleFunc("POST /users", createUser,
     stdocs.WithBody(CreateUserRequest{}),
     stdocs.WithResponse(201, User{}),
+)
+```
+
+### Tags de campo
+
+Los campos de un struct pueden llevar documentación en tags, que se recogen al reflejar el tipo:
+
+| Tag | Efecto |
+|---|---|
+| `doc:"…"` (o `description:"…"`) | Establece la descripción del campo en el schema |
+| `example:"…"` | Establece el ejemplo del campo — se parsea según el tipo del campo, así que `example:"42"` en un `int` emite el número 42 |
+
+```go
+type Task struct {
+    ID       string `json:"id" doc:"ID único de la tarea"`
+    Priority int    `json:"priority" doc:"1 (baja) a 5 (urgente)" example:"3"`
+}
+```
+
+Un valor de `example` que no se pueda parsear como el tipo del campo provoca un panic al construir el documento.
+
+### La respuesta default
+
+`WithResponse(0, body)` declara la respuesta `default` de OpenAPI — la entrada comodín a la que recurren los consumidores para códigos de estado no declarados, por convención la forma de error compartida:
+
+```go
+mux.HandleFunc("GET /tasks/{id}", getTask,
+    stdocs.WithResponse(200, Task{}),
+    stdocs.WithResponse(0, APIError{}), // "default" en el documento
 )
 ```
 
@@ -237,6 +268,42 @@ Cada UI completa viene en dos variantes:
 
 Todas las URL del CDN están fijadas a versiones exactas con hashes de integridad SRI sha384. Los subpaquetes no se enlazan en tu binario a menos que los importes.
 
+## Usar el spec en otras herramientas
+
+El documento generado no es solo para la página de docs: `mux.JSON()` y `mux.YAML()` te dan exactamente los bytes servidos en los endpoints del spec, y la salida es **determinista por construcción** — las claves van ordenadas y los operationIds y nombres de componentes son estables entre reconstrucciones — así que funciona como artefacto commiteado.
+
+El patrón recomendado es un test de golden file:
+
+```go
+var update = flag.Bool("update", false, "rewrite openapi.json")
+
+func TestOpenAPIGolden(t *testing.T) {
+    got, err := NewAPI().JSON() // tu constructor del mux
+    if err != nil {
+        t.Fatal(err)
+    }
+    const golden = "openapi.json"
+    if *update {
+        if err := os.WriteFile(golden, got, 0o644); err != nil {
+            t.Fatal(err)
+        }
+    }
+    want, err := os.ReadFile(golden)
+    if err != nil {
+        t.Fatalf("%v (ejecuta: go test -run TestOpenAPIGolden -update)", err)
+    }
+    if !bytes.Equal(got, want) {
+        t.Fatalf("openapi.json está desactualizado; ejecuta: go test -run TestOpenAPIGolden -update")
+    }
+}
+```
+
+Cada cambio en la API aparece ahora como un diff revisable de `openapi.json` en la PR, y el archivo commiteado alimenta el resto de la cadena de herramientas sin ejecutar el servidor:
+
+- **Diff de contrato** — p. ej. `oasdiff breaking old.json openapi.json` en la CI señala cambios que rompen compatibilidad.
+- **Linting** — `spectral lint openapi.json` (o Redocly CLI) aplica reglas de estilo de API.
+- **Generación de clientes** — apunta `openapi-generator`, `oapi-codegen` o tu pipeline de SDKs al archivo commiteado para producir clientes tipados en cualquier lenguaje.
+
 ## Cómo funciona
 
 El `net/http.ServeMux` de Go 1.22 admite patrones de método+ruta, pero no los expone públicamente. `stdocs.New()` devuelve un `*stdocs.Mux` que embebe `*http.ServeMux` e intercepta las llamadas a `Handle`/`HandleFunc` para registrar el patrón y los metadatos. En la primera petición a `/docs/openapi.json`, se recorre el registro y el spec se construye y se guarda en caché (llama a `mux.Refresh()` para reconstruirlo).
@@ -249,6 +316,17 @@ Hay una demo ejecutable en [`cmd/demo`](./cmd/demo):
 go run ./cmd/demo
 # abre http://localhost:8080/docs/
 ```
+
+## Alcance y non-goals
+
+stdocs hace una sola cosa: documenta aplicaciones de `net/http.ServeMux` de la biblioteca estándar y sirve el resultado. Conocer los límites de antemano te ahorra una evaluación:
+
+- **Solo biblioteca estándar.** No hay integraciones con gin/echo/chi/fiber y no las habrá — el `ServeMux` envuelto es el diseño, no un primer adaptador.
+- **Documentación, no enforcement.** stdocs no valida requests, no hace binding de parámetros ni comprueba que los handlers cumplan el contrato documentado. El documento describe la intención; mantener los handlers honestos es trabajo de la aplicación (el flujo de golden file de arriba hace el drift revisable).
+- **Sin generación de código, sin anotaciones en comentarios, sin dependencias.** Permanentemente, por diseño.
+- **La UI integrada se mantiene mínima.** La página por defecto es una lista de rutas de ~1.6 KB sin dependencias y sin consola de try-it — esa pequeñez es su característica. Las cuatro UI completas incluyen consolas y están a un import de distancia.
+
+Cuando otra cosa encaja mejor: si el contrato es tu entregable (revisiones de spec entre equipos, clientes en varios lenguajes, conformidad forzada), un generador spec-first como oapi-codegen u ogen es la herramienta correcta; si empiezas de cero y quieres validación forzada desde los tipos, un framework de handlers tipados como huma lo es. stdocs es para el código que ya tienes.
 
 ## Contribuir
 
