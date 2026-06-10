@@ -129,3 +129,29 @@ func ExampleMux_Docs() {
 	fmt.Println("docs enabled:", !prod)
 	// Output: docs enabled: false
 }
+
+// Restricting what try-it consoles may do: the docs page's "Try it
+// out" buttons send real requests, identified (best-effort) by their
+// Referer. FromDocs gates a restriction — never use it to grant
+// access, since the header is client-controlled.
+func ExampleFromDocs() {
+	mux := stdocs.New(stdocs.WithTitle("My API"))
+	mux.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {})
+	mux.Mount()
+
+	guard := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet && mux.FromDocs(r) {
+				http.Error(w, "try-it requests cannot modify data", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	_ = guard // pass guard(mux) to http.ListenAndServe
+
+	r, _ := http.NewRequest(http.MethodPost, "/users", nil)
+	r.Header.Set("Referer", "https://api.example.com/docs/")
+	fmt.Println("from docs:", mux.FromDocs(r))
+	// Output: from docs: true
+}

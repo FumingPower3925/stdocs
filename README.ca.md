@@ -44,6 +44,7 @@ El mateix document generat, mostrat per cadascuna de les quatre UI incloses — 
 - **Valors per defecte intel·ligents** — els noms de funcions es converteixen en resums, el primer segment de la ruta es converteix en el tag i els paràmetres de ruta s'inclouen automàticament.
 - **Seguretat** — bearer, basic, API key, OAuth 2.0 (inclòs el device flow de 3.2). Els noms d'esquemes no registrats es reporten com a errors.
 - **Activació per entorn** — `mux.Docs(enabled)` i `WithDisabled(true)` activen o desactiven la documentació segons l'entorn sense canviar les rutes registrades.
+- **Detecció de try-it** — `FromDocs` identifica les requests que vénen de les consoles dels docs perquè el teu middleware decideixi què poden fer.
 - **Segur davant XSS** — l'HTML de la documentació es renderitza amb `html/template`.
 - **Zero dependències** — només la biblioteca estàndard de Go en temps d'execució.
 
@@ -173,6 +174,25 @@ mux.Mount()
 ```
 
 Les rutes excloses no deixen rastre al document: ni rutes, ni esquemes, ni operationIds. La visibilitat només dona forma a la documentació publicada: les rutes amagades i internes **continuen servint trànsit a tots els entorns**. No és control d'accés; protegeix els endpoints sensibles amb autenticació real.
+
+### Detectar requests de prova
+
+Les consoles "Try it out" / "Test Request" de les UI completes envien **requests reals** al teu backend: a la xarxa són indistingibles de qualsevol altre client. `FromDocs` les identifica (de manera aproximada, mitjançant la capçalera `Referer` que el navegador adjunta als fetch de la pàgina de docs) perquè el teu equip decideixi la política: bloquejar escriptures, desviar-les a un emmagatzematge de proves, etiquetar-les per a observabilitat o el que prefereixi.
+
+```go
+guard := func(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if r.Method != http.MethodGet && mux.FromDocs(r) {
+            http.Error(w, "les peticions de prova no poden modificar dades", http.StatusForbidden)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+log.Fatal(http.ListenAndServe(":8080", guard(mux)))
+```
+
+`FromDocs` és una protecció contra accidents, **no un control de seguretat**: la capçalera `Referer` la controla el client (es pot falsificar) i es pot eliminar (extensions de privadesa, una `Referrer-Policy` estricta). A més, només funciona quan la pàgina de docs i l'API comparteixen origen — amb una URL absoluta de `WithServer` en un altre host, el navegador envia per defecte un `Referer` només amb l'origen i la detecció retorna false. Fes-la servir només per *restringir* què pot fer el trànsit originat als docs — mai per concedir accés ni saltar-te l'autenticació.
 
 Si tens un document OpenAPI escrit a mà en lloc de rutes generades, serveix-lo amb `DocsHandler` + `WithSpec`:
 
