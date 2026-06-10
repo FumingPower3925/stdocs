@@ -450,7 +450,7 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 			}
 		}
 	}
-	applyFieldTags(fieldSchema, f.Tag)
+	applyFieldTags(fieldSchema, f.Tag, f.Name)
 	return fieldMeta{
 		name:        name,
 		fieldSchema: fieldSchema,
@@ -465,16 +465,47 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 }
 
 // applyFieldTags transfers doc/description/example struct tags onto
-// the field's schema. Mutates fieldSchema.
-func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag) {
+// the field's schema. Mutates fieldSchema. fieldName is used only in
+// panic messages.
+func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string) {
 	if doc := tag.Get("doc"); doc != "" {
 		fieldSchema.Description = doc
 	} else if desc := tag.Get("description"); desc != "" {
 		fieldSchema.Description = desc
 	}
 	if ex := tag.Get("example"); ex != "" && fieldSchema.Example == nil {
-		fieldSchema.Example = ex
+		fieldSchema.Example = parseExample(ex, fieldSchema.Type, fieldName)
 	}
+}
+
+// parseExample converts an example struct-tag value to the field's
+// schema type so the emitted example matches its own schema (an
+// example:"42" on an integer field must emit the number 42, not the
+// string "42"). Unparseable values panic — loudly, at document-build
+// time — consistent with the module's fail-fast policy for invalid
+// registration input. Non-scalar schema types keep the raw string.
+func parseExample(value, schemaType, fieldName string) any {
+	switch schemaType {
+	case "integer":
+		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			panic("stdocs: example tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid integer")
+		}
+		return n
+	case "number":
+		f, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			panic("stdocs: example tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid number")
+		}
+		return f
+	case "boolean":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			panic("stdocs: example tag " + strconv.Quote(value) + " on field " + fieldName + " is not a valid boolean")
+		}
+		return b
+	}
+	return value
 }
 
 // inlineEmbedded flattens an anonymous struct's properties into s.
