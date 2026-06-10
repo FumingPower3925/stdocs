@@ -1,7 +1,16 @@
 # stdocs
 
-Zero-dependency OpenAPI 3.0.3 and 3.1.0 documentation generation for a stdlib
-`net/http.ServeMux` (Go 1.22+; tested on 1.26).
+[![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
+[![Lint](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg?job=lint)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
+[![YAML Roundtrip](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg?job=roundtrip)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/dl/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Runtime Deps](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)](.)
+[![OpenAPI 3.0.3](https://img.shields.io/badge/OpenAPI-3.0.3-blueviolet)](https://spec.openapis.org/oas/v3.0.3)
+[![OpenAPI 3.1.0](https://img.shields.io/badge/OpenAPI-3.1.0-blueviolet)](https://spec.openapis.org/oas/v3.1.0)
+
+Zero-dependency OpenAPI 3.0.3 and 3.1.0 documentation generation for the
+Go 1.22+ stdlib `net/http.ServeMux`. Tested on Go 1.26.
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("My API"))
@@ -11,27 +20,30 @@ http.Handle("/docs/", mux.Docs())  // docs UI at /docs/
 http.ListenAndServe(":8080", nil)
 ```
 
-That's it. `stdocs` walks your registered routes, parses the Go 1.22
-pattern syntax, generates an OpenAPI spec from your Go types, and serves
-a docs UI at `/docs` (configurable).
+`stdocs` walks your registered routes, parses the Go 1.22 pattern syntax,
+generates an OpenAPI spec from your Go types, and serves a docs UI at
+`/docs/` (configurable).
 
 ## Features
 
-- **Zero runtime dependencies.** Only the Go standard library. (The
+- **Zero runtime dependencies.** Only the Go standard library. The
   YAML round-trip test lives in its own submodule at
   `internal/spec/yaml/roundtrip_test/` and uses `gopkg.in/yaml.v3`;
   this dep never appears in the main module's `go.mod`, so
-  downstream users see one dep: `github.com/FumingPower3925/stdocs`.)
-- **Two OpenAPI versions.** Both 3.0.3 and 3.1.0 are emitted and tested.
-  Choose with `stdocs.WithVersion(stdocs.OpenAPI31)`.
-- **Type-to-schema reflection.** Pass a Go value to `stdocs.WithResponse`
-  or `stdocs.WithBody` and get a JSON Schema automatically, including
-  pointers (nullable), slices, maps, `time.Time`, recursive types via
-  `$ref`, embedded structs, generic-instantiated types, and `json` tag
+  downstream users see one dep: `github.com/FumingPower3925/stdocs`.
+  Verified with `go list -m all`.
+- **OpenAPI 3.0.3 and 3.1.0** both emitted and tested. Choose with
+  `stdocs.WithVersion(stdocs.OpenAPI31)`.
+- **Type-to-schema reflection.** Pass a Go value to `WithResponse` or
+  `WithBody` and get a JSON Schema automatically — pointers
+  (nullable), slices, maps, `time.Time`, recursive types via `$ref`,
+  embedded structs, generic-instantiated types, and `json` tag
   handling.
-- **Smart defaults.** Handler function names are turned into summaries
-  (`getUser` → "Get user"). The first path segment becomes the tag
-  (`/users/...` → tag "users"). Path parameters are auto-included.
+- **Smart defaults.** Handler function names are turned into
+  summaries (`getUser` → "Get user", `parseXML` → "Parse XML",
+  `HTTPHandler` → "HTTP handler"). The first path segment becomes
+  the tag (`/users/...` → tag "Users"). Path parameters are
+  auto-included.
 - **Security schemes.** First-class support for HTTP bearer/basic,
   API keys, and OAuth 2.0 with scopes. Register once, attach per-route
   with `WithSecurity`. Unregistered scheme names are reported as
@@ -47,8 +59,9 @@ a docs UI at `/docs` (configurable).
   titles and spec URLs are escaped.
 - **OpenAPI-compliant output.** Valid for all major UIs (3.0.3) and
   for Scalar / Stoplight (3.1.0).
-- **Escape hatch.** `WithOpenAPI(func(*Config))` gives you full access
-  to the spec document for any feature stdocs does not expose directly.
+- **Escape hatch.** `WithOpenAPI(func(map[string]any))` gives you
+  full access to the spec document for any feature stdocs does not
+  expose directly.
 
 ## Install
 
@@ -56,7 +69,8 @@ a docs UI at `/docs` (configurable).
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requires Go 1.22 or later (for the `net/http` pattern syntax).
+Requires Go 1.22 or later (for the `net/http` pattern syntax). Tested
+on Go 1.26.
 
 ## Quick start
 
@@ -64,6 +78,7 @@ Requires Go 1.22 or later (for the `net/http` pattern syntax).
 package main
 
 import (
+    "log"
     "net/http"
     "github.com/FumingPower3925/stdocs"
 )
@@ -77,20 +92,21 @@ func main() {
     mux.HandleFunc("POST /users", createUser)
     http.Handle("/api/", mux)
     http.Handle("/docs/", mux.Docs())  // serves /docs/ and /docs/openapi.json
-    http.ListenAndServe(":8080", nil)
+    log.Fatal(http.ListenAndServe(":8080", nil))
 }
 ```
 
-Visit `http://localhost:8080/docs/` to see the docs. Visit
-`http://localhost:8080/docs/openapi.json` to get the raw spec.
+Visit `http://localhost:8080/docs/` for the docs UI, or
+`http://localhost:8080/docs/openapi.json` for the raw spec.
 
 ## Tiers
 
 ### Tier 1 — Zero-config
 
-Routes registered with no documentation opts get a summary inferred from
-the handler function name and a tag inferred from the first path segment.
-Every route is auto-documented with at least a `200 OK` response.
+Routes registered with no documentation opts get a summary inferred
+from the handler function name and a tag inferred from the first path
+segment. Every route is auto-documented with at least a `200 OK`
+response.
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("My API"))
@@ -167,7 +183,7 @@ custom `WithSecurityScheme`.
 mux.HandleFunc("POST /users", createUser,
     stdocs.WithBody(CreateUserRequest{}),
     stdocs.WithResponse(201, User{}),
-    stdocs.WithExample(CreateUserRequest{Title: "Buy milk"}),
+    stdocs.WithExample(CreateUserRequest{Name: "Alice"}),
     stdocs.WithResponseExample(201, User{ID: "u-1", Name: "Alice"}),
 )
 ```
@@ -182,7 +198,6 @@ mux := stdocs.New(
         "newUser": {
             Method:  "POST",
             Summary: "New user created",
-            RequestBody: &stdocs.RequestBody{Schema: mustSchema(User{})},
             Responses: map[string]*stdocs.Response{
                 "200": {Description: "OK"},
             },
@@ -239,14 +254,16 @@ mux := stdocs.New(
 )
 ```
 
-The choice is per-mux. 3.0.3 is rendered by all major UIs (Swagger UI,
-Redoc, Scalar, Stoplight). 3.1.0 is rendered by Scalar and Stoplight.
+The choice is per-mux. 3.0.3 is rendered by all major UIs (Swagger
+UI, Redoc, Scalar, Stoplight). 3.1.0 is rendered by Scalar and
+Stoplight. 3.1.0 is a superset; the only 3.0-only feature stdocs
+uses is the `nullable: true` field.
 
 ## UI flavors
 
 The default UI is a tiny zero-JS HTML page that fetches
 `/docs/openapi.json` and renders a list of routes. No CDN, no extra
-dependencies, ~3KB. To use a richer UI, import a sub-package:
+dependencies, ~3 KB. To use a richer UI, import a sub-package:
 
 ```go
 import "github.com/FumingPower3925/stdocs/ui/scalar"
@@ -258,21 +275,24 @@ Available UIs:
 
 | Sub-package | UI | Source | Notes |
 |---|---|---|---|
-| (none) | Raw HTML | embedded | zero-JS, zero-dependency, ~3KB |
+| (none) | Raw HTML | embedded | zero-JS, zero-dependency, ~3 KB |
 | `ui/scalar` | Scalar | CDN | modern, pretty, requires internet |
-| `ui/scalaremb` | Scalar | embedded | air-gapped, +3.6 MB binary, run `go generate` first |
+| `ui/scalaremb` | Scalar | embedded | air-gapped, +3.6 MB binary (vendored) |
 | `ui/swaggerui` | Swagger UI | CDN | classic |
 | `ui/redoc` | Redoc | CDN | clean three-pane |
 | `ui/stoplight` | Stoplight Elements | CDN | works for both 3.0.3 and 3.1.0 |
 
-The sub-package pattern is `oaswrap/spec-ui`-style: each sub-package
-exposes a `WithUI()` `stdocs.Option` that swaps the embedded HTML.
-Sub-packages are tree-shaken by the linker if not imported.
+The sub-package pattern is "opt-in": each sub-package exposes a
+`WithUI()` `stdocs.Option` that swaps the embedded HTML. Sub-packages
+are tree-shaken by the linker if not imported.
 
-For the embedded Scalar (`ui/scalaremb`):
+For the embedded Scalar (`ui/scalaremb`), the JS bundle is vendored
+in-repo. To serve it, mount the asset handler:
 
-```bash
-go generate ./...                       # fetches standalone.js into assets/
+```go
+import "github.com/FumingPower3925/stdocs/ui/scalaremb"
+
+mux := stdocs.New(stdocs.WithTitle("My API"), scalaremb.WithUI())
 mux.Handle("GET /docs/_assets/", http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
 ```
 
@@ -284,14 +304,14 @@ mux.Handle("GET /docs/_assets/", http.StripPrefix("/docs/_assets/", scalaremb.As
 |---|---|---|
 | `WithTitle(s)` | `"API"` | API title (in OpenAPI `info.title`) |
 | `WithAPIVersion(s)` | `"0.0.0"` | API version (in OpenAPI `info.version`) |
-| `WithVersion(s)` | `"3.0.3"` | OpenAPI spec version: `"3.0.3"` or `"3.1.0"` |
+| `WithVersion(v)` | `OpenAPI30` | OpenAPI spec version (`OpenAPI30` or `OpenAPI31`) |
 | `WithDescription(s)` | empty | Markdown description |
 | `WithServer(url, desc)` | `{"/", ""}` | OpenAPI `servers` entry |
 | `WithContact(name, email, url)` | none | OpenAPI `contact` object |
 | `WithLicense(name, url)` | none | OpenAPI `license` object |
 | `WithTag(name, desc)` | none | Declare a top-level tag |
 | `WithDocsPrefix(p)` | `"/docs"` | URL prefix for the docs UI and spec |
-| `WithDefaultSummary(t)` | empty | Fallback summary template |
+| `WithDefaultSummary(t)` | empty | Fallback summary template (use `{resource}` for the first path segment) |
 | `WithGlobalSecurity(name, scopes...)` | none | Default security on every operation |
 | `WithOpenAPI(fn)` | none | Post-build spec mutation callback |
 | `WithWebhooks(map)` | none | (3.1 only) Webhook definitions |
@@ -330,13 +350,14 @@ mux.Handle("GET /docs/_assets/", http.StripPrefix("/docs/_assets/", scalaremb.As
 Go 1.22's `net/http.ServeMux` supports method+path patterns like
 `"GET /users/{id}"`, but it does not expose its registered patterns
 publicly. stdocs works around this by wrapping the mux: when you call
-`stdocs.New()`, you get a `*stdocs.Mux` that embeds `*http.ServeMux`
-and intercepts `Handle`/`HandleFunc` calls to record pattern +
-metadata. On the first call to `/docs/openapi.json`, the registry is
-walked, patterns are parsed, and the OpenAPI spec is built and cached.
+`stdocs.New()`, you get a `*stdocs.Mux` that embeds
+`*http.ServeMux` and intercepts `Handle`/`HandleFunc` calls to record
+pattern + metadata. On the first call to `/docs/openapi.json`, the
+registry is walked, patterns are parsed, and the OpenAPI spec is
+built and cached.
 
-This means **no comments, no code generation, no `unsafe` trick** — the
-pattern string itself is the documentation.
+This means **no comments, no code generation, no `unsafe` trick** —
+the pattern string itself is the documentation.
 
 ## Demo
 
@@ -349,6 +370,38 @@ go run ./cmd/demo
 
 It implements a tiny task tracker with five endpoints and a recursive
 `Task` type (parent-child), demonstrating most of the stdocs features.
+
+## Project layout
+
+```
+.
+├── cmd/demo/             # runnable demo
+├── ui/                   # docs UI sub-packages (scalar, swaggerui, ...)
+├── internal/             # private packages
+│   ├── pattern/          # Go 1.22 ServeMux pattern parser
+│   ├── schema/           # Go -> JSON Schema reflection
+│   ├── spec/             # OpenAPI 3.0.3 and 3.1.0 emitters
+│   │   └── yaml/         # hand-rolled JSON->YAML converter
+│   │       └── roundtrip_test/   # separate go module; uses gopkg.in/yaml.v3
+│   └── version/          # SpecVersion type
+├── *.go                  # public API (Option, Mux, RouteOpt, types)
+├── .golangci.yml         # golangci-lint v2 config
+└── .github/workflows/    # CI: test, lint, coverage, YAML roundtrip
+```
+
+## Contributing
+
+```bash
+# Run all checks locally
+go test -race -count=1 ./...
+golangci-lint run ./...
+go test -fuzz=^FuzzParsePattern$ -fuzztime=10s ./internal/pattern/
+
+# Run the YAML roundtrip test (in its own submodule)
+cd internal/spec/yaml/roundtrip_test && go test ./...
+```
+
+The full test suite is run by CI on every push and pull request.
 
 ## License
 
