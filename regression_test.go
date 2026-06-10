@@ -666,3 +666,67 @@ func mapKeysOf(m map[string]any) []string {
 	}
 	return keys
 }
+
+// Operations with a security requirement automatically document 401;
+// overridable per route, body-able via WithDefaultResponse, and
+// suppressible mux-wide.
+func TestAutoUnauthorized(t *testing.T) {
+	type APIError struct {
+		Message string `json:"message"`
+	}
+	resps := func(doc map[string]any, path, method string) map[string]any {
+		t.Helper()
+		return doc["paths"].(map[string]any)[path].(map[string]any)[method].(map[string]any)["responses"].(map[string]any)
+	}
+
+	mux := New(WithTitle("T"), WithBearerAuth("bearerAuth", "JWT"))
+	mux.HandleFunc("GET /public", noop)
+	mux.HandleFunc("GET /me", noop, WithSecurity("bearerAuth"))
+	mux.HandleFunc("GET /custom", noop, WithSecurity("bearerAuth"), WithResponse(401, APIError{}))
+	doc := buildDocMap(t, mux)
+	if _, ok := resps(doc, "/public", "get")["401"]; ok {
+		t.Errorf("unsecured route must not gain a 401")
+	}
+	r401, ok := resps(doc, "/me", "get")["401"].(map[string]any)
+	if !ok {
+		t.Fatalf("secured route missing auto-401")
+	}
+	if r401["description"] != "Unauthorized" {
+		t.Errorf("auto-401 description = %v", r401["description"])
+	}
+	if _, hasBody := r401["content"]; hasBody {
+		t.Errorf("bare auto-401 must have no body")
+	}
+	custom := resps(doc, "/custom", "get")["401"].(map[string]any)
+	if custom["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"] != "#/components/schemas/APIError" {
+		t.Errorf("per-route 401 must win: %v", custom)
+	}
+
+	// Global security: every route is secured except explicit opt-outs.
+	gmux := New(WithTitle("T"), WithBearerAuth("bearerAuth", "JWT"), WithGlobalSecurity("bearerAuth"))
+	gmux.HandleFunc("GET /a", noop)
+	gmux.HandleFunc("GET /open", noop, WithNoSecurity())
+	gdoc := buildDocMap(t, gmux)
+	if _, ok := resps(gdoc, "/a", "get")["401"]; !ok {
+		t.Errorf("globally-secured route missing auto-401")
+	}
+	if _, ok := resps(gdoc, "/open", "get")["401"]; ok {
+		t.Errorf("WithNoSecurity route must not gain a 401")
+	}
+
+	// WithDefaultResponse(401, body) supplies the body.
+	bmux := New(WithTitle("T"), WithBearerAuth("bearerAuth", "JWT"), WithDefaultResponse(401, APIError{}))
+	bmux.HandleFunc("GET /me", noop, WithSecurity("bearerAuth"))
+	bdoc := buildDocMap(t, bmux)
+	b401 := resps(bdoc, "/me", "get")["401"].(map[string]any)
+	if b401["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"] != "#/components/schemas/APIError" {
+		t.Errorf("WithDefaultResponse(401) body should apply: %v", b401)
+	}
+
+	// Suppressed mux-wide.
+	smux := New(WithTitle("T"), WithBearerAuth("bearerAuth", "JWT"), WithAutoUnauthorized(false))
+	smux.HandleFunc("GET /me", noop, WithSecurity("bearerAuth"))
+	if _, ok := resps(buildDocMap(t, smux), "/me", "get")["401"]; ok {
+		t.Errorf("WithAutoUnauthorized(false) must suppress the 401")
+	}
+}
