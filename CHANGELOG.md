@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `Mux.Mount` accepts the same optional bool as `Mux.Docs`, with the
+  same rule: an explicit per-call value wins over `WithDisabled` in
+  both directions (`mux.Mount(env != "prod")`).
 
 ## [0.1.0] - 2026-06-10
 

@@ -122,7 +122,7 @@ The full option list lives on [pkg.go.dev](https://pkg.go.dev/github.com/FumingP
 
 ### Mounting and disabling the docs
 
-`mux.Mount()` is shorthand for registering the handler returned by `mux.Docs()` on the mux itself at the configured docs prefix — there is one docs handler, two ways to place it. Use `Mount()` unless you need the handler directly (to wrap it in auth middleware, mount it on another mux, or pass the per-call toggle).
+`mux.Mount()` is shorthand for registering the handler returned by `mux.Docs()` on the mux itself at the configured docs prefix — there is one docs handler, two ways to place it. Use `Mount()` unless you need the handler directly (to wrap it in auth middleware or mount it on another mux). Both accept the same optional bool with the same rule: an explicit per-call value wins over `WithDisabled` in both directions.
 
 The docs UI and the spec endpoints (`openapi.json`, `openapi.yaml`) can be turned off without unregistering routes. The decision is taken when `Mount()`/`Docs()` is called (wrap the handler yourself if you need a per-request switch):
 
@@ -138,12 +138,11 @@ mux.Mount() // registers nothing when disabled
 ```
 
 ```go
-// 2) Per-call, when mounting manually: pass the condition to
-//    mux.Docs. An explicit bool wins over WithDisabled in both
-//    directions.
+// 2) Per-call: pass the condition to Mount (or to Docs when
+//    mounting manually).
 mux := stdocs.New(stdocs.WithTitle("My API"))
 mux.HandleFunc("GET /users", listUsers)
-mux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
+mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
 When disabled, every request under the docs prefix gets a 404. The spec is still buildable via `mux.JSON()` and `mux.YAML()` — disabling the UI does not stop spec generation. Routes registered under the docs prefix (the docs page itself, asset handlers) never appear in the generated spec.

@@ -126,7 +126,7 @@ La lista completa de opciones está en [pkg.go.dev](https://pkg.go.dev/github.co
 
 ### Montar y desactivar la documentación
 
-`mux.Mount()` es una abreviatura de registrar el handler que devuelve `mux.Docs()` en el propio mux, bajo el prefijo de documentación configurado: hay un único handler de documentación y dos formas de colocarlo. Usa `Mount()` salvo que necesites el handler directamente (para envolverlo en un middleware de autenticación, montarlo en otro mux o pasar el conmutador por llamada).
+`mux.Mount()` es una abreviatura de registrar el handler que devuelve `mux.Docs()` en el propio mux, bajo el prefijo de documentación configurado: hay un único handler de documentación y dos formas de colocarlo. Usa `Mount()` salvo que necesites el handler directamente (para envolverlo en un middleware de autenticación o montarlo en otro mux). Ambos aceptan el mismo bool opcional con la misma regla: un valor explícito por llamada gana a `WithDisabled` en ambos sentidos.
 
 La interfaz de documentación y los endpoints del spec (`openapi.json`, `openapi.yaml`) se pueden desactivar sin anular el registro de rutas. La decisión se toma cuando se llama a `Mount()`/`Docs()` (envuelve el handler tú mismo si necesitas un conmutador por petición):
 
@@ -142,12 +142,11 @@ mux.Mount() // no registra nada cuando está desactivado
 ```
 
 ```go
-// 2) Por llamada, al montar manualmente: pasa la condición a
-//    mux.Docs. Un bool explícito gana a WithDisabled en ambos
-//    sentidos.
+// 2) Por llamada: pasa la condición a Mount (o a Docs si montas
+//    manualmente).
 mux := stdocs.New(stdocs.WithTitle("Mi API"))
 mux.HandleFunc("GET /users", listUsers)
-mux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
+mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
 Cuando está desactivada, toda petición bajo el prefijo de documentación recibe un 404. El spec sigue pudiéndose construir con `mux.JSON()` y `mux.YAML()` — desactivar la interfaz no detiene la generación del spec. Las rutas registradas bajo el prefijo de documentación (la propia página de docs, los handlers de recursos) nunca aparecen en el spec generado.
