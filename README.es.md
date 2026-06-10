@@ -1,10 +1,10 @@
-> ⚠️ **Esta es una traducción comunitaria del [README en inglés](../../README.md).** La versión en inglés es la de referencia. Esta traducción puede estar desactualizada; en caso de duda, consulta la versión en inglés.
+> ⚠️ **Esta es una traducción comunitaria del [README en inglés](README.md).** La versión en inglés es la de referencia. Esta traducción puede estar desactualizada; en caso de duda, consulta la versión en inglés.
 >
-> Para proponer correcciones, ver [`CONTRIBUTING.md`](../../CONTRIBUTING.md) → "Translations".
+> Para proponer correcciones, ver [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Translations".
 
 # stdocs
 
-**Idiomas:** [English](../../README.md) (canónico) · [Español](README.md) · [Català](../ca/README.md)
+**Idiomas:** [English](README.md) (canónico) · [Español](README.es.md) · [Català](README.ca.md)
 
 [![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FumingPower3925/stdocs)](https://goreportcard.com/report/github.com/FumingPower3925/stdocs)
@@ -115,7 +115,7 @@ El `net/http.ServeMux` de Go 1.22 soporta patrones de método y ruta, pero no lo
 
 Sin comentarios, sin generación de código, sin `unsafe` — el patrón mismo es la documentación.
 
-Hay un demo ejecutable en [`cmd/demo`](../../cmd/demo):
+Hay un demo ejecutable en [`cmd/demo`](cmd/demo):
 
 ```bash
 go run ./cmd/demo
@@ -124,7 +124,7 @@ go run ./cmd/demo
 
 ## Contribuir
 
-Ver [`CONTRIBUTING.md`](../../CONTRIBUTING.md). Las traducciones las mantiene la comunidad; consulta la sección "Translations" para añadir o actualizar una.
+Ver [`CONTRIBUTING.md`](CONTRIBUTING.md). Las traducciones las mantiene la comunidad; consulta la sección "Translations" para añadir o actualizar una.
 
 ```bash
 go test -race -count=1 ./...
@@ -133,4 +133,4 @@ golangci-lint run ./...
 
 ## Licencia
 
-Apache-2.0. Ver [LICENSE](../../LICENSE).
+Apache-2.0. Ver [LICENSE](LICENSE).
