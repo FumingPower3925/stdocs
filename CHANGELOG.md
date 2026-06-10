@@ -7,7 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- Schema constraint tags on struct fields: `minimum`, `maximum`,
+  `exclusiveMinimum`, `exclusiveMaximum`, `minLength`, `maxLength`,
+  `pattern`, `minItems`, `maxItems`, `uniqueItems`, `enum`,
+  `default`, and `format`. Values are parsed per the field type and
+  validated against it; misapplied or unparseable constraints panic
+  at document-build time. Exclusive bounds emit the boolean form on
+  3.0 and the numeric 2020-12 keywords on 3.1/3.2.
+- Typed parameter declaration, two surfaces: `ParamOpt` modifiers on
+  `WithParam`/`QueryParam`/`HeaderParam`/`CookieParam`
+  (`ParamRequired`, `ParamDefault`, `ParamExample`, `ParamEnum`,
+  `ParamMinimum`, `ParamMaximum`, `ParamMinLength`, `ParamMaxLength`,
+  `ParamPattern` — values validated against the declared type), and
+  `WithParams(struct)`, which reflects a struct with
+  `query:`/`header:`/`cookie:` location tags, the body fields' tag
+  vocabulary, and `required:"true"`.
+- `Opts(...)` combines route opts into reusable bundles.
+- `WithDefaultResponse(status, body)` documents a response on every
+  operation that does not declare the status itself — the shared
+  error envelope declared once. Status 0 means the OpenAPI `default`
+  response.
+- Secured operations (per-route `WithSecurity` or inherited
+  `WithGlobalSecurity`) automatically document a 401; a per-route
+  401 or a `WithDefaultResponse(401, body)` wins, and
+  `WithAutoUnauthorized(false)` suppresses it. Spec-affecting.
+- `WithPathPrefix(prefix)` prepends a documentation-only prefix to
+  every emitted path, for muxes mounted behind `http.StripPrefix` or
+  a stripping reverse proxy.
+- `DriftWarn(mux, logf)`, a development aid that warns once per
+  route and finding when a handler returns an undocumented status or
+  writes a non-JSON Content-Type for a JSON-documented response.
+
+### Changed
+
+- `WithParam` and its shorthands fail fast: an unknown type string
+  (previously a silent empty schema), an unknown `in` location, or an
+  empty name now panics at registration.
 
 ## [0.2.0] - 2026-06-11
 
