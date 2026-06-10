@@ -155,3 +155,97 @@ func ExampleFromDocs() {
 	fmt.Println("from docs:", mux.FromDocs(r))
 	// Output: from docs: true
 }
+
+// Constraint tags and typed parameters: the struct documents its own
+// validation rules, and WithParams reflects query parameters from a
+// struct with the same vocabulary.
+func ExampleWithParams() {
+	type ListParams struct {
+		Cursor string `query:"cursor" doc:"Opaque pagination cursor"`
+		Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
+	}
+	mux := stdocs.New(stdocs.WithTitle("My API"))
+	mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {},
+		stdocs.WithParams(ListParams{}),
+	)
+	raw, _ := mux.JSON()
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name   string `json:"name"`
+				Schema struct {
+					Type    string          `json:"type"`
+					Default json.RawMessage `json:"default"`
+					Maximum json.RawMessage `json:"maximum"`
+				} `json:"schema"`
+			} `json:"parameters"`
+		} `json:"paths"`
+	}
+	json.Unmarshal(raw, &doc)
+	for _, p := range doc.Paths["/tasks"]["get"].Parameters {
+		fmt.Printf("%s (%s) default=%s max=%s\n",
+			p.Name, p.Schema.Type, p.Schema.Default, p.Schema.Maximum)
+	}
+	// Output:
+	// cursor (string) default= max=
+	// limit (integer) default=20 max=100
+}
+
+// The shared error envelope is declared once at the mux level; every
+// operation documents it unless it declares the status itself.
+func ExampleWithDefaultResponse() {
+	type APIError struct {
+		Message string `json:"message"`
+	}
+	mux := stdocs.New(
+		stdocs.WithTitle("My API"),
+		stdocs.WithDefaultResponse(500, APIError{}),
+	)
+	mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {})
+	raw, _ := mux.JSON()
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Description string `json:"description"`
+			} `json:"responses"`
+		} `json:"paths"`
+	}
+	json.Unmarshal(raw, &doc)
+	resps := doc.Paths["/tasks"]["get"].Responses
+	for _, code := range []string{"200", "500"} {
+		fmt.Printf("%s: %s\n", code, resps[code].Description)
+	}
+	// Output:
+	// 200: OK
+	// 500: Internal Server Error
+}
+
+// Route-opt bundles: declare a preset once, reuse it across routes.
+func ExampleOpts() {
+	paginated := stdocs.Opts(
+		stdocs.QueryParam("cursor", "string", "Opaque cursor"),
+		stdocs.QueryParam("limit", "integer", "Page size", stdocs.ParamDefault(20)),
+	)
+	mux := stdocs.New(stdocs.WithTitle("My API"))
+	mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {}, paginated)
+	mux.HandleFunc("GET /users", func(w http.ResponseWriter, r *http.Request) {}, paginated)
+	raw, _ := mux.JSON()
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name string `json:"name"`
+			} `json:"parameters"`
+		} `json:"paths"`
+	}
+	json.Unmarshal(raw, &doc)
+	for _, path := range []string{"/tasks", "/users"} {
+		names := make([]string, 0, 2)
+		for _, p := range doc.Paths[path]["get"].Parameters {
+			names = append(names, p.Name)
+		}
+		fmt.Println(path, names)
+	}
+	// Output:
+	// /tasks [cursor limit]
+	// /users [cursor limit]
+}
