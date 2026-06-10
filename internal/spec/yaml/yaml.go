@@ -8,9 +8,9 @@ import (
 	"strconv"
 )
 
-// yamlFromJSON converts JSON bytes to YAML bytes. It supports only the
-// subset of values that the OpenAPI emitters produce: objects, arrays,
-// strings, numbers, booleans, and null.
+// FromJSON converts JSON bytes to YAML bytes. It supports only the
+// subset of values that the OpenAPI emitters produce: objects,
+// arrays, strings, numbers, booleans, and null.
 //
 // The input JSON is unmarshalled into interface{} and re-emitted. Keys
 // in objects are sorted alphabetically for stable output.
