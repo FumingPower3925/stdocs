@@ -3,20 +3,27 @@ package stdocs
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 )
 
-// TestParity_30_31 checks that the same registered mux produces
-// semantically equivalent specs under OpenAPI 3.0.3 and 3.1.0:
-// same paths, same operations, same parameters, same response
-// statuses, same component names. The structural differences
-// (nullable encoding, webhook support) are normalised.
-func TestParity_30_31(t *testing.T) {
+// TestParity checks that the same registered mux produces
+// semantically equivalent specs under OpenAPI 3.0, 3.1, and 3.2:
+// same paths, same method sets per path, same parameter (name,in)
+// sets, same response statuses, same operationIds, and same
+// component names. The structural differences (nullable encoding,
+// webhook support, $self) are normalised or excluded. As a stronger
+// check, the 3.1 and 3.2 documents must be deeply identical apart
+// from the openapi version string (3.2 adds nothing for these
+// inputs).
+func TestParity(t *testing.T) {
 	type Body struct {
 		Title string `json:"title"`
 	}
 	type Resp struct {
-		ID string `json:"id"`
+		ID   string  `json:"id"`
+		Next *Resp   `json:"next"` // nullable ref: encoding differs by version
+		Tags []*Resp `json:"tags"`
 	}
 	makeMux := func(v SpecVersion) *Mux {
 		m := New(WithTitle("T"), WithVersion(v), WithBearerAuth("bearerAuth", "JWT"))
@@ -24,11 +31,13 @@ func TestParity_30_31(t *testing.T) {
 			Summary("List users"),
 			Tags("users"),
 			WithResponse(200, []Resp{}),
+			QueryParam("page", "integer", "page number"),
 		)
 		m.HandleFunc("POST /users", func(w http.ResponseWriter, r *http.Request) {},
 			WithBody(Body{}),
 			WithResponse(201, Resp{}),
 			WithResponse(422, struct{}{}),
+			WithSecurity("bearerAuth"),
 		)
 		m.HandleFunc("GET /users/{id}", func(w http.ResponseWriter, r *http.Request) {},
 			WithResponse(200, Resp{}),
@@ -36,29 +45,89 @@ func TestParity_30_31(t *testing.T) {
 		)
 		return m
 	}
-	m30 := makeMux(OpenAPI30)
-	m31 := makeMux(OpenAPI31)
-	b30, _ := m30.JSON()
-	b31, _ := m31.JSON()
-	var d30, d31 map[string]any
-	_ = json.Unmarshal(b30, &d30)
-	_ = json.Unmarshal(b31, &d31)
-	// OpenAPI version string differs.
-	if d30["openapi"] == d31["openapi"] {
-		t.Errorf("expected different openapi versions, got both %v", d30["openapi"])
+
+	docs := map[SpecVersion]map[string]any{}
+	for _, v := range []SpecVersion{OpenAPI30, OpenAPI31, OpenAPI32} {
+		b, err := makeMux(v).JSON()
+		if err != nil {
+			t.Fatalf("%s: %v", v, err)
+		}
+		var d map[string]any
+		if err := json.Unmarshal(b, &d); err != nil {
+			t.Fatalf("%s: %v", v, err)
+		}
+		docs[v] = d
 	}
-	// Same paths.
-	p30 := keys(d30["paths"].(map[string]any))
-	p31 := keys(d31["paths"].(map[string]any))
-	if !stringEq(p30, p31) {
-		t.Errorf("paths differ:\n  30=%v\n  31=%v", p30, p31)
+
+	base := docs[OpenAPI30]
+	for _, v := range []SpecVersion{OpenAPI31, OpenAPI32} {
+		d := docs[v]
+		if base["openapi"] == d["openapi"] {
+			t.Errorf("expected different openapi versions, got both %v", d["openapi"])
+		}
+		// Same paths.
+		if !stringEq(keys(base["paths"].(map[string]any)), keys(d["paths"].(map[string]any))) {
+			t.Errorf("%s: paths differ from 3.0", v)
+		}
+		// Same component names.
+		if !stringEq(components(base), components(d)) {
+			t.Errorf("%s: components differ from 3.0:\n  30=%v\n  %s=%v", v, components(base), v, components(d))
+		}
+		// Per path: same method sets, operationIds, response statuses,
+		// and parameter (name, in) pairs.
+		for path, pi := range base["paths"].(map[string]any) {
+			basePI := pi.(map[string]any)
+			otherPI := d["paths"].(map[string]any)[path].(map[string]any)
+			if !stringEq(keys(basePI), keys(otherPI)) {
+				t.Errorf("%s %s: path-item keys differ: %v vs %v", v, path, keys(basePI), keys(otherPI))
+				continue
+			}
+			for method, op := range basePI {
+				if method == "parameters" {
+					if !reflect.DeepEqual(paramPairs(op), paramPairs(otherPI[method])) {
+						t.Errorf("%s %s: path params differ", v, path)
+					}
+					continue
+				}
+				baseOp := op.(map[string]any)
+				otherOp := otherPI[method].(map[string]any)
+				if baseOp["operationId"] != otherOp["operationId"] {
+					t.Errorf("%s %s %s: operationId %v vs %v", v, path, method, baseOp["operationId"], otherOp["operationId"])
+				}
+				baseResp, _ := baseOp["responses"].(map[string]any)
+				otherResp, _ := otherOp["responses"].(map[string]any)
+				if !stringEq(keys(baseResp), keys(otherResp)) {
+					t.Errorf("%s %s %s: response statuses differ", v, path, method)
+				}
+				if !reflect.DeepEqual(paramPairs(baseOp["parameters"]), paramPairs(otherOp["parameters"])) {
+					t.Errorf("%s %s %s: parameters differ", v, path, method)
+				}
+			}
+		}
 	}
-	// Same component names.
-	c30 := components(d30)
-	c31 := components(d31)
-	if !stringEq(c30, c31) {
-		t.Errorf("components differ:\n  30=%v\n  31=%v", c30, c31)
+
+	// 3.1 vs 3.2 must be byte-identical apart from the version string
+	// (no $self was set and these inputs exercise no 3.2-only paths).
+	d31, d32 := docs[OpenAPI31], docs[OpenAPI32]
+	d31["openapi"], d32["openapi"] = "X", "X"
+	b31, _ := json.Marshal(d31)
+	b32, _ := json.Marshal(d32)
+	if string(b31) != string(b32) {
+		t.Errorf("3.1 and 3.2 documents differ beyond the version string:\n31: %s\n32: %s", b31, b32)
 	}
+}
+
+// paramPairs extracts the (name, in) pairs from a parameters array.
+func paramPairs(v any) [][2]string {
+	arr, _ := v.([]any)
+	out := make([][2]string, 0, len(arr))
+	for _, p := range arr {
+		pm, _ := p.(map[string]any)
+		name, _ := pm["name"].(string)
+		in, _ := pm["in"].(string)
+		out = append(out, [2]string{name, in})
+	}
+	return out
 }
 
 func keys(m map[string]any) []string {

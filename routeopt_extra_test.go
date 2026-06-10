@@ -9,7 +9,7 @@ func TestResponseDescription_Override(t *testing.T) {
 	m := New(WithTitle("T"))
 	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {},
 		WithResponse(200, struct{}{}),
-		ResponseDescription(200, "Custom OK description"),
+		WithResponseDescription(200, "Custom OK description"),
 	)
 	b, err := m.JSON()
 	if err != nil {
@@ -25,7 +25,7 @@ func TestResponseDescription_Override(t *testing.T) {
 func TestResponseDescription_NoResponse(t *testing.T) {
 	m := New(WithTitle("T"))
 	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {},
-		ResponseDescription(200, "nope"),
+		WithResponseDescription(200, "nope"),
 	)
 	if _, err := m.JSON(); err != nil {
 		t.Errorf("JSON() error: %v", err)
@@ -36,7 +36,7 @@ func TestResponseHeader_AddsHeader(t *testing.T) {
 	m := New(WithTitle("T"))
 	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {},
 		WithResponse(200, struct{}{}),
-		ResponseHeader(200, "X-Trace-Id", "string", "Trace id"),
+		WithResponseHeader(200, "X-Trace-Id", "string", "Trace id"),
 	)
 	b, _ := m.JSON()
 	doc := jx(t, b)
@@ -52,7 +52,7 @@ func TestResponseHeader_AddsHeader(t *testing.T) {
 func TestResponseHeader_NoResponse(t *testing.T) {
 	m := New(WithTitle("T"))
 	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {},
-		ResponseHeader(200, "X-Trace-Id", "string", "Trace"),
+		WithResponseHeader(200, "X-Trace-Id", "string", "Trace"),
 	)
 	if _, err := m.JSON(); err != nil {
 		t.Errorf("JSON() error: %v", err)
@@ -66,7 +66,7 @@ func TestBodyContentType_Override(t *testing.T) {
 	}
 	m.HandleFunc("POST /x", func(w http.ResponseWriter, r *http.Request) {},
 		WithBody(Req{}),
-		BodyContentType("application/xml"),
+		WithBodyContentType("application/xml"),
 	)
 	b, _ := m.JSON()
 	doc := jx(t, b)
@@ -86,7 +86,7 @@ func TestBodyContentType_Override(t *testing.T) {
 func TestBodyContentType_NoBody(t *testing.T) {
 	m := New(WithTitle("T"))
 	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {},
-		BodyContentType("application/xml"),
+		WithBodyContentType("application/xml"),
 	)
 	if _, err := m.JSON(); err != nil {
 		t.Errorf("JSON() error: %v", err)

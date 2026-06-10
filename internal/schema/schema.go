@@ -1,27 +1,26 @@
 // Package schema reflects Go values into a version-agnostic JSON
 // Schema representation consumed by the OpenAPI emitters in
-// internal/spec. Two emitters (3.0.3 and 3.1.0) share the same
-// intermediate Schema type; differences in how nullable, $ref,
-// and other version-specific bits are rendered live in the
-// emitter code, not in this package.
+// internal/spec. The three emitters (3.0, 3.1, and 3.2) share the
+// same intermediate Schema type; differences in how nullable, $ref,
+// and other version-specific bits are rendered live in the emitter
+// code, not in this package.
 package schema
 
 import (
+	"encoding"
+	"encoding/json"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
-
-	"github.com/FumingPower3925/stdocs/internal/version"
 )
 
 // Schema is a version-agnostic JSON Schema (Draft 2020-12 / OpenAPI 3.1 flavour)
-// value. The OpenAPI 3.0.3 emitter in openapi30.go and the 3.1.0 emitter in
-// openapi31.go serialize the same Schema value into their respective JSON
-// representations. The model is version-agnostic: Nullable is
-// rendered differently in 3.0.3 ("nullable": true) and 3.1.0
-// (a "type" array including "null") at serialization time, without
-// mutating the model.
+// value. The OpenAPI emitters serialize the same Schema value into their
+// respective JSON representations. The model is version-agnostic: Nullable
+// is rendered differently in 3.0 ("nullable": true) and 3.1/3.2 (a "type"
+// array including "null") at serialization time, without mutating the model.
 type Schema struct {
 	// Type is the JSON Schema type: "object", "array", "string", "number",
 	// "integer", "boolean", or "null". Empty means "no type constraint"
@@ -42,7 +41,8 @@ type Schema struct {
 	// when used as a map type.
 	AdditionalProperties *Schema
 	// Ref is a $ref pointer into the components.schemas section. When set,
-	// the emitter emits a $ref object and ignores the other fields.
+	// the emitter emits a $ref object (wrapped when Nullable, Description,
+	// or Example are also set) and ignores the structural fields.
 	Ref string
 	// Enum, when non-empty, restricts the value to a fixed set.
 	Enum []any
@@ -51,8 +51,8 @@ type Schema struct {
 	// Example is an example value, if any.
 	Example any
 	// Nullable is true when the value may be null (Go: a pointer or interface).
-	// In OpenAPI 3.0.3 this is emitted as `"nullable": true`. In 3.1.0 it is
-	// expressed by adding "null" to TypeArray.
+	// In OpenAPI 3.0 this is emitted as `"nullable": true`. In 3.1/3.2 it is
+	// expressed by adding "null" to the type array.
 	Nullable bool
 	// Extensions is a map of x-stdocs-* and similar extension fields. The
 	// keys are emitted as-is (e.g. "x-stdocs-type"); values must be
@@ -60,66 +60,75 @@ type Schema struct {
 	Extensions map[string]any
 }
 
-// reflector builds a set of named component schemas and a primary schema
-// for the value being reflected. The mutex protects the seen map when
-// reflectSchema is called concurrently (it is not expected to be, but
-// the API surface is).
-type reflector struct {
-	version version.SpecVersion
-	seen    map[reflect.Type]string // type -> component schema name
-	out     map[string]*Schema     // accumulated components
+// Reflector accumulates named component schemas across multiple Reflect
+// calls. A single Reflector must be used for one OpenAPI document build so
+// that component-name collisions between same-named types from different
+// packages are detected and suffixed (User, User_2, ...) consistently with
+// the $ref strings handed out at use sites.
+//
+// A Reflector is not safe for concurrent use.
+//
+// The Schema model is version-agnostic (the emitters render Nullable and
+// $ref wrappers per OpenAPI version), so a Reflector needs no version.
+type Reflector struct {
+	seen map[reflect.Type]string // type -> component schema name
+	out  map[string]*Schema      // accumulated components
+}
+
+// NewReflector returns an empty Reflector.
+func NewReflector() *Reflector {
+	return &Reflector{
+		seen: make(map[reflect.Type]string),
+		out:  make(map[string]*Schema),
+	}
+}
+
+// Reflect produces a JSON Schema for the dynamic type of value. Named
+// structs are registered as components on the Reflector and returned as
+// $ref schemas. The zero value of value is fine — only the type is used.
+func (r *Reflector) Reflect(value any) *Schema {
+	t := reflect.TypeOf(value)
+	if t == nil {
+		// value is an untyped nil. The most honest schema is {} (anything).
+		return &Schema{}
+	}
+	return r.reflect(t)
+}
+
+// Components returns the accumulated named component schemas. The map is
+// the Reflector's own; callers must not mutate it while still reflecting.
+func (r *Reflector) Components() map[string]*Schema {
+	return r.out
+}
+
+// ReflectSchema produces a JSON Schema for the given Go value plus the
+// named components it references. It is a convenience wrapper around a
+// single-use Reflector; for whole-document builds use NewReflector so all
+// values share one component namespace.
+func ReflectSchema(value any) (*Schema, map[string]*Schema) {
+	r := NewReflector()
+	s := r.Reflect(value)
+	return s, r.out
 }
 
 // reserveName returns a unique component name based on claimed. If
 // claimed is already in use, a numeric suffix is appended (e.g.
 // "User" -> "User", then "User" again -> "User_2", "User_3"...).
-// The reserved name is recorded in r.out's keys for collision detection.
-func (r *reflector) reserveName(claimed string) string {
+func (r *Reflector) reserveName(claimed string) string {
 	name := claimed
 	for i := 2; ; i++ {
 		if _, exists := r.out[name]; !exists {
 			return name
 		}
-		name = claimed + "_" + itoa(i)
+		name = claimed + "_" + strconv.Itoa(i)
 	}
-}
-
-// itoa is a small, allocation-free int-to-string converter used only
-// for component-name suffixes.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }
 
 // sanitizeComponentName returns a name suitable for use as a JSON
-// pointer fragment (after "#/components/schemas/") and as a Go-style
-// identifier in the schema doc. It replaces illegal characters:
-//
-//   - '[' ']' are replaced with '_' (handles "Page[Foo]" -> "Page_Foo_")
-//   - '.' is replaced with '_' (handles "pkg.Type" -> "pkg_Type")
-//   - '/' is replaced with '_' (handles "pkg/with/slash.Type")
-//   - leading digits and other characters illegal in identifiers are
-//     replaced with '_'
-//
-// If the result is empty or starts with a digit, "Schema" is
-// prepended.
+// pointer fragment (after "#/components/schemas/"). Characters outside
+// [a-zA-Z0-9_] are replaced with '_' (handling generic instantiations
+// like "Page[pkg.Foo]"), runs of underscores are collapsed, and a name
+// that would start with a digit gains a "Schema_" prefix.
 func sanitizeComponentName(name string) string {
 	if name == "" {
 		return "Schema"
@@ -167,32 +176,22 @@ func sanitizeComponentName(name string) string {
 	return s
 }
 
-// ReflectSchema produces a JSON Schema for the given Go type. The version
-// controls how Nullable is serialized (3.0.3 emits nullable:true; 3.1.0
-// uses type arrays). Named structs are emitted as $ref pointers into a
-// components.schemas map that is returned alongside the primary schema.
-//
-// The zero value of value is fine — only the type is used, not the value
-// itself.
-func ReflectSchema(value any, v version.SpecVersion) (*Schema, map[string]*Schema) {
-	t := reflect.TypeOf(value)
-	if t == nil {
-		// value is an untyped nil. The most honest schema is {} (anything).
-		return &Schema{}, nil
-	}
-	r := &reflector{
-		version: v,
-		seen:    make(map[reflect.Type]string),
-		out:     make(map[string]*Schema),
-	}
-	s := r.reflect(t, nil)
-	return s, r.out
+var (
+	timeType          = reflect.TypeFor[time.Time]()
+	rawMessageType    = reflect.TypeFor[json.RawMessage]()
+	jsonMarshalerType = reflect.TypeFor[json.Marshaler]()
+	textMarshalerType = reflect.TypeFor[encoding.TextMarshaler]()
+)
+
+// implementsAsValueOrPointer reports whether t or *t implements iface.
+// encoding/json consults pointer-receiver method sets for addressable
+// values, so for documentation purposes we treat both the same.
+func implementsAsValueOrPointer(t reflect.Type, iface reflect.Type) bool {
+	return t.Implements(iface) || reflect.PointerTo(t).Implements(iface)
 }
 
-// reflect is the recursive worker. parent is the parent segment for
-// path-tracking (currently unused but reserved for future context-aware
-// emission of names like "ParentChild").
-func (r *reflector) reflect(t reflect.Type, _ []int) *Schema {
+// reflect is the recursive worker.
+func (r *Reflector) reflect(t reflect.Type) *Schema {
 	// Unwrap pointers, but mark nullable.
 	nullable := false
 	for t.Kind() == reflect.Ptr {
@@ -201,111 +200,97 @@ func (r *reflector) reflect(t reflect.Type, _ []int) *Schema {
 	}
 
 	// Channels and functions: not representable in JSON. Return nil so the
-	// caller (struct field loop) skips the field.
+	// caller (struct field loop) skips the field, matching encoding/json.
 	switch t.Kind() {
 	case reflect.Chan, reflect.Func, reflect.UnsafePointer:
 		return nil
 	}
 
-	// If we have a named type and we have seen it before, return a $ref.
+	// If we have a named type and we have seen it before, return a $ref
+	// carrying the use site's nullability.
 	if t.Name() != "" {
 		if name, ok := r.seen[t]; ok {
-			return &Schema{Ref: "#/components/schemas/" + name}
+			return &Schema{Ref: "#/components/schemas/" + name, Nullable: nullable}
 		}
 	}
 
-	// time.Time gets a fixed string/date-time schema. It is a struct but
-	// its representation is always the RFC3339 string.
-	if t == reflect.TypeFor[time.Time]() {
-		return r.primitiveString("date-time", nullable)
+	// Types with custom JSON representations. time.Time first (it
+	// implements json.Marshaler but has a well-known shape), then
+	// json.RawMessage (inline raw JSON: any shape), then arbitrary
+	// json.Marshaler implementors (shape unknowable from the type), then
+	// encoding.TextMarshaler implementors (always a JSON string).
+	switch {
+	case t == timeType:
+		return &Schema{Type: "string", Format: "date-time", Nullable: nullable}
+	case t == rawMessageType:
+		return &Schema{Nullable: nullable, Extensions: map[string]any{
+			"x-stdocs-type": "json.RawMessage",
+		}}
+	case implementsAsValueOrPointer(t, jsonMarshalerType):
+		return &Schema{Nullable: nullable, Extensions: map[string]any{
+			"x-stdocs-type": "custom-marshaler:" + t.String(),
+		}}
+	case implementsAsValueOrPointer(t, textMarshalerType):
+		return &Schema{Type: "string", Nullable: nullable}
 	}
 
 	switch t.Kind() {
 	case reflect.String:
-		return r.primitiveString("", nullable)
+		return &Schema{Type: "string", Nullable: nullable}
 	case reflect.Bool:
-		s := &Schema{Type: "boolean", Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		return &Schema{Type: "boolean", Nullable: nullable}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32:
-		s := &Schema{Type: "integer", Format: "int32", Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		return &Schema{Type: "integer", Format: "int32", Nullable: nullable}
 	case reflect.Int64:
-		s := &Schema{Type: "integer", Format: "int64", Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		return &Schema{Type: "integer", Format: "int64", Nullable: nullable}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
-		s := &Schema{Type: "integer", Format: "int32", Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		return &Schema{Type: "integer", Format: "int32", Nullable: nullable}
 	case reflect.Uint64:
-		s := &Schema{Type: "integer", Format: "int64", Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		return &Schema{Type: "integer", Format: "int64", Nullable: nullable}
 	case reflect.Float32:
-		s := &Schema{Type: "number", Format: "float", Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		return &Schema{Type: "number", Format: "float", Nullable: nullable}
 	case reflect.Float64:
-		s := &Schema{Type: "number", Format: "double", Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		return &Schema{Type: "number", Format: "double", Nullable: nullable}
 	case reflect.Complex64, reflect.Complex128:
 		// JSON has no representation for complex numbers. We emit a string
 		// and tag it so users know.
-		s := &Schema{Type: "string", Format: "", Nullable: nullable, Extensions: map[string]any{
+		return &Schema{Type: "string", Nullable: nullable, Extensions: map[string]any{
 			"x-stdocs-type": "complex",
 		}}
-		applyVersion(s, r.version)
-		return s
-	case reflect.Slice, reflect.Array:
-		// []byte is base64-encoded string in Go's encoding/json.
+	case reflect.Slice:
+		// []byte (and other uint8 slices) are base64-encoded strings in
+		// Go's encoding/json. Byte ARRAYS are not — see the Array case.
 		if t.Elem().Kind() == reflect.Uint8 {
-			s := &Schema{Type: "string", Format: "byte", Nullable: nullable}
-			applyVersion(s, r.version)
-			return s
+			return &Schema{Type: "string", Format: "byte", Nullable: nullable}
 		}
-		items := r.reflect(t.Elem(), nil)
-		s := &Schema{Type: "array", Items: items, Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		return &Schema{Type: "array", Items: r.reflect(t.Elem()), Nullable: nullable}
+	case reflect.Array:
+		// encoding/json marshals [N]byte as an array of numbers, not
+		// base64 (only slices get the base64 treatment).
+		return &Schema{Type: "array", Items: r.reflect(t.Elem()), Nullable: nullable}
 	case reflect.Map:
-		// Map keys in Go's encoding/json must be strings or implement
-		// TextMarshaler. We assume string keys.
-		addl := r.reflect(t.Elem(), nil)
-		s := &Schema{Type: "object", AdditionalProperties: addl, Nullable: nullable}
-		applyVersion(s, r.version)
-		return s
+		// Map keys in Go's encoding/json must be strings, integers, or
+		// implement TextMarshaler; they are always emitted as JSON object
+		// keys (strings).
+		return &Schema{Type: "object", AdditionalProperties: r.reflect(t.Elem()), Nullable: nullable}
 	case reflect.Struct:
 		return r.reflectStruct(t, nullable)
 	case reflect.Interface:
 		// any, error, named interfaces: emit {} with an extension noting
 		// the kind.
-		s := &Schema{Nullable: nullable, Extensions: map[string]any{
+		return &Schema{Nullable: nullable, Extensions: map[string]any{
 			"x-stdocs-type": "interface",
 		}}
-		applyVersion(s, r.version)
-		return s
 	}
 
 	// Fallback: empty schema, marked as unknown.
-	s := &Schema{Extensions: map[string]any{"x-stdocs-type": "unknown:" + t.Kind().String()}}
-	applyVersion(s, r.version)
-	return s
-}
-
-// primitiveString builds a string-typed schema, optionally with a format.
-func (r *reflector) primitiveString(format string, nullable bool) *Schema {
-	s := &Schema{Type: "string", Format: format, Nullable: nullable}
-	applyVersion(s, r.version)
-	return s
+	return &Schema{Extensions: map[string]any{"x-stdocs-type": "unknown:" + t.Kind().String()}}
 }
 
 // reflectStruct emits an object schema for a struct type, recursing into
 // fields. Named structs are registered as components and the returned
 // schema is a $ref. Anonymous structs are inlined.
-func (r *reflector) reflectStruct(t reflect.Type, nullable bool) *Schema {
+func (r *Reflector) reflectStruct(t reflect.Type, nullable bool) *Schema {
 	if t.Name() == "" {
 		// Anonymous struct. Inline.
 		return r.buildStructSchema(t, "", nullable)
@@ -323,27 +308,24 @@ func (r *reflector) reflectStruct(t reflect.Type, nullable bool) *Schema {
 	//  2. If t.Name() is not a valid OpenAPI pointer-fragment
 	//     character set (which it is not for generic instantiations
 	//     like "Page[Foo]"), fall back to a sanitized version of
-	//     t.String() (e.g. "Page_Foo_").
+	//     t.String() (e.g. "Page_Foo").
 	//
 	//  3. If the resulting name is already in use (a name collision
 	//     between two same-named types from different packages),
 	//     append a numeric suffix.
-	name := componentNameFor(t, r)
+	name := r.componentNameFor(t)
 	r.seen[t] = name
 	s := r.buildStructSchema(t, name, false)
 	r.out[name] = s
 	// The returned use-site schema is a bare $ref with Nullable set;
 	// the emitter is responsible for producing the correct wrapper
 	// (allOf/anyOf/nullable) at serialization time.
-	ref := &Schema{Ref: "#/components/schemas/" + name, Nullable: nullable}
-	applyVersion(ref, r.version)
-	return ref
+	return &Schema{Ref: "#/components/schemas/" + name, Nullable: nullable}
 }
 
 // componentNameFor picks a unique component name for t. The selection
-// rules are documented on reflectStruct. It mutates r.out to record
-// the reservation indirectly (via r.reserveName).
-func componentNameFor(t reflect.Type, r *reflector) string {
+// rules are documented on reflectStruct.
+func (r *Reflector) componentNameFor(t reflect.Type) string {
 	candidate := t.Name()
 	if !isValidComponentName(candidate) {
 		// Generic instantiations (or anything with illegal chars)
@@ -373,30 +355,20 @@ func isValidComponentName(s string) bool {
 	return true
 }
 
-// buildStructSchema walks the fields of a struct and produces the
-// object schema. For a named struct, name is set and the result is
-// also stored in r.out by the caller. For an anonymous struct, name
-// is empty and the schema is inlined.
-// fieldMeta is the per-field result of inspection. name is the
-// JSON name; opts is the json-tag options; fieldSchema is the
-// reflected schema; embedded is true for anonymous (flattened)
-// fields. A field that is skipped produces a zero value.
+// fieldMeta is the per-field result of inspection: the JSON name, the
+// reflected schema, whether the field is flattened into the parent
+// (untagged embedded), and whether it is a required candidate.
 type fieldMeta struct {
 	name        string
-	opts        []string
 	fieldSchema *Schema
 	embedded    bool
 	// requiredCandidate is true if the field could be required
-	// (no omitempty and not a pointer). The dedup pass decides
-	// what actually makes it into s.Required.
+	// (no omitempty/omitzero and not a pointer). The dedup pass
+	// decides what actually makes it into s.Required.
 	requiredCandidate bool
-	// isPointer tracks whether the field type is a pointer
-	// regardless of dereferencing for chan/func skip. Used by
-	// the required pass to keep the encoding/json contract.
-	isPointer bool
 }
 
-func (r *reflector) buildStructSchema(t reflect.Type, name string, nullable bool) *Schema {
+func (r *Reflector) buildStructSchema(t reflect.Type, name string, nullable bool) *Schema {
 	s := &Schema{Type: "object", Nullable: nullable, Properties: make(map[string]*Schema)}
 	if name != "" {
 		s.Description = "Generated from Go type " + t.String() + "."
@@ -404,9 +376,9 @@ func (r *reflector) buildStructSchema(t reflect.Type, name string, nullable bool
 
 	var required []string
 
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
-		meta, ok := r.inspectField(f, i)
+		meta, ok := r.inspectField(f)
 		if !ok {
 			continue
 		}
@@ -421,22 +393,29 @@ func (r *reflector) buildStructSchema(t reflect.Type, name string, nullable bool
 		}
 	}
 	s.Required = dedupRequired(required, s.Properties)
-	applyVersion(s, r.version)
 	return s
 }
 
 // inspectField returns a fieldMeta for a struct field, or
 // (zero, false) if the field should be skipped (unexported, "-"
 // tag, or non-representable kind).
-func (r *reflector) inspectField(f reflect.StructField, i int) (fieldMeta, bool) {
-	if !f.IsExported() {
-		return fieldMeta{}, false
-	}
+func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	tag := f.Tag.Get("json")
-	name, opts := parseJSONTag(tag)
-	if name == "-" {
+	tagName, opts := parseJSONTag(tag)
+	if !f.IsExported() {
+		// encoding/json promotes the exported fields of an embedded
+		// unexported struct type (but not of an embedded unexported
+		// pointer type); everything else unexported is skipped.
+		if f.Anonymous && f.Type.Kind() == reflect.Struct && tagName == "" {
+			inner := r.buildStructSchema(f.Type, "", false)
+			return fieldMeta{fieldSchema: inner, embedded: true}, true
+		}
 		return fieldMeta{}, false
 	}
+	if tagName == "-" {
+		return fieldMeta{}, false
+	}
+	name := tagName
 	if name == "" {
 		name = f.Name
 	}
@@ -447,31 +426,48 @@ func (r *reflector) inspectField(f reflect.StructField, i int) (fieldMeta, bool)
 	if ft.Kind() == reflect.Chan || ft.Kind() == reflect.Func || ft.Kind() == reflect.UnsafePointer {
 		return fieldMeta{}, false
 	}
-	fieldSchema := r.reflect(f.Type, []int{i})
+	fieldSchema := r.reflect(f.Type)
 	if fieldSchema == nil {
 		return fieldMeta{}, false
 	}
-	applyFieldTags(&fieldSchema, f.Tag)
+	// The json ",string" option wraps integer, number, boolean, and
+	// string values in a JSON string on the wire.
+	if slices.Contains(opts, "string") {
+		switch fieldSchema.Type {
+		case "integer", "number", "boolean":
+			fieldSchema = &Schema{
+				Type:     "string",
+				Nullable: fieldSchema.Nullable,
+				Extensions: map[string]any{
+					"x-stdocs-type": "json-string-encoded " + fieldSchema.Type,
+				},
+			}
+		}
+	}
+	applyFieldTags(fieldSchema, f.Tag)
 	return fieldMeta{
-		name:              name,
-		opts:              opts,
-		fieldSchema:       fieldSchema,
-		embedded:          f.Anonymous,
-		requiredCandidate: !slices.Contains(opts, "omitempty") && f.Type.Kind() != reflect.Ptr,
-		isPointer:         f.Type.Kind() == reflect.Ptr,
+		name:        name,
+		fieldSchema: fieldSchema,
+		// encoding/json only flattens anonymous fields whose json tag
+		// has no name; `Inner `json:"inner"`` marshals as a nested
+		// object under "inner".
+		embedded: f.Anonymous && tagName == "",
+		requiredCandidate: !slices.Contains(opts, "omitempty") &&
+			!slices.Contains(opts, "omitzero") &&
+			f.Type.Kind() != reflect.Ptr,
 	}, true
 }
 
 // applyFieldTags transfers doc/description/example struct tags onto
 // the field's schema. Mutates fieldSchema.
-func applyFieldTags(fieldSchema **Schema, tag reflect.StructTag) {
+func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag) {
 	if doc := tag.Get("doc"); doc != "" {
-		(*fieldSchema).Description = doc
+		fieldSchema.Description = doc
 	} else if desc := tag.Get("description"); desc != "" {
-		(*fieldSchema).Description = desc
+		fieldSchema.Description = desc
 	}
-	if ex := tag.Get("example"); ex != "" && (*fieldSchema).Example == nil {
-		(*fieldSchema).Example = ex
+	if ex := tag.Get("example"); ex != "" && fieldSchema.Example == nil {
+		fieldSchema.Example = ex
 	}
 }
 
@@ -480,7 +476,7 @@ func applyFieldTags(fieldSchema **Schema, tag reflect.StructTag) {
 // processing of the field); false if the embedded schema was not an
 // object with properties, in which case the caller should treat the
 // field as a regular property.
-func (r *reflector) inlineEmbedded(s *Schema, fieldSchema *Schema, required *[]string) bool {
+func (r *Reflector) inlineEmbedded(s *Schema, fieldSchema *Schema, required *[]string) bool {
 	inner := fieldSchema
 	if inner.Ref != "" {
 		if resolved := r.resolveRef(inner.Ref); resolved != nil {
@@ -527,28 +523,12 @@ func dedupRequired(keys []string, props map[string]*Schema) []string {
 
 // resolveRef returns the named component schema for a $ref pointer that
 // points into our own components map. Returns nil if not found.
-func (r *reflector) resolveRef(ref string) *Schema {
+func (r *Reflector) resolveRef(ref string) *Schema {
 	const prefix = "#/components/schemas/"
 	if !strings.HasPrefix(ref, prefix) {
 		return nil
 	}
 	return r.out[ref[len(prefix):]]
-}
-
-// applyVersion is intentionally a no-op. Earlier it mutated
-// s.Type and s.TypeArray to prepare for 3.1.0 serialization, but
-// that mutation caused nullable object/array/map schemas to lose
-// all structural information: buildSchema31 gated on s.Type ==
-// "object" / "array" which had been cleared. The 3.1.0 emitter now
-// reads both s.Type and s.Nullable directly, so no model mutation
-// is needed and the version-agnostic Schema stays clean.
-//
-// The function is kept as a no-op so the call sites in the
-// reflectors remain readable and so future version-specific
-// adjustments have a clear place to live.
-func applyVersion(s *Schema, v version.SpecVersion) {
-	_ = s
-	_ = v
 }
 
 // parseJSONTag splits a struct tag's json value into the field name and
@@ -558,7 +538,5 @@ func parseJSONTag(tag string) (name string, opts []string) {
 		return "", nil
 	}
 	parts := strings.Split(tag, ",")
-	name = parts[0]
-	opts = append(opts, parts[1:]...)
-	return name, opts
+	return parts[0], parts[1:]
 }

@@ -74,6 +74,11 @@ linters:
         - name: error-return
 
   exclusions:
+    # cmd/demo is a demo binary, not library code: skip it entirely.
+    # ("all" is not a valid linter name in exclusion rules; paths is
+    # the documented way to exclude a directory from every linter.)
+    paths:
+      - cmd/demo/
     rules:
       - path: _test\.go
         linters:
@@ -87,9 +92,11 @@ linters:
       - path: internal/spec/yaml/
         linters:
           - gocognit
-      - path: cmd/demo/
-        linters:
-          - all
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
   max-same-issues: 0

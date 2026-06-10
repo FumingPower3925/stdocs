@@ -199,12 +199,14 @@ func TestDocsHandler_ServesOpenAPIJSON(t *testing.T) {
 	if !strings.HasPrefix(ct, "application/json") {
 		t.Errorf("Content-Type = %q", ct)
 	}
-	// The placeholder is `{}` — DocsHandler does not produce a
-	// populated spec. Users who want a real spec should use
-	// *stdocs.Mux.
+	// The placeholder is a minimal VALID OpenAPI document built from
+	// the config; users who want a populated spec use *stdocs.Mux or
+	// supply one via WithSpec.
 	body := strings.TrimSpace(rr.Body.String())
-	if body != "{}" {
-		t.Errorf("body = %q, want %q", body, "{}")
+	for _, want := range []string{`"openapi":"3.0.4"`, `"title":"M"`, `"paths":{}`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %s: %q", want, body)
+		}
 	}
 }
 
@@ -221,12 +223,13 @@ func TestDocsHandler_ServesOpenAPIYAML(t *testing.T) {
 	if !strings.HasPrefix(ct, "application/yaml") {
 		t.Errorf("Content-Type = %q", ct)
 	}
-	// The placeholder YAML is `{}` — the JSON placeholder, round-
-	// tripped through the YAML converter (rather than emitted raw,
-	// which would lack a top-level document marker).
+	// The placeholder YAML is the minimal valid JSON placeholder,
+	// round-tripped through the YAML converter.
 	body := strings.TrimSpace(rr.Body.String())
-	if body != "{}" {
-		t.Errorf("body = %q, want %q", body, "{}")
+	for _, want := range []string{`openapi: "3.0.4"`, `title: "M"`, "paths: {}"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q: %q", want, body)
+		}
 	}
 }
 
@@ -383,9 +386,19 @@ func TestMux_RecursiveType(t *testing.T) {
 	if children["type"] != "array" {
 		t.Errorf("children.type = %v, want array", children["type"])
 	}
+	// []*Node items are nullable references: the 3.0 emitter wraps the
+	// shared component ref in allOf + nullable so the component itself
+	// stays non-nullable (a nil *Node marshals to JSON null).
 	items := children["items"].(map[string]any)
-	if items["$ref"] != "#/components/schemas/Node" {
-		t.Errorf("items.$ref = %v", items["$ref"])
+	allOf, ok := items["allOf"].([]any)
+	if !ok || len(allOf) != 1 {
+		t.Fatalf("items.allOf = %v, want one-element array", items["allOf"])
+	}
+	if ref := allOf[0].(map[string]any)["$ref"]; ref != "#/components/schemas/Node" {
+		t.Errorf("items.allOf[0].$ref = %v", ref)
+	}
+	if items["nullable"] != true {
+		t.Errorf("items.nullable = %v, want true", items["nullable"])
 	}
 }
 

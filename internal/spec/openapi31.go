@@ -2,52 +2,67 @@ package spec
 
 import (
 	"encoding/json"
-	"sort"
+	"maps"
+	"slices"
 
 	"github.com/FumingPower3925/stdocs/internal/schema"
 	"github.com/FumingPower3925/stdocs/internal/version"
 )
 
-// EmitOpenAPI31 produces the OpenAPI 3.1.0 JSON bytes for the given input.
-// The output is the 3.0.3 emitter with two adjustments:
+// EmitOpenAPI31 produces the OpenAPI 3.1 (3.1.2) JSON bytes for the
+// given input. The output is the 3.0 emitter with two adjustments:
 //
-//   - Nullable is rendered as a type array ("type": ["T", "null"]) instead
-//     of a "nullable": true sibling.
-//   - The top-level "openapi" field is "3.1.0" and webhooks are emitted.
+//   - Nullable is rendered as a type array ("type": ["T", "null"])
+//     instead of a "nullable": true sibling.
+//   - The top-level "openapi" field is "3.1.2" and webhooks are
+//     emitted.
 //
-// All other structure is identical to 3.0.3.
+// All other structure is identical to 3.0.
 func EmitOpenAPI31(in SpecInput) ([]byte, error) {
 	root := BuildRoot31(in)
 	return json.Marshal(root)
 }
 
-// BuildRoot31 builds the top-level OpenAPI 3.1.0 object.
+// BuildRoot31 builds the top-level OpenAPI 3.1 (3.1.2) object.
 func BuildRoot31(in SpecInput) map[string]any {
 	e := &emitter{openapi: string(version.OpenAPI31), buildSchema: buildSchema31}
 	return e.buildRoot(in)
 }
 
-// buildSchema31 converts a *schema.Schema into the map[string]any form for 3.1.0.
+// buildSchema31 converts a *schema.Schema into the map[string]any form
+// for OpenAPI 3.1 (also reused by 3.2, whose schema dialect is the
+// same for everything stdocs emits).
 //
-// Nullability for $ref uses the OpenAPI 3.1 anyOf + null pattern:
-// the shared component is non-nullable, and the use site wraps it
-// in {"anyOf": [{"$ref": "..."}, {"type": "null"}]}. This keeps
-// the shared component clean across multiple use sites with
-// different nullability.
+// Nullability for $ref uses the JSON Schema 2020-12 anyOf + null
+// pattern: the shared component is non-nullable, and the use site
+// wraps it in {"anyOf": [{"$ref": "..."}, {"type": "null"}]}. This
+// keeps the shared component clean across multiple use sites with
+// different nullability. Unlike 3.0, siblings next to $ref are legal
+// in 2020-12, so doc-tag descriptions and examples are emitted
+// directly alongside the reference.
 func buildSchema31(s *schema.Schema) map[string]any {
 	if s == nil {
 		return nil
 	}
 	if s.Ref != "" {
+		var m map[string]any
 		if s.Nullable {
-			return map[string]any{
+			m = map[string]any{
 				"anyOf": []any{
 					map[string]any{"$ref": s.Ref},
 					map[string]any{"type": "null"},
 				},
 			}
+		} else {
+			m = map[string]any{"$ref": s.Ref}
 		}
-		return map[string]any{"$ref": s.Ref}
+		if s.Description != "" {
+			m["description"] = s.Description
+		}
+		if s.Example != nil {
+			m["example"] = s.Example
+		}
+		return m
 	}
 	m := make(map[string]any)
 	switch {
@@ -65,21 +80,13 @@ func buildSchema31(s *schema.Schema) map[string]any {
 	if s.Type == "object" {
 		if len(s.Properties) > 0 {
 			props := make(map[string]any, len(s.Properties))
-			keys := make([]string, 0, len(s.Properties))
-			for k := range s.Properties {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
+			for _, k := range slices.Sorted(maps.Keys(s.Properties)) {
 				props[k] = buildSchema31(s.Properties[k])
 			}
 			m["properties"] = props
 		}
 		if len(s.Required) > 0 {
-			req := make([]string, len(s.Required))
-			copy(req, s.Required)
-			sort.Strings(req)
-			m["required"] = req
+			m["required"] = slices.Sorted(slices.Values(s.Required))
 		}
 		if s.AdditionalProperties != nil {
 			m["additionalProperties"] = buildSchema31(s.AdditionalProperties)
@@ -97,9 +104,7 @@ func buildSchema31(s *schema.Schema) map[string]any {
 	if s.Example != nil {
 		m["example"] = s.Example
 	}
-	for k, v := range s.Extensions {
-		m[k] = v
-	}
+	maps.Copy(m, s.Extensions)
 	if len(m) == 0 {
 		return map[string]any{}
 	}

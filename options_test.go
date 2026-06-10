@@ -225,13 +225,24 @@ func TestRegistry_Finalize_PathParams(t *testing.T) {
 	r.add("GET /users/{id}", "getUser", p, OpenAPI30, nil)
 	r.finalize(newConfig())
 	rt := r.routes[0]
-	if len(rt.op.Parameters) != 1 {
-		t.Fatalf("Parameters = %d, want 1", len(rt.op.Parameters))
+	// Wildcard params are emitted once, at the path-item level;
+	// operation-level Parameters hold only user-supplied WithParam
+	// entries.
+	if len(rt.op.Parameters) != 0 {
+		t.Fatalf("operation Parameters = %d, want 0 (wildcards live at path level)", len(rt.op.Parameters))
 	}
-	if rt.op.Parameters[0].Name != "id" {
-		t.Errorf("Name = %q", rt.op.Parameters[0].Name)
+	items := r.toPathItems()
+	if len(items) != 1 {
+		t.Fatalf("toPathItems = %d items, want 1", len(items))
 	}
-	if !rt.op.Parameters[0].Required {
+	params := items[0].Parameters
+	if len(params) != 1 {
+		t.Fatalf("path-level Parameters = %d, want 1", len(params))
+	}
+	if params[0].Name != "id" {
+		t.Errorf("Name = %q", params[0].Name)
+	}
+	if !params[0].Required {
 		t.Errorf("Required = false, want true (path param)")
 	}
 }
@@ -423,16 +434,18 @@ func TestRouteOpt_Response(t *testing.T) {
 	if r200 == nil {
 		t.Fatal("200 missing")
 	}
-	// User is a named struct, so the schema is a $ref.
-	if r200.Schema == nil || r200.Schema.Ref != "#/components/schemas/User" {
-		t.Errorf("200.Schema = %+v", r200.Schema)
+	// Schemas are derived from BodyValue at document-build time (one
+	// shared reflector per document); registration only records the
+	// value.
+	if r200.BodyValue == nil {
+		t.Errorf("200.BodyValue = nil, want User{}")
 	}
 	r404 := rt.op.Responses["404"]
 	if r404 == nil {
 		t.Fatal("404 missing")
 	}
-	if r404.Schema != nil {
-		t.Errorf("404.Schema should be nil")
+	if r404.BodyValue != nil {
+		t.Errorf("404.BodyValue should be nil")
 	}
 }
 
@@ -449,8 +462,8 @@ func TestRouteOpt_RequestBody(t *testing.T) {
 	if !rt.op.RequestBody.Required {
 		t.Errorf("Required = false, want true by default")
 	}
-	if rt.op.RequestBody.Schema == nil {
-		t.Fatal("Schema nil")
+	if rt.op.RequestBody.BodyValue == nil {
+		t.Fatal("BodyValue nil; schemas are derived from it at build time")
 	}
 }
 
