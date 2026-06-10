@@ -49,7 +49,7 @@ Eso es todo. `stdocs` recorre tus rutas registradas, genera un spec OpenAPI a pa
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requiere Go 1.26 o posterior (la directiva `go` del módulo). Los patrones de ruta que stdocs documenta (`"GET /users/{id}"`) son la sintaxis método+ruta que `net/http.ServeMux` incorporó en Go 1.22.
+Requiere Go 1.26.4 o posterior (la directiva `go` del módulo). Los patrones de ruta que stdocs documenta (`"GET /users/{id}"`) son la sintaxis método+ruta que `net/http.ServeMux` incorporó en Go 1.22.
 
 ## Uso
 

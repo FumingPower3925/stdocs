@@ -4,7 +4,7 @@
 //
 // The pattern syntax it documents ("GET /users/{id}") is the
 // method+path routing introduced in Go 1.22; the module itself
-// requires Go 1.26 or later.
+// requires Go 1.26.4 or later.
 //
 // # Two ways to use it
 //

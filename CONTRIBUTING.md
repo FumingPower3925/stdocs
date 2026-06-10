@@ -15,7 +15,7 @@ golangci-lint run ./...
 
 Requirements:
 
-- Go 1.26 (the toolchain CI uses; see `.github/workflows/ci.yml`).
+- Go 1.26.4 or later (the module's `go` directive; CI derives its toolchain from `go.mod`).
 - `golangci-lint` v2.12.2 (matches CI; `brew install golangci-lint` on macOS).
 
 ## Running the tests

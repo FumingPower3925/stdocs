@@ -45,7 +45,7 @@ That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requires Go 1.26 or later (the module's `go` directive). The route patterns stdocs documents (`"GET /users/{id}"`) are the method+path syntax that `net/http.ServeMux` gained in Go 1.22.
+Requires Go 1.26.4 or later (the module's `go` directive). The route patterns stdocs documents (`"GET /users/{id}"`) are the method+path syntax that `net/http.ServeMux` gained in Go 1.22.
 
 ## Usage
 
