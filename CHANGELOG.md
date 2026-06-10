@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `BodyContentType(ct)` route opt.
 - `WithDefaultSummary` template now substitutes `{resource}`
   with the first path segment.
+- `Mux.Docs(enabled ...bool)` for per-call toggling of the
+  docs UI: pass `false` (or use `WithDisabled(true)`) to get
+  a 404 handler at the docs prefix. Useful for environment-
+  based or feature-flag activation.
 - `gopkg.in/yaml.v3` test-only dependency, used to verify the
   hand-rolled YAML emitter round-trips. Lives in its own
   submodule (`internal/spec/yaml/roundtrip_test/`) so it does
