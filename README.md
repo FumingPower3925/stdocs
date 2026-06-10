@@ -1,7 +1,6 @@
 # stdocs
 
 [![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
-[![YAML Roundtrip](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg?job=roundtrip)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FumingPower3925/stdocs)](https://goreportcard.com/report/github.com/FumingPower3925/stdocs)
 [![Go Reference](https://pkg.go.dev/badge/github.com/FumingPower3925/stdocs.svg)](https://pkg.go.dev/github.com/FumingPower3925/stdocs)
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/dl/)
@@ -9,6 +8,11 @@
 [![Runtime Deps](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)](.)
 [![OpenAPI 3.0.3](https://img.shields.io/badge/OpenAPI-3.0.3-blueviolet)](https://spec.openapis.org/oas/v3.0.3)
 [![OpenAPI 3.1.0](https://img.shields.io/badge/OpenAPI-3.1.0-blueviolet)](https://spec.openapis.org/oas/v3.1.0)
+
+> **Note:** the Go Report Card and Go Reference badges require the
+> repository to be public. While stdocs is private, those badges
+> will show "error" / not available. The CI badge is GitHub-native
+> and works for private repos.
 
 Zero-dependency OpenAPI 3.0.3 and 3.1.0 documentation generation for the
 Go 1.22+ stdlib `net/http.ServeMux`. Tested on Go 1.26.
