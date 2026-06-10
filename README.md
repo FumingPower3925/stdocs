@@ -1,8 +1,9 @@
 # stdocs
 
 [![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
-[![Lint](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg?job=lint)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
 [![YAML Roundtrip](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg?job=roundtrip)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/FumingPower3925/stdocs)](https://goreportcard.com/report/github.com/FumingPower3925/stdocs)
+[![Go Reference](https://pkg.go.dev/badge/github.com/FumingPower3925/stdocs.svg)](https://pkg.go.dev/github.com/FumingPower3925/stdocs)
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/dl/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Runtime Deps](https://img.shields.io/badge/runtime%20deps-zero-brightgreen)](.)
