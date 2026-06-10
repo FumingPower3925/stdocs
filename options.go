@@ -53,6 +53,10 @@ type Config struct {
 	// Webhooks are 3.1-only. The map is keyed by webhook name. The
 	// emitter ignores this field for 3.0.3 specs.
 	Webhooks map[string]Webhook
+	// Disabled turns off the docs handler. When true, Mux.Docs and
+	// DocsHandler return a 404 handler instead of serving the UI and
+	// the spec. Mux.Mount respects this and registers nothing.
+	Disabled bool
 }
 
 // Option is a function that mutates a config. Used at New() and Mount()
@@ -140,6 +144,24 @@ func WithDocsPrefix(prefix string) Option {
 		}
 		c.DocsPrefix = prefix
 	}
+}
+
+// WithDisabled turns off the docs UI and the spec endpoints. Useful
+// for environment-based toggling (e.g. don't expose docs in production,
+// or behind a feature flag):
+//
+//	mux := stdocs.New(
+//	    stdocs.WithDisabled(os.Getenv("ENV") == "prod"),
+//	)
+//
+// When the mux is disabled, Mux.Docs returns a 404 handler and
+// Mux.Mount registers nothing. JSON and YAML still produce the spec
+// bytes — disabling the docs UI does not stop spec generation.
+//
+// For per-call toggling (e.g. a config that may change at runtime),
+// pass the bool directly to Mux.Docs(enabled) instead.
+func WithDisabled(disabled bool) Option {
+	return func(c *Config) { c.Disabled = disabled }
 }
 
 // WithSelfURL sets the OpenAPI 3.2 "$self" field. This is the

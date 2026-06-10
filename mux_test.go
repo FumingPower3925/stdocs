@@ -478,3 +478,126 @@ func checkParams(t *testing.T, v any, label string) {
 		}
 	}
 }
+
+func TestMux_Docs_DefaultSucceeds(t *testing.T) {
+	m := New(WithTitle("T"))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	m.Docs().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("Content-Type = %q, want text/html", rr.Header().Get("Content-Type"))
+	}
+}
+
+func TestMux_Docs_ExplicitTrueSucceeds(t *testing.T) {
+	m := New(WithTitle("T"))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	m.Docs(true).ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+}
+
+func TestMux_Docs_ExplicitFalseReturnsNotFound(t *testing.T) {
+	m := New(WithTitle("T"))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	m.Docs(false).ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+	// Spec endpoints are also 404 when disabled.
+	rr2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("GET", "/docs/openapi.json", nil)
+	m.Docs(false).ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusNotFound {
+		t.Fatalf("openapi.json status = %d, want 404", rr2.Code)
+	}
+	rr3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest("GET", "/docs/openapi.yaml", nil)
+	m.Docs(false).ServeHTTP(rr3, req3)
+	if rr3.Code != http.StatusNotFound {
+		t.Fatalf("openapi.yaml status = %d, want 404", rr3.Code)
+	}
+}
+
+func TestMux_Docs_WithDisabledOption(t *testing.T) {
+	m := New(WithTitle("T"), WithDisabled(true))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	m.Docs().ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+func TestMux_Docs_WithDisabledFalseOptionSucceeds(t *testing.T) {
+	m := New(WithTitle("T"), WithDisabled(false))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	m.Docs().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+}
+
+func TestMux_Mount_RespectsWithDisabled(t *testing.T) {
+	m := New(WithTitle("T"), WithDisabled(true))
+	m.Mount()
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	m.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (mount should be a no-op)", rr.Code)
+	}
+}
+
+func TestMux_Mount_DisabledByPerCallFalse(t *testing.T) {
+	m := New(WithTitle("T"))
+	// Mount the disabled handler at the prefix.
+	m.ServeMux.Handle("GET /docs/", m.Docs(false))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	m.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+func TestMux_JSON_StillWorksWhenDocsDisabled(t *testing.T) {
+	// Disabling the docs UI must not stop spec generation: JSON/YAML
+	// are still callable.
+	m := New(WithTitle("T"), WithDisabled(true))
+	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {})
+	b, err := m.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"openapi"`) {
+		t.Errorf("expected openapi field, got %s", b)
+	}
+}
+
+func TestDocsHandler_RespectsWithDisabled(t *testing.T) {
+	h := DocsHandler(WithTitle("T"), WithDisabled(true))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rr.Code)
+	}
+}
+
+func TestDocsHandler_DefaultSucceeds(t *testing.T) {
+	h := DocsHandler(WithTitle("T"))
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/docs/", nil)
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+}

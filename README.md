@@ -37,6 +37,7 @@ That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from
 - **Smart defaults** — function names become summaries, first path segment becomes the tag, path params are auto-included.
 - **Security** — bearer, basic, API key, OAuth 2.0. Unregistered scheme names are reported as errors.
 - **Eight UIs** — zero-JS HTML by default; Scalar, Swagger UI, Redoc, Stoplight as opt-in CDN sub-packages, with matching air-gapped (vendored) variants.
+- **Runtime toggling** — `mux.Docs(false)` and `WithDisabled(true)` let you turn the docs UI on or off per environment, per call, or behind a feature flag, without changing registered routes.
 - **XSS-safe** — the docs HTML is rendered through `html/template`.
 
 ## Install
@@ -111,6 +112,34 @@ mux := stdocs.New(
 ```
 
 The full option list lives in [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs).
+
+### Disabling the docs UI
+
+The docs UI and the spec endpoints (`openapi.json`, `openapi.yaml`) can be turned off without unregistering routes or changing the call site. Two patterns are supported:
+
+```go
+// 1) Per-call: pass false to mux.Docs at the call site.
+mux := stdocs.New(stdocs.WithTitle("My API"))
+mux.HandleFunc("GET /users", listUsers)
+
+if os.Getenv("ENV") == "prod" {
+    mux.Handle("GET /docs/", mux.Docs(false))  // serves 404
+} else {
+    mux.Handle("GET /docs/", mux.Docs())        // serves the UI
+}
+```
+
+```go
+// 2) Per-mux: WithDisabled() makes Mount and Docs a no-op everywhere.
+mux := stdocs.New(
+    stdocs.WithTitle("My API"),
+    stdocs.WithDisabled(os.Getenv("ENV") == "prod"),
+)
+mux.HandleFunc("GET /users", listUsers)
+mux.Mount()  // registers nothing when disabled
+```
+
+Both patterns return `http.NotFoundHandler()` for every request to the docs prefix. The spec is still buildable via `mux.JSON()` and `mux.YAML()` — disabling the UI does not stop spec generation. `DocsHandler` (the Tier-1 placeholder) respects `WithDisabled` the same way.
 
 ## UIs
 
