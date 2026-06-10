@@ -104,6 +104,14 @@ type Operation struct {
 	// this operation, overriding any global security requirement.
 	// See WithNoSecurity in the root package.
 	NoSecurity bool
+	// Hidden, when true, excludes the operation from the generated
+	// document unconditionally. See Hidden in the root package.
+	Hidden bool
+	// Internal, when true, excludes the operation from the generated
+	// document unless the mux policy shows internal routes
+	// (WithInternal(true)); when shown, the operation carries an
+	// "x-internal": true extension. See Internal in the root package.
+	Internal bool
 	// ResponseOrder tracks the order in which responses were added
 	// to the Responses map. Used by WithExample to pick the
 	// "most recent" response when no explicit status is given.
