@@ -1,10 +1,10 @@
-> ⚠️ **Aquesta és una traducció comunitària del [README en anglès](../../README.md).** La versió anglesa és la de referència. Aquesta traducció pot estar desfasada; en cas de dubte, consulta la versió anglesa.
+> ⚠️ **Aquesta és una traducció comunitària del [README en anglès](README.md).** La versió anglesa és la de referència. Aquesta traducció pot estar desfasada; en cas de dubte, consulta la versió anglesa.
 >
-> Per proposar correccions, vegeu [`CONTRIBUTING.md`](../../CONTRIBUTING.md) → "Translations".
+> Per proposar correccions, vegeu [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Translations".
 
 # stdocs
 
-**Idiomes:** [English](../../README.md) (canònic) · [Español](../es/README.md) · [Català](README.md)
+**Idiomes:** [English](README.md) (canònic) · [Español](README.es.md) · [Català](README.ca.md)
 
 [![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FumingPower3925/stdocs)](https://goreportcard.com/report/github.com/FumingPower3925/stdocs)
@@ -115,7 +115,7 @@ El `net/http.ServeMux` de Go 1.22 admet patrons de mètode i ruta, però no els 
 
 Sense comentaris, sense generació de codi, sense `unsafe` — el patró mateix és la documentació.
 
-Hi ha un demo executable a [`cmd/demo`](../../cmd/demo):
+Hi ha un demo executable a [`cmd/demo`](cmd/demo):
 
 ```bash
 go run ./cmd/demo
@@ -124,7 +124,7 @@ go run ./cmd/demo
 
 ## Contribuir
 
-Vegeu [`CONTRIBUTING.md`](../../CONTRIBUTING.md). Les traduccions les manté la comunitat; consulteu la secció "Translations" per afegir-ne o actualitzar-ne una.
+Vegeu [`CONTRIBUTING.md`](CONTRIBUTING.md). Les traduccions les manté la comunitat; consulteu la secció "Translations" per afegir-ne o actualitzar-ne una.
 
 ```bash
 go test -race -count=1 ./...
@@ -133,4 +133,4 @@ golangci-lint run ./...
 
 ## Llicència
 
-Apache-2.0. Vegeu [LICENSE](../../LICENSE).
+Apache-2.0. Vegeu [LICENSE](LICENSE).

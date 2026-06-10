@@ -49,11 +49,13 @@ explain the use case, not just the proposed API.
 
 ## Translations
 
-The English `README.md` is canonical. Translations live in
-`docs/<lang>/README.md`. Currently maintained translations:
+The English `README.md` is canonical. Translations live alongside
+it as `README.<lang>.md` files at the repo root, so GitHub's
+native "Read in <Language>" picker can surface them. Currently
+maintained translations:
 
-- `docs/es/README.md` — Spanish (Español)
-- `docs/ca/README.md` — Catalan (Català)
+- `README.es.md` — Spanish (Español)
+- `README.ca.md` — Catalan (Català)
 
 ### Requirements
 
@@ -94,8 +96,8 @@ unreviewed machine output will be closed without review.
    will maintain it. Wait for a maintainer to confirm and to add you
    to `TRANSLATORS.md`.
 
-2. Copy the current `README.md` to `docs/<lang>/README.md`, where
-   `<lang>` is the two-letter [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes)
+2. Copy the current `README.md` to `README.<lang>.md` at the
+   repo root, where `<lang>` is the two-letter [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes)
    code (`es`, `fr`, `de`, `ja`, …), or a POSIX locale
    (`pt-BR`, `zh-CN`, …) when regional variation matters.
 
@@ -116,7 +118,7 @@ unreviewed machine output will be closed without review.
 There is no automatic sync. When the English `README.md` changes in
 a way that affects a translated section (new feature, renamed
 option, new UI), the named translator is responsible for updating
-`docs/<lang>/README.md`. The English README is the source of truth;
+`README.<lang>.md`. The English README is the source of truth;
 translations are best-effort mirrors.
 
 ## Releasing

@@ -7,8 +7,8 @@ translation in sync with the English `README.md`.
 | Language            | Code     | Path                  | Maintainer | Status     |
 | ------------------- | -------- | --------------------- | ---------- | ---------- |
 | English (canonical) | `en`     | `README.md`           | —          | maintained |
-| Spanish (Español)   | `es`     | `docs/es/README.md`   | _open_     | maintained |
-| Catalan (Català)    | `ca`     | `docs/ca/README.md`   | _open_     | maintained |
+| Spanish (Español)   | `es`     | `README.es.md`        | _open_     | maintained |
+| Catalan (Català)    | `ca`     | `README.ca.md`        | _open_     | maintained |
 
 To add yourself as a translator, see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Translations" → "Adding a new
