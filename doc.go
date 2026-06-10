@@ -1,10 +1,14 @@
-// Package stdocs builds an OpenAPI 3.0, 3.1, or 3.2 specification
-// from routes registered on a standard library [net/http.ServeMux]
-// and serves the spec (and an optional docs UI) over HTTP.
+// Package stdocs turns a standard library [net/http.ServeMux] into a
+// self-documenting API: routes registered on the wrapped mux are
+// served as interactive documentation — a /docs UI rendered by
+// Scalar, Swagger UI, Redoc, Stoplight Elements, or a built-in page —
+// backed by a generated OpenAPI 3.0, 3.1, or 3.2 document.
 //
 // The pattern syntax it documents ("GET /users/{id}") is the
 // method+path routing introduced in Go 1.22; the module itself
-// requires Go 1.26.4 or later.
+// requires Go 1.26.4 or later. There are no dependencies beyond the
+// standard library and no code generation: the patterns you already
+// write are the source of truth.
 //
 // # Two ways to use it
 //
