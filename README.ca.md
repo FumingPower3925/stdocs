@@ -1,10 +1,6 @@
-> ⚠️ **This is a community translation of the [English README](README.md).** The English version is canonical. This translation may be out of date; when in doubt, consult the English version.
->
-> To propose corrections, see [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Translations".
-
 # stdocs
 
-**Idiomes:** [English](README.md) (canonical) · [Español](README.es.md) · [Català](README.ca.md)
+**Languages:** [English](README.md) (canonical) · [Español](README.es.md) · [Català](README.ca.md)
 
 [![CI](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FumingPower3925/stdocs/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FumingPower3925/stdocs)](https://goreportcard.com/report/github.com/FumingPower3925/stdocs)
@@ -32,7 +28,7 @@ El mateix document generat, mostrat per cadascuna de les quatre UI incloses — 
 - [Instal·lació](#installació)
 - [Ús](#ús)
 - [UIs](#uis)
-- [Usar l'spec en altres eines](#usar-lspec-en-altres-eines)
+- [Documentació](#documentació)
 - [Com funciona](#com-funciona)
 - [Abast i non-goals](#abast-i-non-goals)
 - [Contribuir](#contribuir)
@@ -40,14 +36,13 @@ El mateix document generat, mostrat per cadascuna de les quatre UI incloses — 
 
 ## Característiques
 
-- **Cinc UI** — una per defecte, diminuta i sense dependències (~1.6 KB, només JS inline), més Scalar, Swagger UI, Redoc i Stoplight Elements — cadascuna disponible com a subpaquet CDN (amb versió fixada i hashes d'integritat SRI) o com a subpaquet incrustat air-gapped.
-- **Tres versions d'OpenAPI** — 3.0.4 (per defecte), 3.1.2 i 3.2.0, totes provades.
-- **Reflexió** — els tipus Go es converteixen en JSON Schemas: punters, slices, mapes, genèrics, structs incrustats, tipus recursius via `$ref`, tags `json` (inclosos `omitempty`, `omitzero` i `,string`), i reconeixement de `json.Marshaler`/`encoding.TextMarshaler`.
-- **Valors per defecte intel·ligents** — els noms de funcions es converteixen en resums, el primer segment de la ruta es converteix en el tag i els paràmetres de ruta s'inclouen automàticament.
-- **Seguretat** — bearer, basic, API key, OAuth 2.0 (inclòs el device flow de 3.2). Els noms d'esquemes no registrats es reporten com a errors.
-- **Activació per entorn** — `mux.Docs(enabled)` i `WithDisabled(true)` activen o desactiven la documentació segons l'entorn sense canviar les rutes registrades.
-- **Detecció de try-it** — `FromDocs` identifica les requests que vénen de les consoles dels docs perquè el teu middleware decideixi què poden fer.
-- **Segur davant XSS** — l'HTML de la documentació es renderitza amb `html/template`.
+- **Cinc UI** — una per defecte, diminuta i sense dependències (~1.6 KB), més Scalar, Swagger UI, Redoc i Stoplight Elements — cadascuna amb versió fixada des de CDN amb hashes d'integritat SRI o totalment incrustada per a builds air-gapped.
+- **Tres versions d'OpenAPI** — 3.0.4 (per defecte), 3.1.2 i 3.2.0, totes validades externament.
+- **Reflexió** — els tipus Go es converteixen en JSON Schemas seguint el contracte d'`encoding/json`, amb documentació i regles de validació (`minimum`, `maxLength`, `pattern`, `enum`, `default`, …) llegides dels tags de l'struct.
+- **Paràmetres tipats** — declara paràmetres query/header/cookie des d'un struct o inline amb modificadors tipats i validats.
+- **Valors per defecte intel·ligents** — els noms de funcions es converteixen en resums, els segments de ruta en tags, els paràmetres de ruta i un 200 es documenten sols, les rutes amb seguretat documenten el seu 401 i el sobre d'error compartit es declara una sola vegada per a tot el mux.
+- **Control per entorn** — activa o desactiva els docs segons l'entorn, amaga rutes individuals i detecta el trànsit de les consoles try-it, tot sense tocar les rutes registrades.
+- **Honest per defecte** — una documentació mal declarada provoca un panic en lloc de publicar un contracte erroni, i un middleware de desenvolupament opcional avisa quan els handlers es desvien del document.
 - **Zero dependències** — només la biblioteca estàndard de Go en temps d'execució.
 
 ## Instal·lació
@@ -60,184 +55,49 @@ Requereix Go 1.25 o posterior. stdocs segueix la mateixa política de suport que
 
 ## Ús
 
-Les rutes es documenten automàticament a partir del patró i del nom de la funció registrada:
+Les rutes es documenten soles a partir del patró i el nom del handler; els tags de l'struct i les route opts afegeixen la resta:
 
 ```go
-mux := stdocs.New(stdocs.WithTitle("La meva API"))
-mux.HandleFunc("GET /users", listUsers)        // resum "List users", tag "Users"
-mux.HandleFunc("GET /health", healthCheck)     // resum "Health check", tag "Health"
-```
-
-Passa opcions de ruta per adjuntar cossos, respostes, tags i seguretat:
-
-```go
-type User struct {
-    ID    string `json:"id" doc:"Identificador únic"`
-    Name  string `json:"name"`
-    Email string `json:"email,omitempty"`
+type CreateTask struct {
+    Title    string `json:"title" doc:"Títol curt" minLength:"1" maxLength:"200"`
+    Priority int    `json:"priority" minimum:"1" maximum:"5" default:"3"`
 }
 
-type CreateUserRequest struct {
-    Name string `json:"name"`
+type Task struct {
+    ID string `json:"id" doc:"ID únic"`
+}
+
+type ListParams struct {
+    Cursor string `query:"cursor" doc:"Cursor opac de paginació"`
+    Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
 }
 
 type APIError struct {
     Message string `json:"message"`
 }
 
-mux.HandleFunc("GET /users/{id}", getUser,
-    stdocs.Summary("Obtenir un usuari per ID"),
-    stdocs.WithResponse(200, User{}),
-    stdocs.WithResponse(404, APIError{}),
-)
-
-mux.HandleFunc("POST /users", createUser,
-    stdocs.WithBody(CreateUserRequest{}),
-    stdocs.WithResponse(201, User{}),
-)
-```
-
-### Tags de camp
-
-Els camps d'un struct poden portar documentació en tags, que es recullen en reflectir el tipus:
-
-| Tag | Efecte |
-|---|---|
-| `doc:"…"` (o `description:"…"`) | Estableix la descripció del camp a l'schema |
-| `example:"…"` | Estableix l'exemple del camp — es parseja segons el tipus del camp, així que `example:"42"` en un `int` emet el número 42 |
-
-```go
-type Task struct {
-    ID       string `json:"id" doc:"ID únic de la tasca"`
-    Priority int    `json:"priority" doc:"1 (baixa) a 5 (urgent)" example:"3"`
-}
-```
-
-Un valor d'`example` que no es pugui parsejar com el tipus del camp provoca un panic en construir el document.
-
-### La resposta default
-
-`WithResponse(0, body)` declara la resposta `default` d'OpenAPI — l'entrada comodí a què recorren els consumidors per a codis d'estat no declarats, per convenció la forma d'error compartida:
-
-```go
-mux.HandleFunc("GET /tasks/{id}", getTask,
-    stdocs.WithResponse(200, Task{}),
-    stdocs.WithResponse(0, APIError{}), // "default" al document
-)
-```
-
-Per a funcionalitats que stdocs no exposa directament, fes servir l'escape hatch:
-
-```go
 mux := stdocs.New(
     stdocs.WithTitle("La meva API"),
-    stdocs.WithOpenAPI(func(doc map[string]any) {
-        doc["info"].(map[string]any)["x-logo"] = map[string]any{
-            "url": "https://example.com/logo.png",
-        }
-    }),
+    stdocs.WithBearerAuth("bearerAuth", "JWT"),
+    stdocs.WithDefaultResponse(500, APIError{}), // el sobre d'error, una sola vegada
 )
-```
 
-Per fixar l'spec a una versió concreta d'OpenAPI, fes servir `WithVersion`:
+mux.HandleFunc("GET /tasks", listTasks, stdocs.WithParams(ListParams{}))
 
-```go
-mux := stdocs.New(
-    stdocs.WithTitle("La meva API"),
-    stdocs.WithVersion(stdocs.OpenAPI32),  // 3.2.0
+mux.HandleFunc("POST /tasks", createTask,
+    stdocs.WithBody(CreateTask{}),
+    stdocs.WithResponse(201, Task{}),
+    stdocs.WithSecurity("bearerAuth"), // documenta també el 401
 )
-```
 
-`stdocs` inclou l'últim pedaç de cada versió menor (`OpenAPI30` = 3.0.4, `OpenAPI31` = 3.1.2, `OpenAPI32` = 3.2.0). Per a 3.2 pots fixar a més l'URI canònic del document:
-
-```go
-mux := stdocs.New(
-    stdocs.WithTitle("La meva API"),
-    stdocs.WithVersion(stdocs.OpenAPI32),
-    stdocs.WithSelfURL("https://example.com/openapi.json"),
-)
-```
-
-La llista completa d'opcions és a [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs).
-
-### Muntar i desactivar la documentació
-
-`mux.Mount()` és una drecera per registrar el handler que retorna `mux.Docs()` al mateix mux, sota el prefix de documentació configurat: hi ha un únic handler de documentació i dues maneres de col·locar-lo. Fes servir `Mount()` tret que necessitis el handler directament (per embolcallar-lo en un middleware d'autenticació o muntar-lo en un altre mux). Tots dos accepten el mateix bool opcional amb la mateixa regla: un valor explícit per crida té prioritat sobre `WithDisabled` en tots dos sentits.
-
-La UI de documentació i els endpoints de l'spec (`openapi.json`, `openapi.yaml`) es poden desactivar sense anul·lar el registre de rutes. La decisió es pren quan es crida `Mount()`/`Docs()` (embolcalla el handler tu mateix si necessites decidir-ho per petició):
-
-```go
-// 1) Per mux: WithDisabled(true) fa que Mount no faci res i que
-//    Docs retorni un handler 404 a tot arreu.
-mux := stdocs.New(
-    stdocs.WithTitle("La meva API"),
-    stdocs.WithDisabled(os.Getenv("ENV") == "prod"),
-)
-mux.HandleFunc("GET /users", listUsers)
-mux.Mount() // no registra res quan està desactivat
-```
-
-```go
-// 2) Per crida: passa la condició a Mount (o a Docs si muntes
-//    manualment).
-mux := stdocs.New(stdocs.WithTitle("La meva API"))
-mux.HandleFunc("GET /users", listUsers)
 mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
-Quan està desactivada, tota petició sota el prefix de documentació rep un 404. L'spec encara es pot construir amb `mux.JSON()` i `mux.YAML()` — desactivar la UI no atura la generació de l'spec. Les rutes registrades sota el prefix de documentació (la mateixa pàgina de docs, els handlers de recursos) no apareixen mai a l'spec generat.
-
-### Amagar rutes individuals
-
-La visibilitat per ruta es combina amb els mecanismes anteriors: `Hidden()` exclou una ruta del document a tot arreu, i `Internal()` l'exclou tret que el mux s'hagi construït amb `WithInternal(true)` (quan es mostra, l'operació porta `x-internal: true`, l'extensió que entenen les eines de filtratge de specs). Una configuració completa per entorn:
-
-```go
-env := os.Getenv("ENV")
-mux := stdocs.New(
-    stdocs.WithTitle("La meva API"),
-    stdocs.WithDisabled(env == "prod"), // prod: sense documentació
-    stdocs.WithInternal(env == "dev"),  // dev: documentació completa; a la resta, les rutes internes queden amagades
-)
-mux.HandleFunc("GET /users", listUsers)                           // sempre documentada
-mux.HandleFunc("POST /admin/keys", rotateKeys, stdocs.Internal()) // documentada només a dev
-mux.HandleFunc("GET /healthz", healthCheck, stdocs.Hidden())      // mai documentada
-mux.Mount()
-```
-
-Les rutes excloses no deixen rastre al document: ni rutes, ni esquemes, ni operationIds. La visibilitat només dona forma a la documentació publicada: les rutes amagades i internes **continuen servint trànsit a tots els entorns**. No és control d'accés; protegeix els endpoints sensibles amb autenticació real.
-
-### Detectar requests de prova
-
-Les consoles "Try it out" / "Test Request" de les UI completes envien **requests reals** al teu backend: a la xarxa són indistingibles de qualsevol altre client. `FromDocs` les identifica (de manera aproximada, mitjançant la capçalera `Referer` que el navegador adjunta als fetch de la pàgina de docs) perquè el teu equip decideixi la política: bloquejar escriptures, desviar-les a un emmagatzematge de proves, etiquetar-les per a observabilitat o el que prefereixi.
-
-```go
-guard := func(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if r.Method != http.MethodGet && mux.FromDocs(r) {
-            http.Error(w, "les peticions de prova no poden modificar dades", http.StatusForbidden)
-            return
-        }
-        next.ServeHTTP(w, r)
-    })
-}
-log.Fatal(http.ListenAndServe(":8080", guard(mux)))
-```
-
-`FromDocs` és una protecció contra accidents, **no un control de seguretat**: la capçalera `Referer` la controla el client (es pot falsificar) i es pot eliminar (extensions de privadesa, una `Referrer-Policy` estricta). A més, només funciona quan la pàgina de docs i l'API comparteixen origen — amb una URL absoluta de `WithServer` en un altre host, el navegador envia per defecte un `Referer` només amb l'origen i la detecció retorna false. Fes-la servir només per *restringir* què pot fer el trànsit originat als docs — mai per concedir accés ni saltar-te l'autenticació.
-
-Si tens un document OpenAPI escrit a mà en lloc de rutes generades, serveix-lo amb `DocsHandler` + `WithSpec`:
-
-```go
-spec, _ := os.ReadFile("openapi.json")
-http.Handle("GET /docs/", stdocs.DocsHandler(
-    stdocs.WithTitle("La meva API"),
-    stdocs.WithSpec(spec),
-))
-```
+Una documentació mal declarada — un tipus de paràmetre amb un typo, un `minLength` en un `int`, un `example` que no es pot parsejar — provoca un panic en registrar o en construir el document, en lloc de publicar un contracte erroni.
 
 ## UIs
 
-La UI per defecte és una petita pàgina HTML sense dependències (~1.6 KB, només JS inline, sense recursos externs). Per fer servir una UI més completa, importa un subpaquet i passa la seva opció `WithUI()`:
+Importa un subpaquet i passa-li la seva opció `WithUI()`; els bessons `*emb` incrusten el bundle per a builds air-gapped:
 
 ```go
 import "github.com/FumingPower3925/stdocs/ui/scalar"
@@ -245,72 +105,35 @@ import "github.com/FumingPower3925/stdocs/ui/scalar"
 mux := stdocs.New(stdocs.WithTitle("La meva API"), scalar.WithUI())
 ```
 
-Per a un build air-gapped (sense CDN), importa el subpaquet `*emb` corresponent i munta el seu `AssetHandler()`:
+| UI                               | Subpaquet CDN                          | Subpaquet incrustat                         |
+| -------------------------------- | --------------------------------------- | -------------------------------------------- |
+| _(per defecte)_ (interna, ~1.6 KB) | —                                      | —                                            |
+| Scalar                           | `ui/scalar` (~3.6 MB des del CDN)        | `ui/scalaremb` (~3.6 MB al teu binari)       |
+| Swagger UI                       | `ui/swaggerui` (~1.7 MB des del CDN)     | `ui/swaggeruiemb` (~1.7 MB al teu binari)    |
+| Redoc                            | `ui/redoc` (~1.1 MB des del CDN)         | `ui/redocemb` (~1.1 MB al teu binari)        |
+| Stoplight                        | `ui/stoplight` (~2.4 MB des del CDN)     | `ui/stoplightemb` (~2.4 MB al teu binari)    |
 
-```go
-import "github.com/FumingPower3925/stdocs/ui/scalaremb"
+Les URL del CDN estan fixades a versions exactes amb hashes SRI sha384; els subpaquets no s'enllacen al teu binari si no els importes. Detalls del muntatge incrustat: [Docs UIs](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Docs_UIs).
 
-mux := stdocs.New(stdocs.WithTitle("La meva API"), scalaremb.WithUI())
-mux.Mount()
-mux.Handle("GET /docs/_assets/",
-    http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
-```
+## Documentació
 
-Cada UI completa ve en dues variants:
+La referència completa viu a [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs), organitzada per temes:
 
-| UI                                  | Subpaquet CDN                          | Subpaquet incrustat                          |
-| ----------------------------------- | --------------------------------------- | -------------------------------------------- |
-| _(per defecte)_ (integrada, ~1.6 KB) | —                                       | —                                            |
-| Scalar                              | `ui/scalar` (~3.6 MB des del CDN)       | `ui/scalaremb` (~3.6 MB al teu binari)       |
-| Swagger UI                          | `ui/swaggerui` (~1.7 MB des del CDN)    | `ui/swaggeruiemb` (~1.7 MB al teu binari)    |
-| Redoc                               | `ui/redoc` (~1.1 MB des del CDN)        | `ui/redocemb` (~1.1 MB al teu binari)        |
-| Stoplight                           | `ui/stoplight` (~2.4 MB des del CDN)    | `ui/stoplightemb` (~2.4 MB al teu binari)    |
-
-Totes les URL del CDN estan fixades a versions exactes amb hashes d'integritat SRI sha384. Els subpaquets no s'enllacen al teu binari si no els importes.
-
-## Usar l'spec en altres eines
-
-El document generat no és només per a la pàgina de docs: `mux.JSON()` i `mux.YAML()` et donen exactament els bytes servits als endpoints de l'spec, i la sortida és **determinista per construcció** — les claus van ordenades i els operationIds i noms de components són estables entre reconstruccions — així que funciona com a artefacte commitejat.
-
-El patró recomanat és un test de golden file:
-
-```go
-var update = flag.Bool("update", false, "rewrite openapi.json")
-
-func TestOpenAPIGolden(t *testing.T) {
-    got, err := NewAPI().JSON() // el teu constructor del mux
-    if err != nil {
-        t.Fatal(err)
-    }
-    const golden = "openapi.json"
-    if *update {
-        if err := os.WriteFile(golden, got, 0o644); err != nil {
-            t.Fatal(err)
-        }
-    }
-    want, err := os.ReadFile(golden)
-    if err != nil {
-        t.Fatalf("%v (executa: go test -run TestOpenAPIGolden -update)", err)
-    }
-    if !bytes.Equal(got, want) {
-        t.Fatalf("openapi.json està desactualitzat; executa: go test -run TestOpenAPIGolden -update")
-    }
-}
-```
-
-Cada canvi a l'API apareix ara com un diff revisable d'`openapi.json` a la PR, i el fitxer commitejat alimenta la resta de la cadena d'eines sense executar el servidor:
-
-- **Diff de contracte** — p. ex. `oasdiff breaking old.json openapi.json` a la CI assenyala canvis que trenquen compatibilitat.
-- **Linting** — `spectral lint openapi.json` (o Redocly CLI) aplica regles d'estil d'API.
-- **Generació de clients** — apunta `openapi-generator`, `oapi-codegen` o el teu pipeline d'SDKs al fitxer commitejat per produir clients tipats en qualsevol llenguatge.
+- [Field tags](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Field_tags) — `doc:`, `example:` i el vocabulari de constraints.
+- [Parameters](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Parameters) — structs de `WithParams` i modificadors `ParamOpt`.
+- [Responses](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Responses) — declaracions per status, la resposta `default` i sobres d'error a nivell de mux.
+- [Visibility](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Visibility) — `Hidden`, `Internal` i `WithInternal(show)`.
+- [Mounting and toggling](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Mounting_and_toggling) — `Mount`/`Docs`, activació per entorn i prefixos de ruta darrere d'un proxy.
+- [Try-it requests and drift](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Try_it_requests_and_drift) — detecció amb `FromDocs` i l'ajuda de desenvolupament `DriftWarn`.
+- [Using the spec downstream](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Using_the_spec_downstream) — tests de golden file, diffs a les PR i generació de clients.
+- [OpenAPI versions](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-OpenAPI_versions) — `WithVersion`, el `$self` de 3.2 i l'escape hatch `WithOpenAPI`.
+- [DocsHandler](https://pkg.go.dev/github.com/FumingPower3925/stdocs#DocsHandler) — serveix un spec escrit a mà darrere de qualsevol de les UI incloses.
 
 ## Com funciona
 
-El `net/http.ServeMux` de Go 1.22 admet patrons de mètode+ruta, però no els exposa públicament. `stdocs.New()` retorna un `*stdocs.Mux` que incrusta `*http.ServeMux` i intercepta les crides a `Handle`/`HandleFunc` per registrar el patró i les metadades. A la primera petició a `/docs/openapi.json`, es recorre el registre i l'spec es construeix i es desa a la memòria cau (crida `mux.Refresh()` per reconstruir-lo).
+`stdocs.New()` retorna un `*stdocs.Mux` que incrusta `*http.ServeMux` i registra patró + metadades a mesura que registres handlers. Amb la primera petició a `/docs/openapi.json`, es recorre el registre i l'spec es construeix i es desa en cache (`mux.Refresh()` el reconstrueix). Sense comentaris, sense generació de codi, sense `unsafe`: el patró és la documentació.
 
-Sense comentaris, sense generació de codi, sense `unsafe` — la cadena del patró és la documentació.
-
-Hi ha una demo executable a [`cmd/demo`](./cmd/demo):
+Una demo executable viu a [`cmd/demo`](./cmd/demo):
 
 ```bash
 go run ./cmd/demo
@@ -319,14 +142,7 @@ go run ./cmd/demo
 
 ## Abast i non-goals
 
-stdocs fa una sola cosa: documenta aplicacions de `net/http.ServeMux` de la biblioteca estàndard i serveix el resultat. Conèixer els límits per endavant t'estalvia una avaluació:
-
-- **Només biblioteca estàndard.** No hi ha integracions amb gin/echo/chi/fiber i no n'hi haurà — el `ServeMux` embolcallat és el disseny, no un primer adaptador.
-- **Documentació, no enforcement.** stdocs no valida requests, no fa binding de paràmetres ni comprova que els handlers compleixin el contracte documentat. El document descriu la intenció; mantenir els handlers honestos és feina de l'aplicació (el flux de golden file de més amunt fa el drift revisable).
-- **Sense generació de codi, sense anotacions en comentaris, sense dependències.** Permanentment, per disseny.
-- **La UI integrada es manté mínima.** La pàgina per defecte és una llista de rutes d'~1.6 KB sense dependències i sense consola de try-it — aquesta petitesa és la seva característica. Les quatre UI completes inclouen consoles i són a un import de distància.
-
-Quan una altra cosa encaixa millor: si el contracte és el teu lliurable (revisions d'spec entre equips, clients en diversos llenguatges, conformitat forçada), un generador spec-first com oapi-codegen o ogen és l'eina correcta; si comences de zero i vols validació forçada des dels tipus, un framework de handlers tipats com huma ho és. stdocs és per al codi que ja tens.
+stdocs documenta aplicacions de `ServeMux` de la biblioteca estàndard — no s'integra amb altres routers, no valida requests en temps d'execució i no fa servir generació de codi, anotacions en comentaris ni dependències, permanentment i per disseny. El document descriu la intenció; mantenir els handlers honestos és feina de l'aplicació. La declaració completa de límits, inclòs quan encaixa millor una altra eina, és a la [documentació del paquet](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Scope_and_non_goals).
 
 ## Contribuir
 
