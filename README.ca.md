@@ -35,7 +35,7 @@ Això és tot. `stdocs` recorre les teves rutes registrades, genera un spec Open
 ## Característiques
 
 - **Zero dependències** — només la biblioteca estàndard de Go en temps d'execució.
-- **Tres versions d'OpenAPI** — 3.0.4 (per defecte), 3.1.2 i 3.2.0, totes provades. Els pedaços antics (3.0.3, 3.1.0) no s'exposen com a constants: segons l'especificació d'OpenAPI, les eines han d'acceptar qualsevol 3.0.\* / 3.1.\*, així que un sol "últim pedaç" per versió menor és el valor per defecte correcte.
+- **Tres versions d'OpenAPI** — 3.0.4 (per defecte), 3.1.2 i 3.2.0, totes provades.
 - **Reflexió** — els tipus Go es converteixen en JSON Schemas: punters, slices, mapes, genèrics, structs incrustats, tipus recursius via `$ref`, etiquetes `json` (incloses `omitempty`, `omitzero` i `,string`), i reconeixement de `json.Marshaler`/`encoding.TextMarshaler`.
 - **Valors per defecte intel·ligents** — els noms de funcions es converteixen en resums, el primer segment de la ruta es converteix en el tag i els paràmetres de ruta s'inclouen automàticament.
 - **Seguretat** — bearer, basic, API key, OAuth 2.0 (inclòs el device flow de 3.2). Els noms d'esquemes no registrats es reporten com a errors.
@@ -124,20 +124,14 @@ mux := stdocs.New(
 
 La llista completa d'opcions és a [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs).
 
-### Desactivar la interfície de documentació
+### Muntar i desactivar la documentació
 
-La interfície de documentació i els endpoints de l'spec (`openapi.json`, `openapi.yaml`) es poden desactivar sense anul·lar el registre de rutes. La decisió es pren quan es crida `Docs()`/`Mount()` (embolcalla el handler tu mateix si necessites un commutador per petició):
+`mux.Mount()` és una drecera per registrar el handler que retorna `mux.Docs()` al mateix mux, sota el prefix de documentació configurat: hi ha un únic handler de documentació i dues maneres de col·locar-lo. Fes servir `Mount()` tret que necessitis el handler directament (per embolcallar-lo en un middleware d'autenticació, muntar-lo en un altre mux o passar el commutador per crida).
 
-```go
-// 1) Per crida: passa la condició a mux.Docs al punt de crida.
-//    Un bool explícit té prioritat sobre WithDisabled en tots dos sentits.
-mux := stdocs.New(stdocs.WithTitle("La meva API"))
-mux.HandleFunc("GET /users", listUsers)
-mux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
-```
+La interfície de documentació i els endpoints de l'spec (`openapi.json`, `openapi.yaml`) es poden desactivar sense anul·lar el registre de rutes. La decisió es pren quan es crida `Mount()`/`Docs()` (embolcalla el handler tu mateix si necessites un commutador per petició):
 
 ```go
-// 2) Per mux: WithDisabled(true) fa que Mount no faci res i que
+// 1) Per mux: WithDisabled(true) fa que Mount no faci res i que
 //    Docs retorni un handler 404 a tot arreu.
 mux := stdocs.New(
     stdocs.WithTitle("La meva API"),
@@ -145,6 +139,15 @@ mux := stdocs.New(
 )
 mux.HandleFunc("GET /users", listUsers)
 mux.Mount() // no registra res quan està desactivat
+```
+
+```go
+// 2) Per crida, en muntar manualment: passa la condició a mux.Docs.
+//    Un bool explícit té prioritat sobre WithDisabled en tots dos
+//    sentits.
+mux := stdocs.New(stdocs.WithTitle("La meva API"))
+mux.HandleFunc("GET /users", listUsers)
+mux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
 ```
 
 Quan està desactivada, tota petició sota el prefix de documentació rep un 404. L'spec encara es pot construir amb `mux.JSON()` i `mux.YAML()` — desactivar la interfície no atura la generació de l'spec. Les rutes registrades sota el prefix de documentació (la mateixa pàgina de docs, els handlers de recursos) no apareixen mai a l'spec generat.
