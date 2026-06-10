@@ -151,6 +151,25 @@ mux.Mount(os.Getenv("ENV") != "prod")
 
 Quan està desactivada, tota petició sota el prefix de documentació rep un 404. L'spec encara es pot construir amb `mux.JSON()` i `mux.YAML()` — desactivar la interfície no atura la generació de l'spec. Les rutes registrades sota el prefix de documentació (la mateixa pàgina de docs, els handlers de recursos) no apareixen mai a l'spec generat.
 
+### Amagar rutes individuals
+
+La visibilitat per ruta es combina amb els commutadors anteriors: `Hidden()` exclou una ruta del document a tot arreu, i `Internal()` l'exclou tret que el mux s'hagi construït amb `WithInternal(true)` (quan es mostra, l'operació porta `x-internal: true`, l'extensió que entenen les eines de filtratge de specs). Una configuració completa per entorn:
+
+```go
+env := os.Getenv("ENV")
+mux := stdocs.New(
+    stdocs.WithTitle("La meva API"),
+    stdocs.WithDisabled(env == "prod"), // prod: sense documentació
+    stdocs.WithInternal(env == "dev"),  // dev: documentació completa; a la resta, les rutes internes queden amagades
+)
+mux.HandleFunc("GET /users", listUsers)                           // sempre documentada
+mux.HandleFunc("POST /admin/keys", rotateKeys, stdocs.Internal()) // documentada només a dev
+mux.HandleFunc("GET /healthz", healthCheck, stdocs.Hidden())      // mai documentada
+mux.Mount()
+```
+
+Les rutes excloses no deixen rastre al document: ni rutes, ni esquemes, ni identificadors d'operació. La visibilitat només dona forma a la documentació publicada: les rutes amagades i internes **continuen servint trànsit a tots els entorns**. No és control d'accés; protegeix els endpoints sensibles amb autenticació real.
+
 Si tens un document OpenAPI escrit a mà en lloc de rutes generades, serveix-lo amb `DocsHandler` + `WithSpec`:
 
 ```go
