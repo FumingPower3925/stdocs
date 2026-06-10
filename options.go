@@ -73,11 +73,54 @@ type Config struct {
 	// route opt appear in the generated document. Defaults to false
 	// (internal routes hidden). Set via WithInternal.
 	ShowInternal bool
+	// DefaultResponses are mux-level response entries documented on
+	// every operation that does not itself declare the same status.
+	// Populated via WithDefaultResponse.
+	DefaultResponses []DefaultResponse
+}
+
+// DefaultResponse is a mux-level response declaration applied to
+// every documented operation; see WithDefaultResponse.
+type DefaultResponse struct {
+	// Status is the HTTP status code; 0 means the OpenAPI "default"
+	// response.
+	Status int
+	// Body is a zero value whose type is reflected into the response
+	// schema, like the body argument of WithResponse; nil means no
+	// body.
+	Body any
 }
 
 // Option is a function that mutates a config. Options are applied by
 // New and DocsHandler at construction time.
 type Option func(*Config)
+
+// WithDefaultResponse documents a response on every operation that
+// does not itself declare the same status — typically the API's
+// shared error envelope, declared once instead of on every route:
+//
+//	mux := stdocs.New(
+//	    stdocs.WithTitle("My API"),
+//	    stdocs.WithDefaultResponse(500, APIError{}),
+//	)
+//
+// A per-route WithResponse (or response-decorating opt) for the same
+// status wins. Pass status 0 for the OpenAPI "default" response and
+// nil for a body-less entry. Multiple calls accumulate; repeating a
+// status panics, as does a status outside 100-599 (other than 0).
+func WithDefaultResponse(status int, body any) Option {
+	if status != 0 && (status < 100 || status > 599) {
+		panic("stdocs: WithDefaultResponse status must be 0 (default) or 100-599, got " + itoa(status))
+	}
+	return func(c *Config) {
+		for _, dr := range c.DefaultResponses {
+			if dr.Status == status {
+				panic("stdocs: WithDefaultResponse called twice for status " + statusKey(status))
+			}
+		}
+		c.DefaultResponses = append(c.DefaultResponses, DefaultResponse{Status: status, Body: body})
+	}
+}
 
 // WithTitle sets the API title. The default is "API".
 func WithTitle(title string) Option {
