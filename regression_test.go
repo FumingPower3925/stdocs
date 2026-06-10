@@ -243,6 +243,55 @@ func TestDocsOverridesDisabled(t *testing.T) {
 	}
 }
 
+// Mount accepts the same optional bool as Docs, with identical
+// explicit-wins semantics.
+func TestMountOverridesDisabled(t *testing.T) {
+	// Mount(true) on a WithDisabled mux registers working docs.
+	m := New(WithTitle("T"), WithDisabled(true))
+	m.HandleFunc("GET /x", noop)
+	m.Mount(true)
+	rr := httptest.NewRecorder()
+	m.ServeHTTP(rr, httptest.NewRequest("GET", "/docs/", nil))
+	if rr.Code != 200 {
+		t.Errorf("Mount(true) on a disabled mux: /docs/ = %d, want 200", rr.Code)
+	}
+
+	// Mount(false) on an enabled mux registers nothing.
+	m2 := New(WithTitle("T"))
+	m2.HandleFunc("GET /x", noop)
+	m2.Mount(false)
+	rr2 := httptest.NewRecorder()
+	m2.ServeHTTP(rr2, httptest.NewRequest("GET", "/docs/", nil))
+	if rr2.Code != 404 {
+		t.Errorf("Mount(false): /docs/ = %d, want 404", rr2.Code)
+	}
+
+	// More than one bool is rejected, like Docs.
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Errorf("Mount(true, false) should panic")
+			}
+		}()
+		New(WithTitle("T")).Mount(true, false)
+	}()
+}
+
+// Manually registering a docs handler at the prefix and then calling
+// Mount with a conflicting value cannot silently fight: the second
+// registration of "GET <prefix>/" panics at startup with a ServeMux
+// pattern conflict.
+func TestManualDocsThenMountConflicts(t *testing.T) {
+	m := New(WithTitle("T"))
+	m.Handle("GET /docs/", m.Docs(false))
+	defer func() {
+		if recover() == nil {
+			t.Errorf("Mount(true) after a manual GET /docs/ registration should panic with a pattern conflict")
+		}
+	}()
+	m.Mount(true)
+}
+
 // Mount is idempotent and its exact routes cannot be shadowed by
 // user wildcard routes under the prefix.
 func TestMountIdempotentAndUnshadowable(t *testing.T) {

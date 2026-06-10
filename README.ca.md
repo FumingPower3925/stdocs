@@ -126,7 +126,7 @@ La llista completa d'opcions és a [pkg.go.dev](https://pkg.go.dev/github.com/Fu
 
 ### Muntar i desactivar la documentació
 
-`mux.Mount()` és una drecera per registrar el handler que retorna `mux.Docs()` al mateix mux, sota el prefix de documentació configurat: hi ha un únic handler de documentació i dues maneres de col·locar-lo. Fes servir `Mount()` tret que necessitis el handler directament (per embolcallar-lo en un middleware d'autenticació, muntar-lo en un altre mux o passar el commutador per crida).
+`mux.Mount()` és una drecera per registrar el handler que retorna `mux.Docs()` al mateix mux, sota el prefix de documentació configurat: hi ha un únic handler de documentació i dues maneres de col·locar-lo. Fes servir `Mount()` tret que necessitis el handler directament (per embolcallar-lo en un middleware d'autenticació o muntar-lo en un altre mux). Tots dos accepten el mateix bool opcional amb la mateixa regla: un valor explícit per crida té prioritat sobre `WithDisabled` en tots dos sentits.
 
 La interfície de documentació i els endpoints de l'spec (`openapi.json`, `openapi.yaml`) es poden desactivar sense anul·lar el registre de rutes. La decisió es pren quan es crida `Mount()`/`Docs()` (embolcalla el handler tu mateix si necessites un commutador per petició):
 
@@ -142,12 +142,11 @@ mux.Mount() // no registra res quan està desactivat
 ```
 
 ```go
-// 2) Per crida, en muntar manualment: passa la condició a mux.Docs.
-//    Un bool explícit té prioritat sobre WithDisabled en tots dos
-//    sentits.
+// 2) Per crida: passa la condició a Mount (o a Docs si muntes
+//    manualment).
 mux := stdocs.New(stdocs.WithTitle("La meva API"))
 mux.HandleFunc("GET /users", listUsers)
-mux.Handle("GET /docs/", mux.Docs(os.Getenv("ENV") != "prod"))
+mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
 Quan està desactivada, tota petició sota el prefix de documentació rep un 404. L'spec encara es pot construir amb `mux.JSON()` i `mux.YAML()` — desactivar la interfície no atura la generació de l'spec. Les rutes registrades sota el prefix de documentació (la mateixa pàgina de docs, els handlers de recursos) no apareixen mai a l'spec generat.
