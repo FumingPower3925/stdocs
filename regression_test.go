@@ -243,6 +243,84 @@ func TestDocsOverridesDisabled(t *testing.T) {
 	}
 }
 
+// Hidden routes never appear in the document; Internal routes appear
+// only under WithInternal(true), carrying x-internal: true. Excluded
+// routes leave no trace: no components, no paths, no operation-id
+// effects — and they still serve traffic.
+func TestHiddenAndInternalRoutes(t *testing.T) {
+	type Secret struct {
+		Key string `json:"key"`
+	}
+	type Probe struct {
+		OK bool `json:"ok"`
+	}
+	build := func(showInternal bool) (*Mux, map[string]any) {
+		m := New(WithTitle("T"), WithInternal(showInternal))
+		m.HandleFunc("GET /users", noop)
+		m.HandleFunc("GET /admin/secrets", func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("served"))
+		}, Internal(), WithResponse(200, Secret{}))
+		m.HandleFunc("GET /debug/probe", noop, Hidden(), WithResponse(200, Probe{}))
+		b, err := m.JSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m, jx(t, b)
+	}
+
+	// Policy: internal hidden (staging).
+	m, doc := build(false)
+	paths := jget(t, doc, "paths").(map[string]any)
+	if _, ok := paths["/users"]; !ok {
+		t.Errorf("public route missing")
+	}
+	if _, ok := paths["/admin/secrets"]; ok {
+		t.Errorf("internal route documented despite WithInternal(false)")
+	}
+	if _, ok := paths["/debug/probe"]; ok {
+		t.Errorf("hidden route documented")
+	}
+	schemas := jget(t, doc, "components", "schemas").(map[string]any)
+	for _, leaked := range []string{"Secret", "Probe"} {
+		if _, ok := schemas[leaked]; ok {
+			t.Errorf("component %s leaked from an excluded route", leaked)
+		}
+	}
+	// Excluded routes still serve traffic.
+	rr := httptest.NewRecorder()
+	m.ServeHTTP(rr, httptest.NewRequest("GET", "/admin/secrets", nil))
+	if rr.Code != 200 || rr.Body.String() != "served" {
+		t.Errorf("internal route must still serve traffic: %d %q", rr.Code, rr.Body.String())
+	}
+
+	// Policy: internal shown (dev).
+	_, doc = build(true)
+	op := jget(t, doc, "paths", "/admin/secrets", "get").(map[string]any)
+	if op["x-internal"] != true {
+		t.Errorf("shown internal route lacks x-internal: true: %v", op)
+	}
+	if _, ok := jget(t, doc, "components", "schemas", "Secret").(map[string]any); !ok {
+		t.Errorf("Secret component missing when internal routes are shown")
+	}
+	if _, ok := jget(t, doc, "paths").(map[string]any)["/debug/probe"]; ok {
+		t.Errorf("hidden route documented even under WithInternal(true)")
+	}
+}
+
+// An excluded route cannot influence operation-id disambiguation of
+// the visible set: a public route keeps its unsuffixed id even when a
+// hidden/internal route carries the same explicit id.
+func TestExcludedRoutesDontAffectOperationIDs(t *testing.T) {
+	m := New(WithTitle("T"))
+	m.HandleFunc("GET /a", noop, OperationID("x"), Internal())
+	m.HandleFunc("GET /b", noop, OperationID("x"))
+	b, _ := m.JSON()
+	doc := jx(t, b)
+	if id := jget(t, doc, "paths", "/b", "get", "operationId").(string); id != "x" {
+		t.Errorf("visible route id = %q, want unsuffixed x (hidden collision leaked)", id)
+	}
+}
+
 // Mount accepts the same optional bool as Docs, with identical
 // explicit-wins semantics.
 func TestMountOverridesDisabled(t *testing.T) {

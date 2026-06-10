@@ -69,6 +69,10 @@ type Config struct {
 	// via WithSpec. It is served verbatim by DocsHandler (Tier 1) and
 	// ignored by *Mux (Tier 2), which generates its own document.
 	StaticSpec []byte
+	// ShowInternal controls whether routes marked with the Internal
+	// route opt appear in the generated document. Defaults to false
+	// (internal routes hidden). Set via WithInternal.
+	ShowInternal bool
 }
 
 // Option is a function that mutates a config. Options are applied by
@@ -174,6 +178,26 @@ func WithDocsPrefix(prefix string) Option {
 // pass the bool directly to Mux.Docs(enabled) instead.
 func WithDisabled(disabled bool) Option {
 	return func(c *Config) { c.Disabled = disabled }
+}
+
+// WithInternal sets whether routes marked with the Internal route
+// opt appear in the generated OpenAPI document. The default is
+// false: internal routes are hidden, so forgetting this option can
+// never leak a sensitive endpoint into a published spec. When shown,
+// internal operations carry an "x-internal": true extension.
+//
+// Typical environment wiring, together with WithDisabled:
+//
+//	env := os.Getenv("ENV")
+//	mux := stdocs.New(
+//	    stdocs.WithDisabled(env == "prod"),  // prod: no docs at all
+//	    stdocs.WithInternal(env == "dev"),   // dev: everything; staging: internal hidden
+//	)
+//
+// Visibility only shapes the published documentation; hidden and
+// internal routes still serve traffic in every environment.
+func WithInternal(show bool) Option {
+	return func(c *Config) { c.ShowInternal = show }
 }
 
 // WithSelfURL sets the OpenAPI 3.2 "$self" field. This is the

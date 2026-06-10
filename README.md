@@ -36,7 +36,7 @@ That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from
 - **Smart defaults** — function names become summaries, the first path segment becomes the tag, path params are auto-included.
 - **Security** — bearer, basic, API key, OAuth 2.0 (including the 3.2 device flow). Unregistered scheme names are reported as errors.
 - **Five UIs** — a tiny dependency-free default (~1.6 KB, inline JS only), plus Scalar, Swagger UI, Redoc, and Stoplight Elements — each available as a CDN sub-package (version-pinned with SRI integrity hashes) or an air-gapped embedded sub-package.
-- **Environment toggling** — `mux.Docs(enabled)` and `WithDisabled(true)` turn the docs on or off per environment without changing registered routes.
+- **Environment toggling** — `mux.Mount(enabled)`/`mux.Docs(enabled)` and `WithDisabled(true)` turn the docs on or off per environment, and `Hidden()`/`Internal()` + `WithInternal(show)` control per-route visibility — all without changing registered routes.
 - **XSS-safe** — the docs HTML is rendered through `html/template`.
 
 ## Install
@@ -146,6 +146,25 @@ mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
 When disabled, every request under the docs prefix gets a 404. The spec is still buildable via `mux.JSON()` and `mux.YAML()` — disabling the UI does not stop spec generation. Routes registered under the docs prefix (the docs page itself, asset handlers) never appear in the generated spec.
+
+### Hiding individual routes
+
+Per-route visibility composes with the switches above: `Hidden()` excludes a route from the document everywhere, and `Internal()` excludes it unless the mux was built with `WithInternal(true)` (when shown, the operation carries `x-internal: true`, the extension spec-filtering tools understand). A complete environment setup:
+
+```go
+env := os.Getenv("ENV")
+mux := stdocs.New(
+    stdocs.WithTitle("My API"),
+    stdocs.WithDisabled(env == "prod"), // prod: no docs at all
+    stdocs.WithInternal(env == "dev"),  // dev: full docs; elsewhere internal routes are hidden
+)
+mux.HandleFunc("GET /users", listUsers)                           // always documented
+mux.HandleFunc("POST /admin/keys", rotateKeys, stdocs.Internal()) // documented only in dev
+mux.HandleFunc("GET /healthz", healthCheck, stdocs.Hidden())      // never documented
+mux.Mount()
+```
+
+Excluded routes leave no trace in the document — no paths, no schemas, no operation ids. Visibility only shapes the published documentation: hidden and internal routes **still serve traffic in every environment**. It is not access control; protect sensitive endpoints with real authentication.
 
 If you have a hand-written OpenAPI document instead of generated routes, serve it with `DocsHandler` + `WithSpec`:
 

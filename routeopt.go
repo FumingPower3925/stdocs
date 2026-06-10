@@ -32,6 +32,29 @@ func Deprecated() RouteOpt {
 	return func(r *route) { r.op.Deprecated = true }
 }
 
+// Hidden excludes the route from the generated OpenAPI document
+// unconditionally, in every environment. Use it for endpoints that
+// are not part of any contract (debug hooks, health probes).
+//
+// Hiding a route only shapes the published documentation — the
+// handler still serves traffic. It is NOT access control.
+func Hidden() RouteOpt {
+	return func(r *route) { r.op.Hidden = true }
+}
+
+// Internal marks the route as internal: it is excluded from the
+// generated OpenAPI document unless the mux was configured with
+// WithInternal(true). When shown, the operation carries an
+// "x-internal": true extension, which spec-filtering tools
+// (e.g. Redocly) understand.
+//
+// Like Hidden, this only shapes the published documentation — the
+// handler still serves traffic in every environment. It is NOT
+// access control.
+func Internal() RouteOpt {
+	return func(r *route) { r.op.Internal = true }
+}
+
 // OperationID sets the operationId. If not set, stdocs auto-derives one
 // from the method and path.
 func OperationID(id string) RouteOpt {
