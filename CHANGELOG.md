@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-06-11
+
 ### Added
 
 - Schema constraint tags on struct fields: `minimum`, `maximum`,
@@ -45,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `WithParam` and its shorthands fail fast: an unknown type string
   (previously a silent empty schema), an unknown `in` location, or an
   empty name now panics at registration.
+- The package documentation on pkg.go.dev is now the canonical
+  reference, organized by topic with runnable examples; the READMEs
+  (en/es/ca) are slimmed to hero, features, one worked example, the
+  UI table, and per-topic links into the reference.
 
 ## [0.2.0] - 2026-06-11
 
@@ -163,7 +171,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/FumingPower3925/stdocs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/FumingPower3925/stdocs/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/FumingPower3925/stdocs/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/FumingPower3925/stdocs/releases/tag/v0.1.0
