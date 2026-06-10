@@ -1,0 +1,3 @@
+// Placeholder so //go:embed has something to match. The real
+// standalone.js is fetched by `go generate ./...` (see the
+// //go:generate directive in scalaremb.go).

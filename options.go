@@ -1,0 +1,202 @@
+package stdocs
+
+import "github.com/FumingPower3925/stdocs/internal/spec"
+
+// Config holds the resolved configuration for an stdocs Mux.
+// It is built by applying a list of Options to a fresh Config and is
+// shared with the registry and the spec emitter.
+//
+// Config is exported (rather than unexported like in many libraries)
+// so that UI sub-packages (e.g. stdocs/ui/scalar) can mutate it via
+// a stdocs.Option. UI sub-packages should not construct or copy a
+// Config; they should only read or write the UIDoc field.
+type Config struct {
+	// Info carries the OpenAPI "info" object.
+	Info Info
+	// Servers is the list of OpenAPI "servers".
+	Servers []Server
+	// Tags are the declared top-level tags. Tags attached to operations
+	// that aren't in this list are still emitted on the operation; the
+	// declarations are just for richer descriptions.
+	Tags []TagDecl
+	// DocsPrefix is the URL prefix under which the docs UI and spec are
+	// served. Defaults to "/docs".
+	DocsPrefix string
+	// Version is the OpenAPI version to emit. Defaults to OpenAPI30.
+	Version SpecVersion
+	// DefaultSummary is a fallback summary used for routes that have
+	// neither a per-route Summary nor a function-name-based inference.
+	DefaultSummary string
+	// UIDoc is the HTML template for the docs UI page. The default is
+	// the raw zero-JS UI in stdocs.defaultUIDoc. UI sub-packages
+	// override this field via a stdocs.Option to swap in their own
+	// page. The template may contain {{.Title}} and {{.SpecURL}}
+	// placeholders, which are substituted at request time.
+	UIDoc string
+	// Hooks is the list of post-build callbacks registered via
+	// WithOpenAPI. Each is called once per spec build, with the
+	// emitted spec as a map[string]any, and may mutate it in place.
+	Hooks []func(doc map[string]any)
+	// Security is the list of registered security schemes. The user
+	// adds entries via WithSecurityScheme / WithBearerAuth / etc.;
+	// each is rendered into components.securitySchemes at build time.
+	Security []spec.NamedSecurityScheme
+	// GlobalSecurity is the default security requirement applied to
+	// every operation. Operations may override with WithSecurity or
+	// opt out with WithNoSecurity.
+	GlobalSecurity []SecurityRequirement
+	// Webhooks are 3.1-only. The map is keyed by webhook name. The
+	// emitter ignores this field for 3.0.3 specs.
+	Webhooks map[string]Webhook
+}
+
+// Option is a function that mutates a config. Used at New() and Mount()
+// time.
+type Option func(*Config)
+
+// WithTitle sets the API title. The default is "API".
+func WithTitle(title string) Option {
+	return func(c *Config) { c.Info.Title = title }
+}
+
+// WithVersion sets the OpenAPI version. Accepts "3.0.3" or "3.1.0".
+// Unknown values fall back to 3.0.3.
+func WithVersion(v string) Option {
+	return func(c *Config) {
+		switch SpecVersion(v) {
+		case OpenAPI30, OpenAPI31:
+			c.Version = SpecVersion(v)
+		default:
+			c.Version = OpenAPI30
+		}
+	}
+}
+
+// WithDescription sets the API description.
+func WithDescription(s string) Option {
+	return func(c *Config) { c.Info.Description = s }
+}
+
+// WithAPIVersion sets the API version string in the OpenAPI "info"
+// block (e.g. "1.0.0"). This is independent of WithVersion which sets
+// the OpenAPI specification version (3.0.3 vs 3.1.0).
+func WithAPIVersion(v string) Option {
+	return func(c *Config) { c.Info.Version = v }
+}
+
+// WithServer adds a server entry.
+func WithServer(url, description string) Option {
+	return func(c *Config) {
+		c.Servers = append(c.Servers, Server{URL: url, Description: description})
+	}
+}
+
+// WithContact sets the contact info.
+func WithContact(name, email, url string) Option {
+	return func(c *Config) {
+		c.Info.Contact = &Contact{Name: name, Email: email, URL: url}
+	}
+}
+
+// WithLicense sets the license info.
+func WithLicense(name, url string) Option {
+	return func(c *Config) {
+		c.Info.License = &License{Name: name, URL: url}
+	}
+}
+
+// WithDocsPrefix overrides the URL prefix for the docs UI.
+// The default is "/docs". Must start with "/".
+func WithDocsPrefix(prefix string) Option {
+	return func(c *Config) {
+		if prefix == "" || prefix[0] != '/' {
+			prefix = "/" + prefix
+		}
+		c.DocsPrefix = prefix
+	}
+}
+
+// WithTag declares a top-level tag and its description. Tags attached to
+// operations that match a declared tag are also valid; undeclared tags
+// are still emitted.
+func WithTag(name, description string) Option {
+	return func(c *Config) {
+		c.Tags = append(c.Tags, TagDecl{Name: name, Description: description})
+	}
+}
+
+// WithDefaultSummary sets a default summary template used for routes
+// that do not provide one and whose function name does not yield a
+// useful inference. Use {resource} as a placeholder for the first path
+// segment (the inferred tag).
+func WithDefaultSummary(template string) Option {
+	return func(c *Config) { c.DefaultSummary = template }
+}
+
+// WithOpenAPI registers a callback that runs after the spec is built
+// and before it is cached. The callback receives the spec as a
+// map[string]any and may mutate it in place. This is the escape hatch
+// for features stdocs does not expose directly: security schemes,
+// webhooks, custom x-extensions, vendor extensions, etc.
+//
+// The callback is invoked once per build (i.e. once before the cache
+// is populated; subsequent reads use the cache). Call Refresh to force
+// the callback to run again.
+//
+// Example:
+//
+//	stdocs.WithOpenAPI(func(doc map[string]any) {
+//	    doc["security"] = []map[string]any{{
+//	        "bearerAuth": []string{},
+//	    }}
+//	    doc["components"].(map[string]any)["securitySchemes"] = map[string]any{
+//	        "bearerAuth": map[string]any{
+//	            "type":         "http",
+//	            "scheme":       "bearer",
+//	            "bearerFormat": "JWT",
+//	        },
+//	    }
+//	})
+func WithOpenAPI(fn func(doc map[string]any)) Option {
+	return func(c *Config) {
+		c.Hooks = append(c.Hooks, fn)
+	}
+}
+
+// WithGlobalSecurity sets the default security requirement applied to
+// every operation that does not specify its own. Operations can opt
+// out with stdocs.WithNoSecurity or override with stdocs.WithSecurity.
+//
+//	stdocs.WithGlobalSecurity("bearerAuth")
+//	stdocs.WithGlobalSecurity("oauth2Auth", "read:users")
+func WithGlobalSecurity(name string, scopes ...string) Option {
+	return func(c *Config) {
+		if name == "" {
+			return
+		}
+		c.GlobalSecurity = append(c.GlobalSecurity, SecurityRequirement{name: append([]string{}, scopes...)})
+	}
+}
+
+// newConfig returns a config with sane defaults.
+func newConfig() *Config {
+	return &Config{
+		Info: Info{
+			Title:   "API",
+			Version: "0.0.0",
+		},
+		Servers:    []Server{{URL: "/"}},
+		DocsPrefix: "/docs",
+		Version:    OpenAPI30,
+		UIDoc:      defaultUIDoc,
+	}
+}
+
+// applyOptions returns a config with opts applied.
+func applyOptions(opts []Option) *Config {
+	c := newConfig()
+	for _, o := range opts {
+		o(c)
+	}
+	return c
+}
