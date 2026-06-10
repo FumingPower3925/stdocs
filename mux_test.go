@@ -131,13 +131,13 @@ func TestMux_JSON_31(t *testing.T) {
 	type T struct {
 		Name *string `json:"name"`
 	}
-	m := New(WithTitle("T"), WithVersion("3.1.0"))
+	m := New(WithTitle("T"), WithVersion(OpenAPI31))
 	m.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {},
 		WithResponse(200, T{}),
 	)
 	b, _ := m.JSON()
-	if !strings.Contains(string(b), `"3.1.0"`) {
-		t.Errorf("expected 3.1.0 in output: %s", b)
+	if !strings.Contains(string(b), `"3.1.2"`) {
+		t.Errorf("expected 3.1.2 in output: %s", b)
 	}
 	// The nullable pointer field should be a type array, not nullable:true.
 	if strings.Contains(string(b), `"nullable"`) {
@@ -351,7 +351,7 @@ func TestMux_SharedComponent_31AnyOf(t *testing.T) {
 	type User struct {
 		ID string `json:"id"`
 	}
-	m := New(WithTitle("T"), WithVersion("3.1.0"))
+	m := New(WithTitle("T"), WithVersion(OpenAPI31))
 	m.HandleFunc("GET /nullable", func(w http.ResponseWriter, r *http.Request) {},
 		WithResponse(200, (*User)(nil)),
 	)

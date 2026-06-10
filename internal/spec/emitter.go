@@ -48,8 +48,19 @@ func (e *emitter) buildRoot(in SpecInput) map[string]any {
 	if len(in.GlobalSecurity) > 0 {
 		doc["security"] = buildSecurity(in.GlobalSecurity)
 	}
-	if len(in.Webhooks) > 0 && strings.HasPrefix(e.openapi, "3.1") {
+	if len(in.Webhooks) > 0 && (strings.HasPrefix(e.openapi, "3.1") || strings.HasPrefix(e.openapi, "3.2")) {
 		doc["webhooks"] = e.buildWebhooks(in.Webhooks)
+	}
+	return doc
+}
+
+// buildRoot32 is buildRoot for OpenAPI 3.2. It adds the optional
+// "$self" field at the document root. Webhooks are emitted the same
+// way as 3.1 (the field name and structure are unchanged in 3.2).
+func (e *emitter) buildRoot32(in SpecInput, selfURL string) map[string]any {
+	doc := e.buildRoot(in)
+	if selfURL != "" {
+		doc["$self"] = selfURL
 	}
 	return doc
 }

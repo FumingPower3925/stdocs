@@ -44,7 +44,7 @@ func TestWithTitle(t *testing.T) {
 }
 
 func TestWithVersion_Valid(t *testing.T) {
-	for _, v := range []SpecVersion{"3.0.3", "3.1.0"} {
+	for _, v := range []SpecVersion{OpenAPI30, OpenAPI31, OpenAPI32} {
 		c := applyOptions([]Option{WithVersion(v)})
 		if c.Version != v {
 			t.Errorf("WithVersion(%q): Version = %q, want %q", v, c.Version, v)

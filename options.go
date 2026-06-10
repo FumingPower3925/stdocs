@@ -22,6 +22,11 @@ type Config struct {
 	// DocsPrefix is the URL prefix under which the docs UI and spec are
 	// served. Defaults to "/docs".
 	DocsPrefix string
+	// SelfURL is the OpenAPI 3.2 "$self" field — the canonical URI
+	// of the document. When non-empty, the 3.2 emitter includes it
+	// in the spec root. Ignored for 3.0 and 3.1 (the field does
+	// not exist in those versions).
+	SelfURL string
 	// Version is the OpenAPI version to emit. Defaults to OpenAPI30.
 	Version SpecVersion
 	// DefaultSummary is a fallback summary used for routes that have
@@ -60,9 +65,9 @@ func WithTitle(title string) Option {
 }
 
 // WithVersion sets the OpenAPI spec version. Accepts OpenAPI30
-// (3.0.3) or OpenAPI31 (3.1.0). A string literal like "3.0.3" is also
-// accepted because SpecVersion is a defined string type with the
-// same underlying values.
+// (3.0.4), OpenAPI31 (3.1.2), or OpenAPI32 (3.2.0). A string literal
+// like "3.0.4" is also accepted because SpecVersion is a defined
+// string type with the same underlying values.
 //
 // WithVersion panics on an unknown version string. Options run at
 // New()/Mount() time, the same fail-fast window where bad patterns
@@ -71,11 +76,12 @@ func WithTitle(title string) Option {
 func WithVersion(v SpecVersion) Option {
 	return func(c *Config) {
 		switch v {
-		case OpenAPI30, OpenAPI31:
+		case OpenAPI30, OpenAPI31, OpenAPI32:
 			c.Version = v
 		default:
 			panic("stdocs: WithVersion: unknown OpenAPI version " + string(v) +
-				" (expected " + string(OpenAPI30) + " or " + string(OpenAPI31) + ")")
+				" (expected " + string(OpenAPI30) + ", " + string(OpenAPI31) +
+				", or " + string(OpenAPI32) + ")")
 		}
 	}
 }
@@ -134,6 +140,14 @@ func WithDocsPrefix(prefix string) Option {
 		}
 		c.DocsPrefix = prefix
 	}
+}
+
+// WithSelfURL sets the OpenAPI 3.2 "$self" field. This is the
+// canonical URI of the document. It is emitted only in 3.2 specs;
+// setting it on a 3.0 or 3.1 mux has no effect because those
+// versions do not have the field.
+func WithSelfURL(selfURL string) Option {
+	return func(c *Config) { c.SelfURL = selfURL }
 }
 
 // WithTag declares a top-level tag and its description. Tags attached to

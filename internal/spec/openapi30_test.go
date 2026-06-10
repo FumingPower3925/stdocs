@@ -48,8 +48,8 @@ func TestEmitOpenAPI30_TopLevelShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := jx(t, b)
-	if got := m["openapi"]; got != "3.0.3" {
-		t.Errorf("openapi = %v, want 3.0.3", got)
+	if got := m["openapi"]; got != "3.0.4" {
+		t.Errorf("openapi = %v, want 3.0.4", got)
 	}
 	if got := jget(t, m, "info", "title"); got != "My API" {
 		t.Errorf("info.title = %v, want My API", got)
