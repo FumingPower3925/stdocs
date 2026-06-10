@@ -6,8 +6,9 @@ Zero-dependency OpenAPI 3.0.3 and 3.1.0 documentation generation for a stdlib
 ```go
 mux := stdocs.New(stdocs.WithTitle("My API"))
 mux.HandleFunc("GET /users/{id}", getUser)
-mux.Mount()  // docs at /docs
-http.ListenAndServe(":8080", mux)
+http.Handle("/api/", mux)
+http.Handle("/docs/", mux.Docs())  // docs UI at /docs/
+http.ListenAndServe(":8080", nil)
 ```
 
 That's it. `stdocs` walks your registered routes, parses the Go 1.22
@@ -16,7 +17,9 @@ a docs UI at `/docs` (configurable).
 
 ## Features
 
-- **Zero dependencies.** Only the Go standard library.
+- **Zero runtime dependencies.** Only the Go standard library. (Test
+  deps include `gopkg.in/yaml.v3` for round-trip verification, never
+  imported by the runtime code.)
 - **Two OpenAPI versions.** Both 3.0.3 and 3.1.0 are emitted and tested.
   Choose with `stdocs.WithVersion(stdocs.OpenAPI31)`.
 - **Type-to-schema reflection.** Pass a Go value to `stdocs.WithResponse`
@@ -29,7 +32,8 @@ a docs UI at `/docs` (configurable).
   (`/users/...` → tag "users"). Path parameters are auto-included.
 - **Security schemes.** First-class support for HTTP bearer/basic,
   API keys, and OAuth 2.0 with scopes. Register once, attach per-route
-  with `WithSecurity`.
+  with `WithSecurity`. Unregistered scheme names are reported as
+  errors at JSON/YAML emission time.
 - **Operation examples.** `WithExample(zeroValue)` emits an OpenAPI
   `example` field on the request body or response.
 - **Webhooks** (3.1 only). Register out-of-band callbacks the API
@@ -37,6 +41,8 @@ a docs UI at `/docs` (configurable).
 - **Five UI flavors.** Zero-JS raw HTML is the default. Scalar, Swagger
   UI, Redoc, and Stoplight Elements are available as opt-in
   sub-packages. Scalar also has an air-gapped embedded variant.
+- **XSS-safe.** The docs HTML is rendered through `html/template`;
+  titles and spec URLs are escaped.
 - **OpenAPI-compliant output.** Valid for all major UIs (3.0.3) and
   for Scalar / Stoplight (3.1.0).
 - **Escape hatch.** `WithOpenAPI(func(*Config))` gives you full access
@@ -67,8 +73,9 @@ func main() {
     )
     mux.HandleFunc("GET /users/{id}", getUser)
     mux.HandleFunc("POST /users", createUser)
-    mux.Mount()  // serves /docs and /docs/openapi.json
-    http.ListenAndServe(":8080", mux)
+    http.Handle("/api/", mux)
+    http.Handle("/docs/", mux.Docs())  // serves /docs/ and /docs/openapi.json
+    http.ListenAndServe(":8080", nil)
 }
 ```
 
@@ -87,7 +94,7 @@ Every route is auto-documented with at least a `200 OK` response.
 mux := stdocs.New(stdocs.WithTitle("My API"))
 mux.HandleFunc("GET /users", listUsers)   // -> summary "List users", tag "Users"
 mux.HandleFunc("GET /health", health)      // -> summary "Health", tag "Health"
-mux.Mount()
+http.Handle("/docs/", mux.Docs())
 ```
 
 ### Tier 2 — Rich metadata
@@ -303,7 +310,10 @@ mux.Handle("GET /docs/_assets/", http.StripPrefix("/docs/_assets/", scalaremb.As
 | `OperationID(s)` | Override the auto-derived operationId |
 | `WithBody(value)` | Reflect `value` as the request body schema |
 | `Optional()` | Mark the request body as not required (after `WithBody`) |
+| `BodyContentType(ct)` | Override the request body content type (default `application/json`) |
 | `WithResponse(status, body)` | Add a response. `body == nil` for no body (e.g. 204) |
+| `ResponseDescription(status, desc)` | Override the default description for a response |
+| `ResponseHeader(status, name, type, desc)` | Document a response header (e.g. rate-limit) |
 | `WithExample(value)` | Add an example to the most recent body/response |
 | `WithResponseExample(status, value)` | Add an example to a specific response |
 | `WithParam(name, in, typ, desc)` | Add a parameter (path/query/header/cookie) |
@@ -311,7 +321,7 @@ mux.Handle("GET /docs/_assets/", http.StripPrefix("/docs/_assets/", scalaremb.As
 | `HeaderParam(name, typ, desc)` | Shorthand with `in="header"` |
 | `CookieParam(name, typ, desc)` | Shorthand with `in="cookie"` |
 | `WithSecurity(name, scopes...)` | Require a security scheme on this operation |
-| `WithNoSecurity()` | Clear security on this operation |
+| `WithNoSecurity()` | Clear security on this operation (emits `security: []`) |
 
 ## How it works
 
