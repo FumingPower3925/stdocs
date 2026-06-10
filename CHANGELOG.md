@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- README documentation for the spec-as-artifact workflow (golden-file
+  test, PR contract diffing, linting, client generation), the
+  `doc:`/`description:`/`example:` field tags, the
+  `WithResponse(0, ...)` default-response convention, and an explicit
+  scope-and-non-goals section.
 - `FromDocs(r, docsPrefix)` and `Mux.FromDocs(r)` report whether a
   request appears to originate from the docs UI's try-it consoles
   (best-effort, Referer-based), so teams can apply their own policy —
@@ -16,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Documented with a guard-middleware example and an explicit
   not-a-security-control caveat: the signal is client-controlled and
   must only ever gate restrictions.
+
+### Fixed
+
+- Go `int`, `uint`, and `uint32` now reflect as `format: int64`
+  (previously `int32`). Go `int`/`uint` are 64-bit on every supported
+  platform and `uint32` exceeds the int32 range — clients generated
+  from the old mapping mis-typed these fields. Spec-affecting.
+- The `example` struct tag is parsed according to the field type:
+  `example:"42"` on an integer field now emits the number 42 instead
+  of a string that violated its own schema. Unparseable values panic
+  at document-build time.
 
 ## [0.1.1] - 2026-06-10
 
