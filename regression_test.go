@@ -13,6 +13,22 @@ import (
 
 func noop(w http.ResponseWriter, r *http.Request) {}
 
+// buildDocMap builds the mux's document and decodes it for assertions.
+func buildDocMap(t *testing.T, m *Mux) map[string]any {
+	t.Helper()
+	raw, err := m.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
 // Two same-named types from different packages must get distinct
 // components with matching $refs at every use site (one shared
 // reflector per document build).
@@ -554,5 +570,41 @@ func TestConstraintTagsEndToEnd(t *testing.T) {
 	}
 	if !bytes.Contains(y, []byte("minimum: 1")) || bytes.Contains(y, []byte(`minimum: "1"`)) {
 		t.Errorf("YAML should contain unquoted minimum: 1")
+	}
+}
+
+// Opts bundles apply in order, skip nils, and are reusable across
+// routes without leaking state between them.
+func TestOptsCombinator(t *testing.T) {
+	paginated := Opts(
+		QueryParam("cursor", "string", "Opaque cursor"),
+		nil,
+		QueryParam("limit", "integer", "Page size"),
+	)
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /tasks", noop, paginated, Summary("List tasks"))
+	mux.HandleFunc("GET /users", noop, paginated)
+	doc := buildDocMap(t, mux)
+	for _, p := range []string{"/tasks", "/users"} {
+		op := doc["paths"].(map[string]any)[p].(map[string]any)["get"].(map[string]any)
+		params := op["parameters"].([]any)
+		if len(params) != 2 {
+			t.Errorf("%s: %d params, want 2 (cursor, limit)", p, len(params))
+			continue
+		}
+		if params[0].(map[string]any)["name"] != "cursor" || params[1].(map[string]any)["name"] != "limit" {
+			t.Errorf("%s: param order = %v, %v", p, params[0].(map[string]any)["name"], params[1].(map[string]any)["name"])
+		}
+	}
+	if got := doc["paths"].(map[string]any)["/tasks"].(map[string]any)["get"].(map[string]any)["summary"]; got != "List tasks" {
+		t.Errorf("summary = %v; opts after a bundle must still apply", got)
+	}
+	// Nested bundles compose.
+	nested := Opts(Opts(Summary("S")), Deprecated())
+	mux2 := New(WithTitle("T"))
+	mux2.HandleFunc("GET /x", noop, nested)
+	op := buildDocMap(t, mux2)["paths"].(map[string]any)["/x"].(map[string]any)["get"].(map[string]any)
+	if op["summary"] != "S" || op["deprecated"] != true {
+		t.Errorf("nested bundle: summary=%v deprecated=%v", op["summary"], op["deprecated"])
 	}
 }
