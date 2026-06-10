@@ -48,7 +48,17 @@ Nothing yet.
 
 - `WithParam` and its shorthands fail fast: an unknown type string
   (previously a silent empty schema), an unknown `in` location, or an
-  empty name now panics at registration.
+  empty name now panics at registration. Duplicate (name, location)
+  parameter pairs on one operation panic at document build, numeric
+  constraint values must satisfy the JSON number grammar, enum tag
+  members are trimmed (empty members panic), and nullable fields
+  with an enum list `null` so the published contract matches
+  `encoding/json`.
+- YAML output reformats exponent-form numbers (`1e3` → `1.0e+3`) so
+  YAML 1.1 parsers type them as numbers.
+- CI gains a spec-validation job: generated 3.0.4/3.1.2 documents
+  run through openapi-spec-validator and 3.2.0 validates against the
+  official OpenAPI 3.2 JSON Schema on every push.
 - The package documentation on pkg.go.dev is now the canonical
   reference, organized by topic with runnable examples; the READMEs
   (en/es/ca) are slimmed to hero, features, one worked example, the

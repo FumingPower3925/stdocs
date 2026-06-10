@@ -2,6 +2,7 @@ package stdocs
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/FumingPower3925/stdocs/internal/pattern"
@@ -42,7 +43,9 @@ func (r *registry) add(pattern, funcName string, parsed *pattern.Pattern, versio
 		version:  version,
 	}
 	for _, o := range opts {
-		o(rt)
+		if o != nil { // same nil tolerance as Opts
+			o(rt)
+		}
 	}
 	r.routes = append(r.routes, rt)
 	return rt
@@ -65,24 +68,41 @@ func (r *registry) finalize(cfg *Config) {
 
 // applyRouteDefaults fills the operation fields the user left unset.
 func applyRouteDefaults(rt *route, cfg *Config) {
-	// Auto-200: if no responses were declared, add a default 200.
-	if len(rt.op.Responses) == 0 {
-		rt.op.Responses = map[string]*Response{
-			"200": {Status: "200", Description: "OK"},
-		}
-	}
-
 	// Mux-level default responses: documented on every operation that
 	// does not declare the status itself (a per-route declaration
-	// wins). Runs after the auto-200 so a route with no responses
-	// still documents its success case. Re-running is a no-op (the
-	// key exists), keeping rebuilds stable.
+	// wins). Runs before the auto-200 so a WithDefaultResponse(200,
+	// body) entry can supply the success body on routes that declare
+	// nothing. Re-running is a no-op (the key exists), keeping
+	// rebuilds stable.
+	declaredNone := len(rt.op.Responses) == 0
 	for _, dr := range cfg.DefaultResponses {
 		key := statusKey(dr.Status)
 		if _, ok := rt.op.Responses[key]; ok {
 			continue
 		}
 		ensureResponse(rt.op, key).BodyValue = dr.Body
+	}
+
+	// Auto-200: a route that declared no responses still documents
+	// its success case unless a 200 came in via the defaults. A
+	// "default" entry does not suppress it — that is conventionally
+	// the error catch-all, not the success response.
+	if declaredNone {
+		if _, has200 := rt.op.Responses["200"]; !has200 {
+			ensureResponse(rt.op, "200")
+		}
+	}
+
+	// Duplicate parameters: OpenAPI requires (name, in) uniqueness per
+	// operation, and validators reject violations — fail fast instead.
+	seen := make(map[[2]string]bool, len(rt.op.Parameters))
+	for _, p := range rt.op.Parameters {
+		k := [2]string{p.Name, p.In}
+		if seen[k] {
+			panic("stdocs: route " + strconv.Quote(rt.pattern) + " declares parameter " +
+				strconv.Quote(p.Name) + " in " + p.In + " more than once")
+		}
+		seen[k] = true
 	}
 
 	// Auto-401: an operation that requires authentication can always
