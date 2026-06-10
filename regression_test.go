@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	sub "github.com/FumingPower3925/stdocs/internal/spec"
 )
@@ -771,4 +772,168 @@ func TestPathPrefix(t *testing.T) {
 		}
 	}()
 	New(WithTitle("T"), WithPathPrefix("/"))
+}
+
+// ParamOpt modifiers flow into the served document with typed values.
+func TestParamOpts(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /tasks", noop,
+		QueryParam("limit", "integer", "Page size",
+			ParamDefault(20), ParamMinimum(1), ParamMaximum(100), ParamExample(25)),
+		QueryParam("status", "string", "Filter",
+			ParamRequired(), ParamEnum("pending", "active", "done"), ParamMinLength(1), ParamMaxLength(10)),
+		QueryParam("q", "string", "Search", ParamPattern("^[a-z]+$")),
+	)
+	doc := buildDocMap(t, mux)
+	params := doc["paths"].(map[string]any)["/tasks"].(map[string]any)["get"].(map[string]any)["parameters"].([]any)
+	byName := map[string]map[string]any{}
+	for _, p := range params {
+		pm := p.(map[string]any)
+		byName[pm["name"].(string)] = pm
+	}
+	limit := byName["limit"]["schema"].(map[string]any)
+	if limit["default"] != json.Number("20") || limit["minimum"] != json.Number("1") ||
+		limit["maximum"] != json.Number("100") || limit["example"] != json.Number("25") {
+		t.Errorf("limit schema = %#v", limit)
+	}
+	if _, ok := byName["limit"]["required"]; ok {
+		t.Errorf("limit must stay optional")
+	}
+	status := byName["status"]
+	if status["required"] != true {
+		t.Errorf("status should be required")
+	}
+	ss := status["schema"].(map[string]any)
+	if enum := ss["enum"].([]any); len(enum) != 3 || enum[0] != "pending" {
+		t.Errorf("status enum = %#v", ss["enum"])
+	}
+	if ss["minLength"] != json.Number("1") || ss["maxLength"] != json.Number("10") {
+		t.Errorf("status lengths = %#v", ss)
+	}
+	if byName["q"]["schema"].(map[string]any)["pattern"] != "^[a-z]+$" {
+		t.Errorf("q pattern missing")
+	}
+}
+
+// Misuse of param declarations panics at registration time.
+func TestParamValidationPanics(t *testing.T) {
+	cases := []struct {
+		name string
+		f    func()
+	}{
+		{"unknown type", func() { QueryParam("x", "intger", "typo") }},
+		{"unknown in", func() { WithParam("x", "body", "string", "") }},
+		{"empty name", func() { WithParam("", "query", "string", "") }},
+		{"default type mismatch", func() { QueryParam("n", "integer", "", ParamDefault("x")) }},
+		{"minimum on string", func() { QueryParam("s", "string", "", ParamMinimum(1)) }},
+		{"pattern on integer", func() { QueryParam("n", "integer", "", ParamPattern("a")) }},
+		{"enum member mismatch", func() { QueryParam("n", "integer", "", ParamEnum(1, "two")) }},
+		{"minLength on integer", func() { QueryParam("n", "integer", "", ParamMinLength(1)) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic")
+				}
+			}()
+			tc.f()
+		})
+	}
+}
+
+// WithParams reflects a struct into typed, constrained parameters.
+func TestWithParams(t *testing.T) {
+	type ListParams struct {
+		Cursor  string    `query:"cursor" doc:"Opaque pagination cursor"`
+		Limit   int       `query:"limit" default:"20" minimum:"1" maximum:"100"`
+		Status  string    `query:"status" enum:"pending,active,done" required:"true"`
+		Sort    []string  `query:"sort" maxItems:"3"`
+		Since   time.Time `query:"since"`
+		Trace   string    `header:"X-Trace-Id" doc:"Propagated trace id"`
+		Session string    `cookie:"session"`
+		hidden  string    //nolint:unused // unexported fields are skipped
+		Skipped string    `query:"-"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /tasks", noop, WithParams(ListParams{}))
+	doc := buildDocMap(t, mux)
+	params := doc["paths"].(map[string]any)["/tasks"].(map[string]any)["get"].(map[string]any)["parameters"].([]any)
+	if len(params) != 7 {
+		t.Fatalf("%d params, want 7", len(params))
+	}
+	byName := map[string]map[string]any{}
+	for _, p := range params {
+		pm := p.(map[string]any)
+		byName[pm["name"].(string)] = pm
+	}
+	if byName["cursor"]["description"] != "Opaque pagination cursor" || byName["cursor"]["in"] != "query" {
+		t.Errorf("cursor = %#v", byName["cursor"])
+	}
+	if s := byName["cursor"]["schema"].(map[string]any); s["description"] != nil {
+		t.Errorf("description must live on the parameter, not its schema")
+	}
+	limit := byName["limit"]["schema"].(map[string]any)
+	if limit["type"] != "integer" || limit["format"] != "int64" ||
+		limit["default"] != json.Number("20") || limit["minimum"] != json.Number("1") {
+		t.Errorf("limit schema = %#v", limit)
+	}
+	if byName["status"]["required"] != true {
+		t.Errorf("status should be required via the required tag")
+	}
+	sort := byName["sort"]["schema"].(map[string]any)
+	if sort["type"] != "array" || sort["maxItems"] != json.Number("3") ||
+		sort["items"].(map[string]any)["type"] != "string" {
+		t.Errorf("sort schema = %#v", sort)
+	}
+	since := byName["since"]["schema"].(map[string]any)
+	if since["type"] != "string" || since["format"] != "date-time" {
+		t.Errorf("since schema = %#v", since)
+	}
+	if byName["X-Trace-Id"]["in"] != "header" || byName["session"]["in"] != "cookie" {
+		t.Errorf("locations: trace=%v session=%v", byName["X-Trace-Id"]["in"], byName["session"]["in"])
+	}
+	if _, ok := byName["Skipped"]; ok {
+		t.Errorf(`query:"-" field must be skipped`)
+	}
+}
+
+// WithParams misuse panics at the WithParams call site.
+func TestWithParamsPanics(t *testing.T) {
+	type NoTag struct {
+		X string
+	}
+	type TwoTags struct {
+		X string `query:"x" header:"x"`
+	}
+	type EmptyTag struct {
+		X string `query:""`
+	}
+	type StructField struct {
+		X struct{ Y string } `query:"x"`
+	}
+	type BadRequired struct {
+		X string `query:"x" required:"yes please"`
+	}
+	cases := []struct {
+		name string
+		f    func()
+	}{
+		{"not a struct", func() { WithParams(42) }},
+		{"no location tag", func() { WithParams(NoTag{}) }},
+		{"two location tags", func() { WithParams(TwoTags{}) }},
+		{"empty tag value", func() { WithParams(EmptyTag{}) }},
+		{"struct field", func() { WithParams(StructField{}) }},
+		{"bad required", func() { WithParams(BadRequired{}) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic")
+				}
+			}()
+			tc.f()
+		})
+	}
 }

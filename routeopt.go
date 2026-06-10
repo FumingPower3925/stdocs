@@ -331,27 +331,46 @@ func encodeExample(value any) (any, error) {
 // also string-typed.
 //
 // Multiple WithParam calls accumulate.
-func WithParam(name, in, typ, description string) RouteOpt {
+func WithParam(name, in, typ, description string, opts ...ParamOpt) RouteOpt {
+	if name == "" {
+		panic("stdocs: WithParam name must not be empty")
+	}
+	switch in {
+	case "path", "query", "header", "cookie":
+	default:
+		panic("stdocs: WithParam in must be path, query, header, or cookie; got " + strconv.Quote(in))
+	}
+	p := Param{
+		Name:        name,
+		In:          in,
+		Description: description,
+		Required:    in == "path",
+		Schema:      schemaForType(typ),
+	}
+	for _, o := range opts {
+		if o != nil {
+			o(&p)
+		}
+	}
 	return func(r *route) {
-		s := schemaForType(typ)
-		r.op.Parameters = append(r.op.Parameters, Param{
-			Name:        name,
-			In:          in,
-			Description: description,
-			Required:    in == "path",
-			Schema:      s,
-		})
+		r.op.Parameters = append(r.op.Parameters, p)
 	}
 }
 
 // QueryParam is shorthand for WithParam(name, "query", typ, desc).
-func QueryParam(name, typ, desc string) RouteOpt { return WithParam(name, "query", typ, desc) }
+func QueryParam(name, typ, desc string, opts ...ParamOpt) RouteOpt {
+	return WithParam(name, "query", typ, desc, opts...)
+}
 
 // HeaderParam is shorthand for WithParam(name, "header", typ, desc).
-func HeaderParam(name, typ, desc string) RouteOpt { return WithParam(name, "header", typ, desc) }
+func HeaderParam(name, typ, desc string, opts ...ParamOpt) RouteOpt {
+	return WithParam(name, "header", typ, desc, opts...)
+}
 
 // CookieParam is shorthand for WithParam(name, "cookie", typ, desc).
-func CookieParam(name, typ, desc string) RouteOpt { return WithParam(name, "cookie", typ, desc) }
+func CookieParam(name, typ, desc string, opts ...ParamOpt) RouteOpt {
+	return WithParam(name, "cookie", typ, desc, opts...)
+}
 
 // schemaForType builds a Schema for one of the supported primitive types.
 // For arrays, pass "array" and a follow-up element type via []string.
@@ -368,7 +387,8 @@ func schemaForType(typ string) *schema.Schema {
 	case "array":
 		return &schema.Schema{Type: "array", Items: &schema.Schema{Type: "string"}}
 	}
-	return &schema.Schema{}
+	panic("stdocs: unknown parameter type " + strconv.Quote(typ) +
+		`; use "string", "integer", "number", "boolean", or "array"`)
 }
 
 // statusKey converts a numeric status code to its string form for the
