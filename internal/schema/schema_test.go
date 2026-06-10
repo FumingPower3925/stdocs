@@ -934,3 +934,137 @@ func TestReflectSchema_InvalidExamplePanics(t *testing.T) {
 	}()
 	_, _ = ReflectSchema(T{})
 }
+
+// The constraint tag vocabulary: parsed per type, applied to the
+// field's own schema.
+func TestReflectSchema_ConstraintTags(t *testing.T) {
+	type T struct {
+		Title    string  `json:"title" minLength:"1" maxLength:"200" pattern:"^[a-z].*$"`
+		Priority int     `json:"priority" minimum:"1" maximum:"5" default:"3"`
+		Ratio    float64 `json:"ratio" exclusiveMinimum:"0" exclusiveMaximum:"1.5"`
+		Status   string  `json:"status" enum:"pending,active,done" default:"pending"`
+		Codes    []int   `json:"codes" minItems:"1" maxItems:"10" uniqueItems:"true"`
+		Email    string  `json:"email" format:"email"`
+		Level    int     `json:"level" enum:"1,2,3"`
+	}
+	_, out := schema30(t, T{})
+	comp := out["T"]
+	if comp == nil {
+		t.Fatal("T component missing")
+	}
+	title := comp.Properties["title"]
+	if *title.MinLength != 1 || *title.MaxLength != 200 || title.Pattern != "^[a-z].*$" {
+		t.Errorf("title constraints = %v/%v/%q", title.MinLength, title.MaxLength, title.Pattern)
+	}
+	prio := comp.Properties["priority"]
+	if prio.Minimum != "1" || prio.Maximum != "5" || prio.Default != int64(3) {
+		t.Errorf("priority constraints = %q/%q/%#v", prio.Minimum, prio.Maximum, prio.Default)
+	}
+	ratio := comp.Properties["ratio"]
+	if ratio.ExclusiveMinimum != "0" || ratio.ExclusiveMaximum != "1.5" {
+		t.Errorf("ratio exclusive bounds = %q/%q", ratio.ExclusiveMinimum, ratio.ExclusiveMaximum)
+	}
+	status := comp.Properties["status"]
+	if len(status.Enum) != 3 || status.Enum[0] != "pending" || status.Default != "pending" {
+		t.Errorf("status enum/default = %#v / %#v", status.Enum, status.Default)
+	}
+	codes := comp.Properties["codes"]
+	if *codes.MinItems != 1 || *codes.MaxItems != 10 || !codes.UniqueItems {
+		t.Errorf("codes constraints = %v/%v/%v", codes.MinItems, codes.MaxItems, codes.UniqueItems)
+	}
+	if comp.Properties["email"].Format != "email" {
+		t.Errorf("email format = %q, want email", comp.Properties["email"].Format)
+	}
+	level := comp.Properties["level"]
+	if len(level.Enum) != 3 || level.Enum[0] != int64(1) {
+		t.Errorf("integer enum = %#v, want typed int64 members", level.Enum)
+	}
+}
+
+// Misapplied or unparseable constraint tags panic at build time.
+func TestReflectSchema_ConstraintTagPanics(t *testing.T) {
+	cases := []struct {
+		name    string
+		reflect func()
+	}{
+		{"minLength on int", func() {
+			type T struct {
+				N int `json:"n" minLength:"1"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"minimum on string", func() {
+			type T struct {
+				S string `json:"s" minimum:"1"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"minItems on string", func() {
+			type T struct {
+				S string `json:"s" minItems:"1"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"uniqueItems on int", func() {
+			type T struct {
+				N int `json:"n" uniqueItems:"true"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"unparseable minimum", func() {
+			type T struct {
+				N int `json:"n" minimum:"low"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"negative minLength", func() {
+			type T struct {
+				S string `json:"s" minLength:"-1"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"unparseable enum member", func() {
+			type T struct {
+				N int `json:"n" enum:"1,two,3"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"unparseable default", func() {
+			type T struct {
+				N int `json:"n" default:"none"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"minimum and exclusiveMinimum together", func() {
+			type T struct {
+				N int `json:"n" minimum:"0" exclusiveMinimum:"0"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"enum on slice", func() {
+			type T struct {
+				V []string `json:"v" enum:"a,b"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"constraint on struct-typed field", func() {
+			type Inner struct {
+				X string `json:"x"`
+			}
+			type T struct {
+				I Inner `json:"i" minimum:"1"`
+			}
+			ReflectSchema(T{})
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic")
+				}
+			}()
+			tc.reflect()
+		})
+	}
+}

@@ -1,6 +1,8 @@
 package stdocs
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -482,4 +484,75 @@ func otherUser() any {
 		Email string `json:"email"`
 	}
 	return User{}
+}
+
+// Constraint struct tags flow into the served document with the
+// version-correct exclusive-bound form and typed values.
+func TestConstraintTagsEndToEnd(t *testing.T) {
+	type CreateTask struct {
+		Title    string   `json:"title" minLength:"1" maxLength:"200"`
+		Priority int      `json:"priority" minimum:"1" maximum:"5" default:"3"`
+		Ratio    float64  `json:"ratio" exclusiveMinimum:"0"`
+		Status   string   `json:"status" enum:"pending,active,done"`
+		Tags     []string `json:"tags" maxItems:"10" uniqueItems:"true"`
+	}
+	build := func(v SpecVersion) map[string]any {
+		mux := New(WithTitle("T"), WithVersion(v))
+		mux.HandleFunc("POST /tasks", func(w http.ResponseWriter, r *http.Request) {}, WithBody(CreateTask{}))
+		raw, err := mux.JSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]any
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
+		if err := dec.Decode(&doc); err != nil {
+			t.Fatal(err)
+		}
+		schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+		return schemas["CreateTask"].(map[string]any)["properties"].(map[string]any)
+	}
+
+	props30 := build(OpenAPI30)
+	prio := props30["priority"].(map[string]any)
+	if prio["minimum"] != json.Number("1") || prio["maximum"] != json.Number("5") || prio["default"] != json.Number("3") {
+		t.Errorf("3.0 priority = %#v", prio)
+	}
+	ratio := props30["ratio"].(map[string]any)
+	if ratio["minimum"] != json.Number("0") || ratio["exclusiveMinimum"] != true {
+		t.Errorf("3.0 ratio should use the boolean exclusive form, got %#v", ratio)
+	}
+	title := props30["title"].(map[string]any)
+	if title["minLength"] != json.Number("1") || title["maxLength"] != json.Number("200") {
+		t.Errorf("3.0 title = %#v", title)
+	}
+	tags := props30["tags"].(map[string]any)
+	if tags["maxItems"] != json.Number("10") || tags["uniqueItems"] != true {
+		t.Errorf("3.0 tags = %#v", tags)
+	}
+	status := props30["status"].(map[string]any)
+	enum, _ := status["enum"].([]any)
+	if len(enum) != 3 || enum[0] != "pending" {
+		t.Errorf("3.0 status enum = %#v", status["enum"])
+	}
+
+	props32 := build(OpenAPI32)
+	ratio32 := props32["ratio"].(map[string]any)
+	if ratio32["exclusiveMinimum"] != json.Number("0") {
+		t.Errorf("3.2 ratio should use the numeric exclusive form, got %#v", ratio32)
+	}
+	if _, ok := ratio32["minimum"]; ok {
+		t.Errorf("3.2 ratio must not emit minimum for an exclusive bound")
+	}
+
+	// YAML keeps numbers unquoted (json.Number passthrough).
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("POST /tasks", func(w http.ResponseWriter, r *http.Request) {}, WithBody(CreateTask{}))
+	y, err := mux.YAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(y, []byte("minimum: 1")) || bytes.Contains(y, []byte(`minimum: "1"`)) {
+		t.Errorf("YAML should contain unquoted minimum: 1")
+	}
 }
