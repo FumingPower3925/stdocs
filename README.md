@@ -7,7 +7,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/FumingPower3925/stdocs.svg)](https://pkg.go.dev/github.com/FumingPower3925/stdocs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-OpenAPI 3.0.3 and 3.1.0 generation for the Go 1.22+ stdlib `net/http.ServeMux`. No runtime dependencies.
+OpenAPI 3.0.4, 3.1.2, and 3.2.0 generation for the Go 1.22+ stdlib `net/http.ServeMux`. No runtime dependencies.
 
 ```go
 mux := stdocs.New(stdocs.WithTitle("My API"))
@@ -32,11 +32,11 @@ That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from
 ## Features
 
 - **Zero deps** — only the Go standard library at runtime.
-- **Two OpenAPI versions** — 3.0.3 (default) and 3.1.0, both tested.
+- **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all tested. Older patches (3.0.3, 3.1.0) are not exposed as constants: per the OpenAPI spec, tooling should accept any 3.0.* / 3.1.*, so a single "latest patch" per minor is the right default.
 - **Reflection** — Go types become JSON Schemas: pointers, slices, maps, generics, embedded structs, recursive types via `$ref`, `json` tags.
 - **Smart defaults** — function names become summaries, first path segment becomes the tag, path params are auto-included.
 - **Security** — bearer, basic, API key, OAuth 2.0. Unregistered scheme names are reported as errors.
-- **Five UIs** — zero-JS HTML by default; Scalar, Swagger UI, Redoc, Stoplight as opt-in sub-packages.
+- **Eight UIs** — zero-JS HTML by default; Scalar, Swagger UI, Redoc, Stoplight as opt-in CDN sub-packages, with matching air-gapped (vendored) variants.
 - **XSS-safe** — the docs HTML is rendered through `html/template`.
 
 ## Install
@@ -91,6 +91,25 @@ mux := stdocs.New(
 )
 ```
 
+To pin the spec to a specific OpenAPI version, use `WithVersion`:
+
+```go
+mux := stdocs.New(
+    stdocs.WithTitle("My API"),
+    stdocs.WithVersion(stdocs.OpenAPI32),  // 3.2.0
+)
+```
+
+`stdocs` ships the latest patch of each minor (`OpenAPI30` = 3.0.4, `OpenAPI31` = 3.1.2, `OpenAPI32` = 3.2.0). For 3.2 you can additionally set the document's canonical URI:
+
+```go
+mux := stdocs.New(
+    stdocs.WithTitle("My API"),
+    stdocs.WithVersion(stdocs.OpenAPI32),
+    stdocs.WithSelfURL("https://example.com/openapi.json"),
+)
+```
+
 The full option list lives in [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs).
 
 ## UIs
@@ -103,7 +122,27 @@ import "github.com/FumingPower3925/stdocs/ui/scalar"
 mux := stdocs.New(stdocs.WithTitle("My API"), scalar.WithUI())
 ```
 
-Available UIs: `ui/scalar` (CDN), `ui/scalaremb` (air-gapped, ~3.6 MB), `ui/swaggerui`, `ui/redoc`, `ui/stoplight`. Sub-packages are tree-shaken if not imported.
+For an air-gapped build (no CDN), import the matching `*emb` sub-package and mount its `AssetHandler()`:
+
+```go
+import "github.com/FumingPower3925/stdocs/ui/scalaremb"
+
+mux := stdocs.New(stdocs.WithTitle("My API"), scalaremb.WithUI())
+mux.Handle("GET /docs/_assets/",
+    http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
+```
+
+Each UI comes in two flavors:
+
+| UI           | CDN sub-package  | Embedded sub-package | Embedded size |
+| ------------ | ---------------- | -------------------- | ------------- |
+| _(default)_  | —                | —                    | 3 KB          |
+| Scalar       | `ui/scalar`      | `ui/scalaremb`       | ~3.6 MB       |
+| Swagger UI   | `ui/swaggerui`   | `ui/swaggeruiemb`    | ~1.7 MB       |
+| Redoc        | `ui/redoc`       | `ui/redocemb`        | ~1.1 MB       |
+| Stoplight    | `ui/stoplight`   | `ui/stoplightemb`    | ~2.4 MB       |
+
+CDN URLs are pinned to a specific version with sha384 SRI integrity hashes (except Scalar and Stoplight, whose jsDelivr bundles are generated on the fly and cannot be SRI-pinned; use the embedded variants for SRI). Sub-packages are tree-shaken if not imported.
 
 ## How it works
 
