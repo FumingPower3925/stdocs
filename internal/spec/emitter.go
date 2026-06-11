@@ -366,6 +366,10 @@ func (e *emitter) buildResponses(responses map[string]*Response) map[string]any 
 		if r.Description == "" {
 			m["description"] = "Response"
 		}
+		ct := r.ContentType
+		if ct == "" {
+			ct = "application/json"
+		}
 		if r.Schema != nil {
 			contentEntry := map[string]any{
 				"schema": e.buildSchema(r.Schema),
@@ -374,13 +378,13 @@ func (e *emitter) buildResponses(responses map[string]*Response) map[string]any 
 				contentEntry["example"] = r.Example
 			}
 			m["content"] = map[string]any{
-				"application/json": contentEntry,
+				ct: contentEntry,
 			}
 		} else if r.Example != nil {
 			// Example with no schema: emit a synthetic content entry
 			// so the example isn't lost.
 			m["content"] = map[string]any{
-				"application/json": map[string]any{
+				ct: map[string]any{
 					"example": r.Example,
 				},
 			}

@@ -162,6 +162,22 @@ func ensureResponse(op *Operation, key string) *Response {
 	return resp
 }
 
+// WithResponseContentType overrides the content type of one response
+// (the default is application/json), creating the response entry if
+// it does not exist yet — the order relative to WithResponse does
+// not matter:
+//
+//	stdocs.WithResponse(200, nil),
+//	stdocs.WithResponseContentType(200, "text/csv"),
+//
+// It is the response-side counterpart of WithBodyContentType. Pass
+// status 0 for the "default" response.
+func WithResponseContentType(status int, contentType string) RouteOpt {
+	return func(r *route) {
+		ensureResponse(r.op, statusKey(status)).ContentType = contentType
+	}
+}
+
 // WithSecurity requires the named security scheme on this operation.
 // scopes are only meaningful for OAuth2 schemes; pass no scopes for
 // non-OAuth schemes.
