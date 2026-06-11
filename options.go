@@ -85,6 +85,9 @@ type Config struct {
 	// PathPrefix is prepended to every documented path. Documentation
 	// only — routing is unaffected. Set via WithPathPrefix.
 	PathPrefix string
+	// CleanOutput strips stdocs vendor noise from the generated
+	// document. Set via WithCleanOutput.
+	CleanOutput bool
 }
 
 // DefaultResponse is a mux-level response declaration applied to
@@ -102,6 +105,25 @@ type DefaultResponse struct {
 // Option is a function that mutates a config. Options are applied by
 // New and DocsHandler at construction time.
 type Option func(*Config)
+
+// WithCleanOutput strips stdocs vendor noise from the generated
+// document, for contracts consumed by client generators, linters,
+// and API portals rather than humans browsing the docs page:
+//
+//   - the "Generated from Go type main.T." fallback schema
+//     descriptions (user-supplied doc: tags are kept), and
+//   - the x-stdocs-type and x-stdocs-warning annotation extensions.
+//
+// The x-stdocs-additionalOperations extension is NOT stripped: on
+// 3.0/3.1 it is the only representation of custom-method operations,
+// and removing it would silently drop documented routes. Hooks
+// registered with WithOpenAPI run after cleaning and may add
+// anything back.
+func WithCleanOutput(enabled bool) Option {
+	return func(c *Config) {
+		c.CleanOutput = enabled
+	}
+}
 
 // WithPathPrefix prepends prefix to every path in the generated
 // document. Use it when the mux is mounted under a prefix the

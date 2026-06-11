@@ -96,6 +96,11 @@ type Schema struct {
 type Reflector struct {
 	seen map[reflect.Type]string // type -> component schema name
 	out  map[string]*Schema      // accumulated components
+
+	// NoAutoDescriptions suppresses the "Generated from Go type ..."
+	// fallback descriptions on named components. User-supplied doc:
+	// tags are unaffected.
+	NoAutoDescriptions bool
 }
 
 // NewReflector returns an empty Reflector.
@@ -399,7 +404,7 @@ type fieldMeta struct {
 
 func (r *Reflector) buildStructSchema(t reflect.Type, name string, nullable bool) *Schema {
 	s := &Schema{Type: "object", Nullable: nullable, Properties: make(map[string]*Schema)}
-	if name != "" {
+	if name != "" && !r.NoAutoDescriptions {
 		s.Description = "Generated from Go type " + t.String() + "."
 	}
 
