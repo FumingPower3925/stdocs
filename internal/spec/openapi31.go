@@ -58,7 +58,7 @@ func refSchema31(s *schema.Schema) map[string]any {
 		m["description"] = s.Description
 	}
 	if s.Example != nil {
-		m["example"] = s.Example
+		m["examples"] = []any{s.Example}
 	}
 	return m
 }
@@ -110,7 +110,9 @@ func buildSchema31(s *schema.Schema) map[string]any {
 		m["default"] = s.Default
 	}
 	if s.Example != nil {
-		m["example"] = s.Example
+		// The 3.1+ schema dialect deprecates the singular example
+		// keyword in favor of the JSON Schema examples array.
+		m["examples"] = []any{s.Example}
 	}
 	applyConstraintFacets(m, s)
 	// JSON Schema 2020-12: exclusive bounds are numeric keywords.
@@ -127,16 +129,34 @@ func buildSchema31(s *schema.Schema) map[string]any {
 		// 2020-12, but real-world consumers digest anyOf more
 		// reliably (ogen's parser rejects the array form outright),
 		// and the $ref use sites above already use anyOf, so nullable
-		// emission is uniform. Value-level decoration moves to the
-		// wrapper; type-level facets stay in the typed branch.
+		// emission is uniform.
+		//
+		// Every keyword that is vacuously true for null hoists onto
+		// the wrapper — numeric/string/array constraints apply
+		// conjunctively and only constrain matching instance types,
+		// and the enum gains a null member at the wrapper so both
+		// branches stay satisfiable. Doc UIs render wrapper-level
+		// keywords; keywords buried in an anyOf branch are invisible
+		// in several of them. Only type, format, items, properties,
+		// and required stay in the typed branch.
 		wrapper := map[string]any{
 			"anyOf": []any{m, map[string]any{"type": "null"}},
 		}
-		for _, k := range []string{"description", "default", "example"} {
+		hoisted := []string{
+			"description", "default", "examples",
+			"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+			"minLength", "maxLength", "pattern",
+			"minItems", "maxItems", "uniqueItems",
+		}
+		for _, k := range hoisted {
 			if v, ok := m[k]; ok {
 				delete(m, k)
 				wrapper[k] = v
 			}
+		}
+		if enum, ok := m["enum"].([]any); ok {
+			delete(m, "enum")
+			wrapper["enum"] = append(append(make([]any, 0, len(enum)+1), enum...), nil)
 		}
 		for k := range s.Extensions {
 			delete(m, k)
