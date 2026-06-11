@@ -106,7 +106,9 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if resp != nil && (resp.BodyValue != nil || resp.Schema != nil) {
+	declaredJSON := resp != nil && (resp.BodyValue != nil || resp.Schema != nil) &&
+		(resp.ContentType == "" || strings.Contains(resp.ContentType, "json"))
+	if declaredJSON {
 		ct := rec.Header().Get("Content-Type")
 		if ct != "" && !strings.Contains(ct, "json") {
 			d.warn(pattern+"\x00"+key+"\x00ct",

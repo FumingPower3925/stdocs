@@ -56,6 +56,7 @@ type Response struct {
 	Status      string // e.g. "200", "404", "default"
 	Description string
 	Schema      *schema.Schema // optional body schema
+	ContentType string         // defaults to "application/json"
 	Headers     map[string]*schema.Schema
 	// Example is the JSON-serialised example value for this response
 	// (set via WithExample or WithResponseExample). nil means no
