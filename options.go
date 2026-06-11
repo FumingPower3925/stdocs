@@ -88,6 +88,12 @@ type Config struct {
 	// CleanOutput strips stdocs vendor noise from the generated
 	// document. Set via WithCleanOutput.
 	CleanOutput bool
+	// ExternalDocs is the document-level externalDocumentation
+	// object. Set via WithExternalDocs.
+	ExternalDocs *spec.ExternalDocs
+	// OperationIDFunc overrides the automatic operationId derivation.
+	// Set via WithOperationIDFunc.
+	OperationIDFunc func(method, path string) string
 }
 
 // DefaultResponse is a mux-level response declaration applied to
@@ -257,10 +263,80 @@ func WithContact(name, email, url string) Option {
 	}
 }
 
-// WithLicense sets the license info.
+// WithLicense sets the license info. For an SPDX license expression
+// instead of a URL, use WithSPDXLicense; the spec treats url and
+// identifier as mutually exclusive, and whichever of the two options
+// is applied last wins.
 func WithLicense(name, url string) Option {
 	return func(c *Config) {
 		c.Info.License = &License{Name: name, URL: url}
+	}
+}
+
+// WithSPDXLicense sets the license as an SPDX expression:
+//
+//	stdocs.WithSPDXLicense("Apache 2.0", "Apache-2.0")
+//
+// The identifier field exists from OpenAPI 3.1 on; a 3.0 document
+// degrades to the name alone.
+func WithSPDXLicense(name, identifier string) Option {
+	return func(c *Config) {
+		c.Info.License = &License{Name: name, Identifier: identifier}
+	}
+}
+
+// WithExternalDocs sets the document-level link to external
+// documentation. The URL is required and must parse as a URI; tags
+// take their own link via WithTagExternalDocs and operations via the
+// ExternalDocs route opt.
+func WithExternalDocs(url, description string) Option {
+	mustValidDocsURL("WithExternalDocs", url)
+	return func(c *Config) {
+		c.ExternalDocs = &spec.ExternalDocs{URL: url, Description: description}
+	}
+}
+
+// WithTagExternalDocs attaches an external-documentation link to a
+// declared tag, creating the declaration if WithTag has not (yet)
+// declared it — the order of the two options does not matter.
+func WithTagExternalDocs(tag, url, description string) Option {
+	mustValidDocsURL("WithTagExternalDocs", url)
+	return func(c *Config) {
+		for i := range c.Tags {
+			if c.Tags[i].Name == tag {
+				c.Tags[i].ExternalDocs = &spec.ExternalDocs{URL: url, Description: description}
+				return
+			}
+		}
+		c.Tags = append(c.Tags, TagDecl{Name: tag, ExternalDocs: &spec.ExternalDocs{URL: url, Description: description}})
+	}
+}
+
+// WithOperationIDFunc overrides the automatic operationId derivation
+// with f, called with the route's HTTP method (upper-case, "" for
+// method-less patterns) and path:
+//
+//	stdocs.WithOperationIDFunc(func(method, path string) string {
+//	    return strings.ToLower(method) + strings.ReplaceAll(path, "/", ".")
+//	})
+//
+// An explicit OperationID route opt still wins, an empty result
+// falls back to the default derivation, and document-wide
+// uniqueness suffixing applies to the result as usual.
+func WithOperationIDFunc(f func(method, path string) string) Option {
+	return func(c *Config) {
+		c.OperationIDFunc = f
+	}
+}
+
+// mustValidDocsURL panics unless u is a non-empty, parseable URI —
+// the OpenAPI externalDocumentation object requires its url field.
+func mustValidDocsURL(what, u string) {
+	if u == "" {
+		panic("stdocs: " + what + " requires a URL")
+	}
+	if _, err := url.Parse(u); err != nil {
+		panic("stdocs: " + what + " URL " + strconv.Quote(u) + " does not parse: " + err.Error())
 	}
 }
 
