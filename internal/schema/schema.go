@@ -531,7 +531,21 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	if ft.Kind() == reflect.Chan || ft.Kind() == reflect.Func || ft.Kind() == reflect.UnsafePointer {
 		return fieldMeta{}, false
 	}
-	fieldSchema := r.reflect(f.Type)
+	// The openapi tag is the per-field escape hatch: "-" excludes the
+	// field from the document (JSON serialization is unaffected), and
+	// "type=...[,format=...]" replaces the reflected schema entirely.
+	// It is resolved before reflection so an overridden struct-typed
+	// field does not register a phantom component.
+	var fieldSchema *Schema
+	switch override := f.Tag.Get("openapi"); override {
+	case "":
+		fieldSchema = r.reflect(f.Type)
+	case "-":
+		return fieldMeta{}, false
+	default:
+		fieldSchema = overrideSchema(override, f.Name)
+		fieldSchema.Nullable = f.Type.Kind() == reflect.Ptr
+	}
 	if fieldSchema == nil {
 		return fieldMeta{}, false
 	}
@@ -692,6 +706,38 @@ func lengthConstraint(tag reflect.StructTag, name, wantType, schemaType, fieldNa
 		panic("stdocs: " + name + " tag " + strconv.Quote(v) + " on field " + fieldName + " is not a valid non-negative integer")
 	}
 	return &n
+}
+
+// overrideSchema parses an openapi:"type=...[,format=...]" field
+// override into a fresh schema. Unknown keys, missing type, and
+// non-scalar types panic — the override exists to state a wire
+// format reflection cannot infer, and a half-applied one would
+// publish a wrong contract.
+func overrideSchema(override, fieldName string) *Schema {
+	s := &Schema{}
+	for _, kv := range strings.Split(override, ",") {
+		key, value, found := strings.Cut(strings.TrimSpace(kv), "=")
+		if !found || value == "" {
+			panic("stdocs: openapi tag entry " + strconv.Quote(kv) + " on field " + fieldName + ` must be key=value (e.g. "type=string,format=date-time")`)
+		}
+		switch key {
+		case "type":
+			switch value {
+			case "string", "integer", "number", "boolean":
+				s.Type = value
+			default:
+				panic("stdocs: openapi tag on field " + fieldName + " has unsupported type " + strconv.Quote(value) + `; use "string", "integer", "number", or "boolean"`)
+			}
+		case "format":
+			s.Format = value
+		default:
+			panic("stdocs: openapi tag on field " + fieldName + " has unknown key " + strconv.Quote(key) + `; supported keys are "type" and "format"`)
+		}
+	}
+	if s.Type == "" {
+		panic("stdocs: openapi tag on field " + fieldName + " must set type")
+	}
+	return s
 }
 
 // rejectStringEncodedNumericBounds panics when a numeric bound tag

@@ -110,6 +110,12 @@
 // Required-ness follows the encoding/json contract: every
 // non-pointer field without omitempty/omitzero is required.
 //
+// When reflection cannot infer a field's wire format, the openapi
+// tag is the per-field escape hatch: openapi:"-" excludes the field
+// from the document (JSON serialization is unaffected), and
+// openapi:"type=string,format=date-time" replaces the reflected
+// schema entirely — constraint and doc tags still compose on top.
+//
 // # Parameters
 //
 // Path parameters come from the pattern's wildcards automatically.
