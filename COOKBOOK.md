@@ -81,12 +81,12 @@ api := stdocs.New(stdocs.WithTitle("Tasks API"))
 api.HandleFunc("GET /tasks", listTasks)
 api.Mount() // docs at /docs/
 
-// Tier 1: a legacy contract served as-is under /legacy-docs/.
-legacy, _ := os.ReadFile("legacy-openapi.json")
-api.Handle("GET /legacy-docs/", http.StripPrefix("/legacy-docs",
+// Tier 1: a hand-written contract served as-is under /billing-docs/.
+billing, _ := os.ReadFile("billing-openapi.json")
+api.Handle("GET /billing-docs/", http.StripPrefix("/billing-docs",
     stdocs.DocsHandler(
-        stdocs.WithTitle("Legacy API"),
-        stdocs.WithSpec(legacy),
+        stdocs.WithTitle("Billing API"),
+        stdocs.WithSpec(billing),
     )),
     stdocs.Hidden(), // the docs mount itself is not part of the API contract
 )
@@ -95,7 +95,7 @@ log.Fatal(http.ListenAndServe(":8080", api))
 ```
 
 Both documentation sets render with whichever UI sub-package you
-import. When the legacy contract's routes migrate into the mux, their
-documentation moves from the file to the registration — one route at
-a time, with the golden-file test (reference: "Using the spec
-downstream") diffing each step.
+import. If the hand-written contract's routes later migrate into the
+mux, their documentation moves from the file to the registration —
+one route at a time, with the golden-file test (reference: "Using the
+spec downstream") diffing each step.
