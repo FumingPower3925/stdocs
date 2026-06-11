@@ -29,6 +29,18 @@ type emitter struct {
 	buildSchema func(*schema.Schema) map[string]any
 }
 
+// buildExternalDocs renders an externalDocumentation object, or nil.
+func buildExternalDocs(ed *ExternalDocs) map[string]any {
+	if ed == nil || ed.URL == "" {
+		return nil
+	}
+	m := map[string]any{"url": ed.URL}
+	if ed.Description != "" {
+		m["description"] = ed.Description
+	}
+	return m
+}
+
 // applyConstraintFacets emits the version-independent constraint
 // keywords from s onto m. Exclusive bounds render differently per
 // OpenAPI version and stay in the per-version schema builders.
@@ -87,6 +99,9 @@ func (e *emitter) buildRoot(in SpecInput) map[string]any {
 	if tags := e.buildTags(in.Tags); tags != nil {
 		doc["tags"] = tags
 	}
+	if ed := buildExternalDocs(in.ExternalDocs); ed != nil {
+		doc["externalDocs"] = ed
+	}
 	doc["paths"] = e.buildPaths(in.Paths)
 	doc["components"] = e.buildComponentsWithSecurity(in.Components, in.SecuritySchemes)
 	if len(in.GlobalSecurity) > 0 {
@@ -133,13 +148,19 @@ func (e *emitter) buildInfo(i Info) map[string]any {
 		}
 		m["contact"] = c
 	}
-	if i.License != nil && (i.License.Name != "" || i.License.URL != "") {
+	if i.License != nil && (i.License.Name != "" || i.License.URL != "" || i.License.Identifier != "") {
 		l := map[string]any{}
 		if i.License.Name != "" {
 			l["name"] = i.License.Name
 		}
 		if i.License.URL != "" {
 			l["url"] = i.License.URL
+		}
+		// The SPDX identifier field exists from 3.1 on; emitting it on
+		// 3.0 would invalidate the document, so it degrades to
+		// name-only there.
+		if i.License.Identifier != "" && !strings.HasPrefix(e.openapi, "3.0") {
+			l["identifier"] = i.License.Identifier
 		}
 		m["license"] = l
 	}
@@ -170,6 +191,9 @@ func (e *emitter) buildTags(tags []TagDecl) []any {
 		m := map[string]any{"name": t.Name}
 		if t.Description != "" {
 			m["description"] = t.Description
+		}
+		if ed := buildExternalDocs(t.ExternalDocs); ed != nil {
+			m["externalDocs"] = ed
 		}
 		out = append(out, m)
 	}
@@ -315,6 +339,9 @@ func (e *emitter) buildOperation(op *Operation) map[string]any {
 		m["security"] = []any{}
 	case len(op.Security) > 0:
 		m["security"] = buildSecurity(op.Security)
+	}
+	if ed := buildExternalDocs(op.ExternalDocs); ed != nil {
+		m["externalDocs"] = ed
 	}
 	for k, v := range op.Extensions {
 		m[k] = v

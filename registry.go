@@ -152,7 +152,11 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 		}
 	}
 
-	// Default operationId from method+path.
+	// Default operationId: the user's derivation function when
+	// configured (an empty result falls back), else method+path.
+	if rt.op.OperationID == "" && cfg.OperationIDFunc != nil {
+		rt.op.OperationID = cfg.OperationIDFunc(rt.parsed.Method, rt.parsed.Path())
+	}
 	if rt.op.OperationID == "" {
 		rt.op.OperationID = defaultOperationID(rt.parsed)
 	}
