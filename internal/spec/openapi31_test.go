@@ -24,7 +24,7 @@ func TestEmitOpenAPI31_TopLevelShape(t *testing.T) {
 	}
 }
 
-func TestEmitOpenAPI31_NullableBecomesTypeArray(t *testing.T) {
+func TestEmitOpenAPI31_NullableBecomesAnyOf(t *testing.T) {
 	// Reflect a pointer type so Nullable=true is set.
 	type T struct {
 		Name *string `json:"name"`
@@ -40,13 +40,21 @@ func TestEmitOpenAPI31_NullableBecomesTypeArray(t *testing.T) {
 	tComp := jget(t, m, "components", "schemas", "T").(map[string]any)
 	name := jget(t, tComp, "properties", "name").(map[string]any)
 
-	// In 3.1, the type field is a JSON array.
-	arr, ok := name["type"].([]any)
+	// In 3.1, nullable scalars emit the anyOf form (not a type
+	// array): both are valid 2020-12 but the anyOf form is what
+	// real-world generators digest reliably (ogen rejects the array
+	// form), and it matches the $ref use sites.
+	branches, ok := name["anyOf"].([]any)
 	if !ok {
-		t.Fatalf("name.type = %T, want []any", name["type"])
+		t.Fatalf("name.anyOf = %T, want []any (got %v)", name["anyOf"], name)
 	}
-	if len(arr) != 2 || arr[0] != "string" || arr[1] != "null" {
-		t.Errorf("name.type = %v, want [string null]", arr)
+	if len(branches) != 2 ||
+		branches[0].(map[string]any)["type"] != "string" ||
+		branches[1].(map[string]any)["type"] != "null" {
+		t.Errorf("name.anyOf = %v, want [{type:string} {type:null}]", branches)
+	}
+	if _, has := name["type"]; has {
+		t.Errorf("nullable scalar must not also carry a top-level type")
 	}
 	// "nullable" must NOT be present in 3.1.
 	if _, has := name["nullable"]; has {
@@ -275,7 +283,7 @@ func TestEmitOpenAPI31_CrossVersionDifferences(t *testing.T) {
 	if m30["openapi"] == m31["openapi"] {
 		t.Errorf("expected different openapi versions")
 	}
-	// 3.0 has nullable:true for the field; 3.1 has a type array.
+	// 3.0 has nullable:true for the field; 3.1 has the anyOf form.
 	field30 := jget(t, m30, "components", "schemas", "T", "properties", "field").(map[string]any)
 	field31 := jget(t, m31, "components", "schemas", "T", "properties", "field").(map[string]any)
 	if _, ok := field30["nullable"]; !ok {
@@ -284,8 +292,8 @@ func TestEmitOpenAPI31_CrossVersionDifferences(t *testing.T) {
 	if _, ok := field31["nullable"]; ok {
 		t.Errorf("3.1.2 should NOT have nullable on field")
 	}
-	if _, ok := field31["type"].([]any); !ok {
-		t.Errorf("3.1.2 field type should be a JSON array")
+	if _, ok := field31["anyOf"].([]any); !ok {
+		t.Errorf("3.1.2 nullable field should emit the anyOf form, got %v", field31)
 	}
 }
 
