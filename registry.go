@@ -68,30 +68,7 @@ func (r *registry) finalize(cfg *Config) {
 
 // applyRouteDefaults fills the operation fields the user left unset.
 func applyRouteDefaults(rt *route, cfg *Config) {
-	// Mux-level default responses: documented on every operation that
-	// does not declare the status itself (a per-route declaration
-	// wins). Runs before the auto-200 so a WithDefaultResponse(200,
-	// body) entry can supply the success body on routes that declare
-	// nothing. Re-running is a no-op (the key exists), keeping
-	// rebuilds stable.
-	declaredNone := len(rt.op.Responses) == 0
-	for _, dr := range cfg.DefaultResponses {
-		key := statusKey(dr.Status)
-		if _, ok := rt.op.Responses[key]; ok {
-			continue
-		}
-		ensureResponse(rt.op, key).BodyValue = dr.Body
-	}
-
-	// Auto-200: a route that declared no responses still documents
-	// its success case unless a 200 came in via the defaults. A
-	// "default" entry does not suppress it — that is conventionally
-	// the error catch-all, not the success response.
-	if declaredNone {
-		if _, has200 := rt.op.Responses["200"]; !has200 {
-			ensureResponse(rt.op, "200")
-		}
-	}
+	applyResponseDefaults(rt, cfg)
 
 	// Duplicate parameters: OpenAPI requires (name, in) uniqueness per
 	// operation, and validators reject violations — fail fast instead.
@@ -105,16 +82,14 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 		seen[k] = true
 	}
 
-	// Auto-401: an operation that requires authentication can always
-	// reject the credentials, so document that. Runs after the
-	// default responses so a WithDefaultResponse(401, body) entry
-	// keeps its body; a per-route 401 wins over both.
-	if !cfg.DisableAutoUnauthorized {
-		secured := !rt.op.NoSecurity &&
-			(len(rt.op.Security) > 0 || len(cfg.GlobalSecurity) > 0)
-		if _, ok := rt.op.Responses["401"]; secured && !ok {
-			ensureResponse(rt.op, "401")
+	// Shown internal routes carry the conventional extension so
+	// spec-filtering tools recognise them. Stamped here, under the
+	// build lock, so the visibility filter stays read-only.
+	if rt.op.Internal && cfg.ShowInternal {
+		if rt.op.Extensions == nil {
+			rt.op.Extensions = map[string]any{}
 		}
+		rt.op.Extensions["x-internal"] = true
 	}
 
 	// Method from pattern.
@@ -159,6 +134,48 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 	}
 	if rt.op.OperationID == "" {
 		rt.op.OperationID = defaultOperationID(rt.parsed)
+	}
+}
+
+// applyResponseDefaults fills the response entries the user left to
+// mux-level configuration: the shared default responses, the auto-200
+// success case, and the automatic 401 on secured operations.
+func applyResponseDefaults(rt *route, cfg *Config) {
+	// Mux-level default responses: documented on every operation that
+	// does not declare the status itself (a per-route declaration
+	// wins). Runs before the auto-200 so a WithDefaultResponse(200,
+	// body) entry can supply the success body on routes that declare
+	// nothing. Re-running is a no-op (the key exists), keeping
+	// rebuilds stable.
+	declaredNone := len(rt.op.Responses) == 0
+	for _, dr := range cfg.DefaultResponses {
+		key := statusKey(dr.Status)
+		if _, ok := rt.op.Responses[key]; ok {
+			continue
+		}
+		ensureResponse(rt.op, key).BodyValue = dr.Body
+	}
+
+	// Auto-200: a route that declared no responses still documents
+	// its success case unless a 200 came in via the defaults. A
+	// "default" entry does not suppress it — that is conventionally
+	// the error catch-all, not the success response.
+	if declaredNone {
+		if _, has200 := rt.op.Responses["200"]; !has200 {
+			ensureResponse(rt.op, "200")
+		}
+	}
+
+	// Auto-401: an operation that requires authentication can always
+	// reject the credentials, so document that. Runs after the
+	// default responses so a WithDefaultResponse(401, body) entry
+	// keeps its body; a per-route 401 wins over both.
+	if !cfg.DisableAutoUnauthorized {
+		secured := !rt.op.NoSecurity &&
+			(len(rt.op.Security) > 0 || len(cfg.GlobalSecurity) > 0)
+		if _, ok := rt.op.Responses["401"]; secured && !ok {
+			ensureResponse(rt.op, "401")
+		}
 	}
 }
 
