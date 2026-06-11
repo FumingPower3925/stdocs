@@ -49,9 +49,22 @@ Nothing yet.
 - Nullable scalars on 3.1/3.2 emit the `anyOf` form instead of a
   `type` array: both are valid JSON Schema 2020-12, but real-world
   generators digest `anyOf` more reliably (ogen rejects the array
-  form), and nullable `$ref` use sites already emitted it. Verified:
-  ogen now generates a typed client from a stdocs 3.1 document, and
-  CI gains that consumability gate.
+  form), and nullable `$ref` use sites already emitted it. Type-gated
+  facets (bounds, lengths, pattern, array facets, the enum with a
+  null member) hoist onto the wrapper so doc UIs render them.
+  Verified: ogen generates typed clients from stdocs documents, and
+  CI gains that consumability gate (3.0.4 full-corpus plus a 3.1
+  document; numeric 3.1 exclusive bounds are rejected by current Go
+  generators — `Lint()` warns).
+- 3.1/3.2 schema objects emit the `examples` array instead of the
+  dialect-deprecated singular `example` (3.0 unchanged).
+- `WithTag` merges into an existing declaration instead of appending
+  a duplicate, making `WithTagExternalDocs` order-independence true
+  in both directions.
+- Component-name reservation accounts for types reflected during
+  another type's build, and a `SchemaName` method promoted from an
+  embedded field no longer renames the embedding type — both
+  previously produced silently shared (clobbered) components.
 - Generic component names changed from fully-qualified sanitizations
   (`main_Page_main_Task`) to the simplified form (`Page_Task`).
   Spec-affecting for documents containing generic types.

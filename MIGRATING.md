@@ -80,7 +80,7 @@ typed-handler frameworks *enforce* the contract at runtime; stdocs
 | input struct with validation tags | the same struct shapes: constraint tags document (but do not enforce) the rules |
 | output struct → response schema | `stdocs.WithResponse(status, T{})` |
 | error model (RFC 7807 etc.) | your own error type + `stdocs.WithDefaultResponse` |
-| middleware reading the matched operation | `stdocs.FromDocs` for docs-originated traffic; the mux is a plain `*http.ServeMux` for everything else |
+| middleware reading the matched operation | no equivalent — the mux is a plain `*http.ServeMux` and exposes no per-request operation metadata; `stdocs.FromDocs` covers only the narrower case of identifying docs-console traffic |
 | `$ref` naming control | a `SchemaName() string` method on the type |
 
 Keep the framework's validation semantics in your handlers (or a
