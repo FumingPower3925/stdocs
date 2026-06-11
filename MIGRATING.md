@@ -1,0 +1,90 @@
+# Migrating to stdocs
+
+Three guides for the most common starting points. Each is a mapping
+table plus the workflow differences worth knowing — the [package
+reference](https://pkg.go.dev/github.com/FumingPower3925/stdocs) has
+the full detail on every option.
+
+## Coming from swaggo/swag
+
+stdocs replaces the annotation comments and the `swag init` step: the
+route registration itself is the source of truth, the spec is
+generated at runtime (or exported with `mux.JSON()`), and nothing is
+committed or regenerated.
+
+| swag annotation | stdocs equivalent |
+| --- | --- |
+| `@Summary Get a user` | `stdocs.Summary("Get a user")` — or nothing: the handler's function name infers one |
+| `@Description ...` | `stdocs.Description("...")` |
+| `@Tags users` | `stdocs.Tags("users")` — or nothing: the first path segment infers one |
+| `@ID get-user` | `stdocs.OperationID("get-user")` (mux-wide style: `WithOperationIDFunc`) |
+| `@Param id path string true "User ID"` | nothing — path params come from the `{id}` pattern wildcard |
+| `@Param limit query int false "Page size" minimum(1) maximum(100) default(20)` | `stdocs.QueryParam("limit", "integer", "Page size", stdocs.ParamMinimum(1), stdocs.ParamMaximum(100), stdocs.ParamDefault(20))` — or a `WithParams` struct with `minimum:"1" maximum:"100" default:"20"` tags |
+| `@Accept json` | the default; `stdocs.WithBodyContentType` overrides |
+| `@Produce json` | the default; `stdocs.WithResponseContentType` overrides |
+| `@Success 200 {object} model.User` | `stdocs.WithResponse(200, User{})` |
+| `@Failure 404 {object} model.APIError` | `stdocs.WithResponse(404, APIError{})` — shared errors once via `stdocs.WithDefaultResponse` |
+| `@Router /users/{id} [get]` | the registration: `mux.HandleFunc("GET /users/{id}", ...)` — it cannot drift |
+| `@Security BearerAuth` | `stdocs.WithSecurity("bearerAuth")` |
+| `@securityDefinitions.apikey` block | `stdocs.WithBearerAuth` / `WithBasicAuth` / `WithAPIKeyAuth` / `WithOAuth2Auth` |
+| `@title`, `@version`, `@contact.*`, `@license.*` | `stdocs.WithTitle`, `WithAPIVersion`, `WithContact`, `WithLicense` / `WithSPDXLicense` |
+| `example:"..."` struct tags | the same tag, parsed per field type |
+| `swaggertype:"string"` | `openapi:"type=string"` |
+| `swaggerignore:"true"` | `openapi:"-"` |
+| `format:"email"` | the same tag |
+
+Workflow differences: there is no CLI and no generated `docs/`
+package — delete both; the spec serves at `/docs/openapi.json` at
+runtime; for a committed artifact (PR diffing, client generation),
+use the golden-file pattern from the package reference's "Using the
+spec downstream" section. Output is OpenAPI 3.0.4/3.1.2/3.2.0
+(selectable), not Swagger 2.0.
+
+## Coming from FastAPI
+
+The `/docs` experience carries over: register routes, get interactive
+documentation. What FastAPI derives from type hints at runtime,
+stdocs reads from struct tags and route opts — and validation stays
+your handler's job (see "Scope and non-goals" in the reference).
+
+| FastAPI | stdocs |
+| --- | --- |
+| `@app.get("/tasks/{id}")` | `mux.HandleFunc("GET /tasks/{id}", getTask)` |
+| `response_model=Task` | `stdocs.WithResponse(200, Task{})` |
+| `status_code=201` | `stdocs.WithResponse(201, Task{})` |
+| `Field(ge=1, le=5, default=3)` | `minimum:"1" maximum:"5" default:"3"` struct tags |
+| `Field(min_length=1, pattern=r"...")` | `minLength:"1" pattern:"..."` |
+| `Literal["a", "b"]` / `Enum` | `enum:"a,b"` |
+| `Query(default=20, ge=1)` parameters | a `WithParams` struct: `Limit int \`query:"limit" default:"20" minimum:"1"\`` |
+| `Header()` / `Cookie()` parameters | `header:"X-Trace-Id"` / `cookie:"session"` tags in the same struct |
+| `tags=["tasks"]`, router prefixes | `stdocs.Tags(...)`; reusable bundles via `stdocs.Opts(...)`; public prefixes via `stdocs.WithPathPrefix` |
+| `responses={500: {"model": Error}}` shared errors | `stdocs.WithDefaultResponse(500, APIError{})`, once per mux |
+| `Depends(oauth2_scheme)` | `stdocs.WithBearerAuth(...)` + `stdocs.WithSecurity(...)` — enforcement is your middleware |
+| automatic 422 documentation | not generated: stdocs documents what you declare; the automatic 401 on secured routes is the analogous nicety |
+| Swagger UI at `/docs` | the built-in page, or `ui/swaggerui` / `ui/scalar` / `ui/redoc` / `ui/stoplight` |
+
+What stays manual in Go: request body decoding (`json.NewDecoder`),
+validation, and auth middleware. `stdocs.DriftWarn` helps notice when
+the handlers and the document disagree during development.
+
+## Coming from huma or another typed-handler framework
+
+Teams usually move this direction to get back to plain
+`http.HandlerFunc` and zero dependencies. The trade is explicit:
+typed-handler frameworks *enforce* the contract at runtime; stdocs
+*documents* it and leaves enforcement to your code.
+
+| Typed-handler concept | stdocs equivalent |
+| --- | --- |
+| operation registration structs | `RouteOpt` values on `HandleFunc` |
+| input struct with validation tags | the same struct shapes: constraint tags document (but do not enforce) the rules |
+| output struct → response schema | `stdocs.WithResponse(status, T{})` |
+| error model (RFC 7807 etc.) | your own error type + `stdocs.WithDefaultResponse` |
+| middleware reading the matched operation | `stdocs.FromDocs` for docs-originated traffic; the mux is a plain `*http.ServeMux` for everything else |
+| `$ref` naming control | a `SchemaName() string` method on the type |
+
+Keep the framework's validation semantics in your handlers (or a
+validation library) — the constraint tags describe the same rules to
+consumers, and `DriftWarn` plus the golden-file test keep the
+document honest while you migrate route by route: both stacks can
+serve side by side under one `http.ServeMux` during the transition.
