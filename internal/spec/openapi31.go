@@ -40,35 +40,38 @@ func BuildRoot31(in SpecInput) map[string]any {
 // different nullability. Unlike 3.0, siblings next to $ref are legal
 // in 2020-12, so doc-tag descriptions and examples are emitted
 // directly alongside the reference.
+// refSchema31 renders a $ref use site; nullable references use the
+// anyOf form, and 2020-12 allows description/example as siblings.
+func refSchema31(s *schema.Schema) map[string]any {
+	var m map[string]any
+	if s.Nullable {
+		m = map[string]any{
+			"anyOf": []any{
+				map[string]any{"$ref": s.Ref},
+				map[string]any{"type": "null"},
+			},
+		}
+	} else {
+		m = map[string]any{"$ref": s.Ref}
+	}
+	if s.Description != "" {
+		m["description"] = s.Description
+	}
+	if s.Example != nil {
+		m["example"] = s.Example
+	}
+	return m
+}
+
 func buildSchema31(s *schema.Schema) map[string]any {
 	if s == nil {
 		return nil
 	}
 	if s.Ref != "" {
-		var m map[string]any
-		if s.Nullable {
-			m = map[string]any{
-				"anyOf": []any{
-					map[string]any{"$ref": s.Ref},
-					map[string]any{"type": "null"},
-				},
-			}
-		} else {
-			m = map[string]any{"$ref": s.Ref}
-		}
-		if s.Description != "" {
-			m["description"] = s.Description
-		}
-		if s.Example != nil {
-			m["example"] = s.Example
-		}
-		return m
+		return refSchema31(s)
 	}
 	m := make(map[string]any)
-	switch {
-	case s.Type != "" && s.Nullable:
-		m["type"] = []string{s.Type, "null"}
-	case s.Type != "":
+	if s.Type != "" {
 		m["type"] = s.Type
 	}
 	if s.Format != "" {
@@ -98,14 +101,10 @@ func buildSchema31(s *schema.Schema) map[string]any {
 		m["items"] = buildSchema31(s.Items)
 	}
 	if len(s.Enum) > 0 {
-		enum := s.Enum
-		if s.Nullable {
-			// enum is independent of type/nullable in JSON Schema:
-			// null must be listed for a nullable field's null value to
-			// validate against its own enum.
-			enum = append(append(make([]any, 0, len(enum)+1), enum...), nil)
-		}
-		m["enum"] = enum
+		// The enum lives in the typed branch and needs no null member:
+		// in the nullable anyOf form below, null validates against the
+		// {"type": "null"} branch instead.
+		m["enum"] = s.Enum
 	}
 	if s.Default != nil {
 		m["default"] = s.Default
@@ -122,6 +121,29 @@ func buildSchema31(s *schema.Schema) map[string]any {
 		m["exclusiveMaximum"] = s.ExclusiveMaximum
 	}
 	maps.Copy(m, s.Extensions)
+	if s.Type != "" && s.Nullable {
+		// Nullable typed schemas emit the anyOf form rather than a
+		// type array ("type": ["string", "null"]): both are valid
+		// 2020-12, but real-world consumers digest anyOf more
+		// reliably (ogen's parser rejects the array form outright),
+		// and the $ref use sites above already use anyOf, so nullable
+		// emission is uniform. Value-level decoration moves to the
+		// wrapper; type-level facets stay in the typed branch.
+		wrapper := map[string]any{
+			"anyOf": []any{m, map[string]any{"type": "null"}},
+		}
+		for _, k := range []string{"description", "default", "example"} {
+			if v, ok := m[k]; ok {
+				delete(m, k)
+				wrapper[k] = v
+			}
+		}
+		for k := range s.Extensions {
+			delete(m, k)
+			wrapper[k] = s.Extensions[k]
+		}
+		return wrapper
+	}
 	if len(m) == 0 {
 		return map[string]any{}
 	}
