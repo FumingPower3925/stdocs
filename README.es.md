@@ -129,6 +129,8 @@ La referencia completa vive en [pkg.go.dev](https://pkg.go.dev/github.com/Fuming
 - [OpenAPI versions](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-OpenAPI_versions) — `WithVersion`, el `$self` de 3.2 y el escape hatch `WithOpenAPI`.
 - [DocsHandler](https://pkg.go.dev/github.com/FumingPower3925/stdocs#DocsHandler) — sirve un spec escrito a mano detrás de cualquiera de las UI incluidas.
 
+Dos guías del repositorio complementan la referencia: [MIGRATING.md](MIGRATING.md) (migrar desde swaggo/swag, FastAPI o un framework de handlers tipados, con tablas de equivalencias literales) y [COOKBOOK.md](COOKBOOK.md) (paginación, auth + errores y documentos mixtos escritos a mano/generados, como recetas completas).
+
 ## Cómo funciona
 
 `stdocs.New()` devuelve un `*stdocs.Mux` que incrusta `*http.ServeMux` y registra patrón + metadatos a medida que registras handlers. Con la primera petición a `/docs/openapi.json`, se recorre el registro y el spec se construye y se cachea (`mux.Refresh()` lo reconstruye). Sin comentarios, sin generación de código, sin `unsafe`: el patrón es la documentación.
