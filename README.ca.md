@@ -129,7 +129,7 @@ La referència completa viu a [pkg.go.dev](https://pkg.go.dev/github.com/FumingP
 - [OpenAPI versions](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-OpenAPI_versions) — `WithVersion`, el `$self` de 3.2 i l'escape hatch `WithOpenAPI`.
 - [DocsHandler](https://pkg.go.dev/github.com/FumingPower3925/stdocs#DocsHandler) — serveix un spec escrit a mà darrere de qualsevol de les UI incloses.
 
-Dues guies del repositori complementen la referència: [MIGRATING.md](MIGRATING.md) (migrar des de swaggo/swag, FastAPI o un framework de handlers tipats, amb taules d'equivalències literals) i [COOKBOOK.md](COOKBOOK.md) (paginació, auth + errors i documents mixtos escrits a mà/generats, com a receptes completes).
+[MIGRATING.md](MIGRATING.md) complementa la referència amb guies de migració des de swaggo/swag, FastAPI i frameworks de handlers tipats — taules d'equivalències literals incloses.
 
 ## Com funciona
 

@@ -129,7 +129,7 @@ La referencia completa vive en [pkg.go.dev](https://pkg.go.dev/github.com/Fuming
 - [OpenAPI versions](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-OpenAPI_versions) — `WithVersion`, el `$self` de 3.2 y el escape hatch `WithOpenAPI`.
 - [DocsHandler](https://pkg.go.dev/github.com/FumingPower3925/stdocs#DocsHandler) — sirve un spec escrito a mano detrás de cualquiera de las UI incluidas.
 
-Dos guías del repositorio complementan la referencia: [MIGRATING.md](MIGRATING.md) (migrar desde swaggo/swag, FastAPI o un framework de handlers tipados, con tablas de equivalencias literales) y [COOKBOOK.md](COOKBOOK.md) (paginación, auth + errores y documentos mixtos escritos a mano/generados, como recetas completas).
+[MIGRATING.md](MIGRATING.md) complementa la referencia con guías de migración desde swaggo/swag, FastAPI y frameworks de handlers tipados — tablas de equivalencias literales incluidas.
 
 ## Cómo funciona
 

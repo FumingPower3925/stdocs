@@ -40,10 +40,9 @@ Nothing yet.
   without error responses or summaries, untyped schema fields,
   collision-suffixed component names, custom-method extension
   carriers, and vendor extensions in non-clean output.
-- `MIGRATING.md` (from swaggo/swag, FastAPI, and typed-handler
-  frameworks, with mapping tables) and `COOKBOOK.md` (pagination,
-  auth + errors, mixed hand-written/generated documents), linked from
-  the READMEs.
+- `MIGRATING.md`: migration guides from swaggo/swag, FastAPI, and
+  typed-handler frameworks, with mapping tables, linked from the
+  READMEs.
 
 ### Changed
 
