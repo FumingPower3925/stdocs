@@ -200,6 +200,12 @@ jobs:
           pip install --quiet openapi-spec-validator
           python -m openapi_spec_validator /tmp/spec-3.0.4.json
           python -m openapi_spec_validator /tmp/spec-3.1.2.json
+      - name: Consumability — generate a typed client from the 3.1 document with ogen
+        run: |
+          mkdir -p /tmp/ogencheck && cd /tmp/ogencheck
+          printf 'module ogencheck\n\ngo 1.25.0\n' > go.mod
+          go run github.com/ogen-go/ogen/cmd/ogen@v1.8.1 --target ./out --clean /tmp/spec-3.1.2.json
+          test -s out/oas_client_gen.go && echo "ogen generated a client from the stdocs document"
       - name: Validate 3.2 against the official OpenAPI 3.2 JSON Schema
         run: |
           pip install --quiet "jsonschema[format]" requests
