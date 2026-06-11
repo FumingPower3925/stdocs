@@ -129,6 +129,8 @@ The full reference lives on [pkg.go.dev](https://pkg.go.dev/github.com/FumingPow
 - [OpenAPI versions](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-OpenAPI_versions) — `WithVersion`, 3.2's `$self`, and the `WithOpenAPI` escape hatch.
 - [DocsHandler](https://pkg.go.dev/github.com/FumingPower3925/stdocs#DocsHandler) — serve a hand-written spec behind any of the bundled UIs.
 
+Two repo guides complement the reference: [MIGRATING.md](MIGRATING.md) (coming from swaggo/swag, FastAPI, or a typed-handler framework, with literal mapping tables) and [COOKBOOK.md](COOKBOOK.md) (pagination, auth + errors, and mixed hand-written/generated documents as complete recipes).
+
 ## How it works
 
 `stdocs.New()` returns a `*stdocs.Mux` that embeds `*http.ServeMux` and records pattern + metadata as you register handlers. On the first request to `/docs/openapi.json`, the registry is walked and the spec is built and cached (`mux.Refresh()` rebuilds). No comments, no code generation, no `unsafe` — the pattern string is the documentation.
