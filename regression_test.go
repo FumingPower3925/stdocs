@@ -1086,3 +1086,51 @@ func schemaTagPanic(literal string) {
 		panic(err) // either way the test's recover() fires
 	}
 }
+
+// WithCleanOutput strips vendor noise; default output is unchanged.
+func TestCleanOutput(t *testing.T) {
+	type Holder struct {
+		Value any `json:"value"` // produces x-stdocs-type
+	}
+	build := func(clean bool) string {
+		mux := New(WithTitle("T"), WithCleanOutput(clean))
+		mux.HandleFunc("/anymethod", noop) // produces x-stdocs-warning
+		mux.HandleFunc("POST /h", noop, WithBody(Holder{}))
+		raw, err := mux.JSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	dirty := build(false)
+	for _, marker := range []string{"x-stdocs-type", "x-stdocs-warning", "Generated from Go type"} {
+		if !strings.Contains(dirty, marker) {
+			t.Errorf("default output should contain %s", marker)
+		}
+	}
+	clean := build(true)
+	for _, marker := range []string{"x-stdocs-type", "x-stdocs-warning", "Generated from Go type"} {
+		if strings.Contains(clean, marker) {
+			t.Errorf("clean output must not contain %s", marker)
+		}
+	}
+
+	// User doc: tags survive cleaning; custom methods keep their
+	// extension carrier.
+	type Doc struct {
+		X string `json:"x" doc:"Kept description"`
+	}
+	mux := New(WithTitle("T"), WithCleanOutput(true))
+	mux.HandleFunc("PURGE /cache", noop)
+	mux.HandleFunc("POST /d", noop, WithBody(Doc{}))
+	raw, err := mux.JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "Kept description") {
+		t.Errorf("user descriptions must survive cleaning")
+	}
+	if !strings.Contains(string(raw), "x-stdocs-additionalOperations") {
+		t.Errorf("custom-method operations must not be dropped by cleaning")
+	}
+}
