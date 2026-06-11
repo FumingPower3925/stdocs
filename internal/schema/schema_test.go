@@ -1140,3 +1140,84 @@ func TestSimplifyTypeExpr(t *testing.T) {
 		}
 	}
 }
+
+// The openapi tag overrides a field's reflected schema or excludes
+// the field; constraints and docs still compose on top.
+func TestOpenAPIFieldOverride(t *testing.T) {
+	type Custom struct {
+		Inner string `json:"inner"`
+	}
+	type T struct {
+		At      Custom  `json:"at" openapi:"type=string,format=date-time" doc:"RFC 3339"`
+		Skipped string  `json:"secret" openapi:"-"`
+		Bounded Custom  `json:"bounded" openapi:"type=integer" minimum:"1"`
+		Ptr     *Custom `json:"ptr" openapi:"type=string"`
+	}
+	_, out := schema30(t, T{})
+	comp := out["T"]
+	if comp == nil {
+		t.Fatal("T component missing")
+	}
+	at := comp.Properties["at"]
+	if at.Type != "string" || at.Format != "date-time" || at.Description != "RFC 3339" {
+		t.Errorf("at = %+v", at)
+	}
+	if at.Ref != "" {
+		t.Errorf("override must replace the $ref entirely")
+	}
+	if _, ok := comp.Properties["secret"]; ok {
+		t.Errorf(`openapi:"-" field must be excluded`)
+	}
+	if comp.Properties["bounded"].Minimum != "1" {
+		t.Errorf("constraints must compose on overrides")
+	}
+	if !comp.Properties["ptr"].Nullable {
+		t.Errorf("pointer overrides keep nullability")
+	}
+	// The overridden struct type must not leak a component.
+	if _, ok := out["Custom"]; ok {
+		t.Errorf("overridden struct field registered a phantom Custom component")
+	}
+}
+
+func TestOpenAPIFieldOverridePanics(t *testing.T) {
+	cases := []struct {
+		name string
+		f    func()
+	}{
+		{"unknown key", func() {
+			type T struct {
+				X string `json:"x" openapi:"kind=string"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"missing type", func() {
+			type T struct {
+				X string `json:"x" openapi:"format=uuid"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"non-scalar type", func() {
+			type T struct {
+				X string `json:"x" openapi:"type=object"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"bare value", func() {
+			type T struct {
+				X string `json:"x" openapi:"string"`
+			}
+			ReflectSchema(T{})
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic")
+				}
+			}()
+			tc.f()
+		})
+	}
+}
