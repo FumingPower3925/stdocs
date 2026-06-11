@@ -112,6 +112,65 @@ func WithBody(body any) RouteOpt {
 	}
 }
 
+// BodyPart is one part of a multipart/form-data request body; see
+// WithMultipartBody.
+type BodyPart struct {
+	name   string
+	schema *schema.Schema
+}
+
+// FilePart declares a binary file part of a multipart body.
+func FilePart(name, description string) BodyPart {
+	if name == "" {
+		panic("stdocs: FilePart name must not be empty")
+	}
+	return BodyPart{name: name, schema: &schema.Schema{Type: "string", Format: "binary", Description: description}}
+}
+
+// FieldPart declares a scalar part of a multipart body. typ is one of
+// "string", "integer", "number", "boolean", or "array" (of strings),
+// like WithParam.
+func FieldPart(name, typ, description string) BodyPart {
+	if name == "" {
+		panic("stdocs: FieldPart name must not be empty")
+	}
+	s := schemaForType(typ)
+	s.Description = description
+	return BodyPart{name: name, schema: s}
+}
+
+// WithMultipartBody documents a multipart/form-data request body —
+// the file-upload shape — from its parts:
+//
+//	mux.HandleFunc("POST /upload", uploadFile,
+//	    stdocs.WithMultipartBody(
+//	        stdocs.FilePart("attachment", "The file to upload"),
+//	        stdocs.FieldPart("caption", "string", "Optional caption"),
+//	    ),
+//	)
+//
+// Documentation only — handlers keep parsing with r.MultipartForm.
+// At least one part is required and duplicate part names panic.
+// WithMultipartBody replaces any WithBody declaration on the route.
+func WithMultipartBody(parts ...BodyPart) RouteOpt {
+	if len(parts) == 0 {
+		panic("stdocs: WithMultipartBody requires at least one part")
+	}
+	props := make(map[string]*schema.Schema, len(parts))
+	for _, p := range parts {
+		if _, dup := props[p.name]; dup {
+			panic("stdocs: WithMultipartBody declares part " + strconv.Quote(p.name) + " twice")
+		}
+		props[p.name] = p.schema
+	}
+	return func(r *route) {
+		rb := ensureRequestBody(r.op)
+		rb.BodyValue = nil
+		rb.Schema = &schema.Schema{Type: "object", Properties: props}
+		rb.ContentType = "multipart/form-data"
+	}
+}
+
 // ensureRequestBody returns op's request body, creating a default one
 // (required, application/json) if none exists yet. Having a single
 // creation point makes WithBody, Optional, and WithBodyContentType
