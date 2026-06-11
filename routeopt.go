@@ -109,6 +109,14 @@ func WithBody(body any) RouteOpt {
 	return func(r *route) {
 		rb := ensureRequestBody(r.op)
 		rb.BodyValue = body
+		// The last body declaration wins: undo what an earlier
+		// WithMultipartBody set, so the two opts replace each other in
+		// either order. An explicit WithBodyContentType survives —
+		// only the multipart content type is multipart state.
+		rb.Schema = nil
+		if rb.ContentType == "multipart/form-data" {
+			rb.ContentType = ""
+		}
 	}
 }
 
@@ -133,6 +141,11 @@ func FilePart(name, description string) BodyPart {
 func FieldPart(name, typ, description string) BodyPart {
 	if name == "" {
 		panic("stdocs: FieldPart name must not be empty")
+	}
+	switch typ {
+	case "string", "integer", "number", "boolean", "array":
+	default:
+		panic("stdocs: FieldPart type must be \"string\", \"integer\", \"number\", \"boolean\", or \"array\"; got " + strconv.Quote(typ))
 	}
 	s := schemaForType(typ)
 	s.Description = description

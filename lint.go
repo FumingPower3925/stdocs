@@ -35,7 +35,8 @@ func (w Warning) String() string { return w.Where + ": " + w.Message }
 // Lint never affects emission and the findings list may grow in
 // future versions; treat it as advice, not a contract. Building the
 // document is a side effect, so the same fail-fast panics as
-// [Mux.JSON] apply.
+// [Mux.JSON] apply, and like JSON, Lint reads the cached build —
+// routes registered after a build need [Mux.Refresh] first.
 //
 // A CI guard is one assertion:
 //
@@ -46,7 +47,13 @@ func (w Warning) String() string { return w.Where + ": " + w.Message }
 //	    t.Errorf("%d consumability warnings", len(warnings))
 //	}
 func (m *Mux) Lint() []Warning {
-	if _, err := m.JSON(); err != nil {
+	// The whole walk holds the build lock: building finalizes the
+	// routes' operations, and concurrent Lint/JSON/Refresh calls must
+	// not observe (or race with) finalize mutating them.
+	m.specMu.Lock()
+	defer m.specMu.Unlock()
+	raw, err := m.cachedJSON()
+	if err != nil {
 		return []Warning{{Where: "document", Message: "build failed: " + err.Error()}}
 	}
 	var out []Warning
@@ -71,33 +78,44 @@ func (m *Mux) Lint() []Warning {
 		}
 	}
 
-	comps := m.lintComponents()
-	names := make([]string, 0, len(comps))
-	for name := range comps {
+	report := m.lintComponents()
+	names := make([]string, 0, len(report.untyped))
+	for name := range report.untyped {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if isCollisionSuffixed(name) {
+		if report.renamed[name] {
 			out = append(out, Warning{Where: "component " + name, Message: "renamed due to a name collision; a SchemaName method gives it a deliberate identifier"})
 		}
-		for _, field := range comps[name] {
+		for _, field := range report.untyped[name] {
 			out = append(out, Warning{Where: "component " + name, Message: "field " + field + " has no schema type; consumers see an unconstrained value (an openapi:\"type=...\" tag pins the wire format)"})
+		}
+		for _, field := range report.exclusive[name] {
+			out = append(out, Warning{Where: "component " + name, Message: "field " + field + " uses an exclusive bound; current Go client generators (ogen, oapi-codegen) reject the numeric 3.1/3.2 form — consumers generating clients should use the 3.0.4 document"})
 		}
 	}
 
-	if !m.cfg.CleanOutput {
-		raw, _ := m.JSON()
-		if strings.Contains(string(raw), `"x-stdocs-type"`) {
-			out = append(out, Warning{Where: "document", Message: "carries x-stdocs-* annotation extensions; WithCleanOutput(true) strips them from published contracts"})
-		}
+	if !m.cfg.CleanOutput &&
+		(strings.Contains(string(raw), `"x-stdocs-type"`) || strings.Contains(string(raw), `"x-stdocs-warning"`)) {
+		out = append(out, Warning{Where: "document", Message: "carries x-stdocs-* annotation extensions; WithCleanOutput(true) strips them from published contracts"})
 	}
 	return out
 }
 
-// lintComponents maps each named component to its untyped field
-// names, rebuilding the same reflection the document build performs.
-func (m *Mux) lintComponents() map[string][]string {
+// lintReport is what lintComponents extracts from a shadow reflection
+// of the document's components.
+type lintReport struct {
+	untyped   map[string][]string // component -> fields with no schema type
+	exclusive map[string][]string // component -> fields with exclusive bounds
+	renamed   map[string]bool     // components that took a collision suffix
+}
+
+// lintComponents rebuilds the same reflection the document build
+// performs — route bodies and responses, then webhooks, in the same
+// order — so component names, renames, and field findings match the
+// emitted document.
+func (m *Mux) lintComponents() lintReport {
 	visible := &registry{routes: m.visibleRoutes()}
 	ref := newConfiguredReflector(m.cfg)
 	for _, rt := range visible.routes {
@@ -110,31 +128,24 @@ func (m *Mux) lintComponents() map[string][]string {
 			}
 		}
 	}
-	out := make(map[string][]string, len(ref.Components()))
+	m.reflectWebhooks(ref)
+	report := lintReport{
+		untyped:   make(map[string][]string, len(ref.Components())),
+		exclusive: make(map[string][]string, len(ref.Components())),
+		renamed:   ref.Renamed(),
+	}
+	exclusiveMatters := m.cfg.Version == OpenAPI31 || m.cfg.Version == OpenAPI32
 	for name, comp := range ref.Components() {
-		var untyped []string
+		report.untyped[name] = nil
 		for _, fieldName := range sortedKeys(comp.Properties) {
 			p := comp.Properties[fieldName]
 			if p.Type == "" && p.Ref == "" {
-				untyped = append(untyped, fieldName)
+				report.untyped[name] = append(report.untyped[name], fieldName)
+			}
+			if exclusiveMatters && (p.ExclusiveMinimum != "" || p.ExclusiveMaximum != "") {
+				report.exclusive[name] = append(report.exclusive[name], fieldName)
 			}
 		}
-		out[name] = untyped
 	}
-	return out
-}
-
-// isCollisionSuffixed reports whether name ends in the _N collision
-// suffix reserveName appends.
-func isCollisionSuffixed(name string) bool {
-	i := strings.LastIndexByte(name, '_')
-	if i < 0 || i == len(name)-1 {
-		return false
-	}
-	for _, r := range name[i+1:] {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
+	return report
 }
