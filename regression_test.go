@@ -1236,3 +1236,45 @@ func TestSpecRichness(t *testing.T) {
 	}()
 	ExternalDocs("", "broken")
 }
+
+// WithMultipartBody documents the standard file-upload shape.
+func TestMultipartBody(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("POST /upload", noop,
+		WithMultipartBody(
+			FilePart("attachment", "The file to upload"),
+			FieldPart("caption", "string", "Optional caption"),
+		),
+	)
+	doc := buildDocMap(t, mux)
+	rb := doc["paths"].(map[string]any)["/upload"].(map[string]any)["post"].(map[string]any)["requestBody"].(map[string]any)
+	content := rb["content"].(map[string]any)
+	mp, ok := content["multipart/form-data"].(map[string]any)
+	if !ok {
+		t.Fatalf("content keys = %v, want multipart/form-data", mapKeysOf(content))
+	}
+	props := mp["schema"].(map[string]any)["properties"].(map[string]any)
+	att := props["attachment"].(map[string]any)
+	if att["type"] != "string" || att["format"] != "binary" {
+		t.Errorf("attachment = %v, want string/binary", att)
+	}
+	if props["caption"].(map[string]any)["description"] != "Optional caption" {
+		t.Errorf("caption description lost")
+	}
+
+	for _, f := range []func(){
+		func() { WithMultipartBody() },
+		func() { WithMultipartBody(FilePart("a", ""), FilePart("a", "")) },
+		func() { FilePart("", "x") },
+		func() { FieldPart("x", "intger", "typo") },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic")
+				}
+			}()
+			f()
+		}()
+	}
+}
