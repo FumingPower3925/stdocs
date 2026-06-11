@@ -428,6 +428,16 @@ func WithSelfURL(selfURL string) Option {
 // are still emitted.
 func WithTag(name, description string) Option {
 	return func(c *Config) {
+		// Merge into an existing declaration (tag names must be
+		// unique in OpenAPI, and WithTagExternalDocs may have created
+		// the entry first — the order of the two options does not
+		// matter).
+		for i := range c.Tags {
+			if c.Tags[i].Name == name {
+				c.Tags[i].Description = description
+				return
+			}
+		}
 		c.Tags = append(c.Tags, TagDecl{Name: name, Description: description})
 	}
 }

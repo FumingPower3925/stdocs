@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1319,5 +1320,135 @@ func TestLint(t *testing.T) {
 	quiet.HandleFunc("GET /ok", noop, Summary("All good"))
 	if w := quiet.Lint(); len(w) != 0 {
 		t.Errorf("clean mux should lint quiet, got %v", w)
+	}
+}
+
+// Concurrent Lint/JSON/Refresh must be safe (was a fatal concurrent
+// map write through visibleRoutes stamping x-internal).
+func TestLintConcurrency(t *testing.T) {
+	type APIError struct {
+		Message string `json:"message"`
+	}
+	mux := New(WithTitle("T"), WithInternal(true), WithDefaultResponse(500, APIError{}))
+	mux.HandleFunc("GET /a", noop, Internal(), Summary("A"))
+	mux.HandleFunc("GET /b", noop, Summary("B"))
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 10 {
+				mux.Lint()
+				mux.JSON()
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// Lint findings from the verification pass: exclusive-bound generator
+// warning on 3.1+, webhook components included, warning-only vendor
+// extensions flagged, and no false collision positives on legit
+// underscore names.
+func TestLintVerificationFindings(t *testing.T) {
+	type Ratio struct {
+		R float64 `json:"r" exclusiveMinimum:"0"`
+	}
+	mux := New(WithTitle("T"), WithVersion(OpenAPI31), WithDefaultResponse(500, Ratio{}))
+	mux.HandleFunc("GET /r", noop, Summary("R"))
+	found := false
+	for _, w := range mux.Lint() {
+		if strings.Contains(w.Message, "exclusive bound") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("3.1 exclusive bounds should produce a generator warning")
+	}
+
+	// 3.0 documents emit the boolean form generators accept: no warning.
+	mux30 := New(WithTitle("T"), WithDefaultResponse(500, Ratio{}))
+	mux30.HandleFunc("GET /r", noop, Summary("R"))
+	for _, w := range mux30.Lint() {
+		if strings.Contains(w.Message, "exclusive bound") {
+			t.Errorf("3.0 must not warn on exclusive bounds: %v", w)
+		}
+	}
+
+	// x-stdocs-warning alone triggers the clean-output advisory.
+	type E struct {
+		Message string `json:"message"`
+	}
+	wmux := New(WithTitle("T"), WithDefaultResponse(500, E{}))
+	wmux.HandleFunc("/anymethod", noop, Summary("Any"))
+	advisory := false
+	for _, w := range wmux.Lint() {
+		if strings.Contains(w.Message, "WithCleanOutput") {
+			advisory = true
+		}
+	}
+	if !advisory {
+		t.Errorf("x-stdocs-warning alone should trigger the clean-output advisory")
+	}
+
+	// A legit underscore-digit type name is not a collision.
+	type User_2 struct { //nolint:revive // deliberate underscore-digit name to probe collision false positives
+		X string `json:"x"`
+	}
+	umux := New(WithTitle("T"), WithDefaultResponse(500, User_2{}))
+	umux.HandleFunc("GET /u", noop, Summary("U"))
+	for _, w := range umux.Lint() {
+		if strings.Contains(w.Message, "collision") {
+			t.Errorf("User_2 without a collision must not warn: %v", w)
+		}
+	}
+}
+
+// Order-independence contracts: WithTag/WithTagExternalDocs in both
+// orders yield one merged tag, and WithBody/WithMultipartBody replace
+// each other in either order without clobbering WithBodyContentType.
+func TestDeclarationOrderContracts(t *testing.T) {
+	for _, order := range [][]Option{
+		{WithTag("tasks", "Task ops"), WithTagExternalDocs("tasks", "https://x.test/t", "")},
+		{WithTagExternalDocs("tasks", "https://x.test/t", ""), WithTag("tasks", "Task ops")},
+	} {
+		mux := New(append([]Option{WithTitle("T")}, order...)...)
+		mux.HandleFunc("GET /tasks", noop)
+		tags := buildDocMap(t, mux)["tags"].([]any)
+		if len(tags) != 1 {
+			t.Fatalf("tags = %d entries, want 1 merged declaration", len(tags))
+		}
+		tag := tags[0].(map[string]any)
+		if tag["description"] != "Task ops" || tag["externalDocs"] == nil {
+			t.Errorf("merged tag = %v", tag)
+		}
+	}
+
+	type Body struct {
+		X string `json:"x"`
+	}
+	// multipart -> WithBody: JSON body wins entirely.
+	m1 := New(WithTitle("T"))
+	m1.HandleFunc("POST /a", noop,
+		WithMultipartBody(FilePart("f", "")),
+		WithBody(Body{}),
+	)
+	rb := buildDocMap(t, m1)["paths"].(map[string]any)["/a"].(map[string]any)["post"].(map[string]any)["requestBody"].(map[string]any)
+	content := rb["content"].(map[string]any)
+	if _, ok := content["application/json"]; !ok {
+		t.Errorf("WithBody after multipart should produce JSON content, got %v", mapKeysOf(content))
+	}
+	if _, ok := content["multipart/form-data"]; ok {
+		t.Errorf("multipart residue after WithBody")
+	}
+	// WithBodyContentType survives a later WithBody.
+	m2 := New(WithTitle("T"))
+	m2.HandleFunc("POST /b", noop,
+		WithBodyContentType("application/xml"),
+		WithBody(Body{}),
+	)
+	rb2 := buildDocMap(t, m2)["paths"].(map[string]any)["/b"].(map[string]any)["post"].(map[string]any)["requestBody"].(map[string]any)
+	if _, ok := rb2["content"].(map[string]any)["application/xml"]; !ok {
+		t.Errorf("explicit WithBodyContentType must survive WithBody")
 	}
 }
