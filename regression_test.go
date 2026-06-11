@@ -1134,3 +1134,34 @@ func TestCleanOutput(t *testing.T) {
 		t.Errorf("custom-method operations must not be dropped by cleaning")
 	}
 }
+
+// WithResponseContentType overrides the response media type,
+// order-independently, and DriftWarn respects the declaration.
+func TestResponseContentType(t *testing.T) {
+	type Report struct {
+		Rows int `json:"rows"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /csv", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/csv")
+		w.Write([]byte("rows\n1\n"))
+	},
+		WithResponseContentType(200, "text/csv"), // before WithResponse: order-independent
+		WithResponse(200, Report{}),
+	)
+	doc := buildDocMap(t, mux)
+	content := doc["paths"].(map[string]any)["/csv"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)
+	if _, ok := content["text/csv"]; !ok {
+		t.Errorf("content keys = %v, want text/csv", mapKeysOf(content))
+	}
+	if _, ok := content["application/json"]; ok {
+		t.Errorf("application/json must be replaced")
+	}
+
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf)
+	driftGet(h, "/csv")
+	if got := warnings(); len(got) != 0 {
+		t.Errorf("a declared text/csv response served as text/csv is not drift: %q", got)
+	}
+}
