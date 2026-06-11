@@ -16,6 +16,26 @@ import (
 	"github.com/FumingPower3925/stdocs/internal/spec/yaml"
 )
 
+// stripVendorKeys removes the stdocs annotation extensions
+// (x-stdocs-type, x-stdocs-warning) from the document in place,
+// recursing through nested objects and arrays.
+// x-stdocs-additionalOperations is kept — on 3.0/3.1 it is the only
+// representation of custom-method operations.
+func stripVendorKeys(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		delete(x, "x-stdocs-type")
+		delete(x, "x-stdocs-warning")
+		for _, child := range x {
+			stripVendorKeys(child)
+		}
+	case []any:
+		for _, child := range x {
+			stripVendorKeys(child)
+		}
+	}
+}
+
 // sortedKeys returns m's keys in ascending order.
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
@@ -148,9 +168,13 @@ func (m *Mux) cachedJSON() ([]byte, error) {
 		return m.specJSON, nil
 	}
 	doc := m.buildDoc()
+	if m.cfg.CleanOutput {
+		stripVendorKeys(doc)
+	}
 	// Run user hooks (WithOpenAPI escape hatch) before marshalling
 	// and before validation — hook-added schemes count as
-	// registered, so their use sites are valid.
+	// registered, so their use sites are valid. They run after the
+	// clean pass, so hook-added content survives it.
 	for _, h := range m.cfg.Hooks {
 		h(doc)
 	}
@@ -238,6 +262,7 @@ func (m *Mux) buildDoc() map[string]any {
 	visible := &registry{routes: m.visibleRoutes()}
 	visible.finalize(m.cfg)
 	ref := schema.NewReflector()
+	ref.NoAutoDescriptions = m.cfg.CleanOutput
 	for _, rt := range visible.routes {
 		if rb := rt.op.RequestBody; rb != nil && rb.BodyValue != nil {
 			rb.Schema = ref.Reflect(rb.BodyValue)
