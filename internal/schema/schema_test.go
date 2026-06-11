@@ -443,20 +443,19 @@ func TestReflectSchema_GenericInstantiation(t *testing.T) {
 	if ints == nil {
 		t.Fatal("ints property missing")
 	}
-	// ints is a $ref to a sanitized component name (the raw
-	// "Box[int]" is not a valid OpenAPI pointer fragment; brackets
-	// are replaced with underscores and trailing underscores are
-	// trimmed).
-	if ints.Ref != "#/components/schemas/schema_Box_int" {
-		t.Errorf("ints.Ref = %q, want #/components/schemas/schema_Box_int", ints.Ref)
+	// ints is a $ref to a simplified component name: package
+	// qualifiers and local-type markers drop, brackets become
+	// underscores (Box[int] -> Box_int).
+	if ints.Ref != "#/components/schemas/Box_int" {
+		t.Errorf("ints.Ref = %q, want #/components/schemas/Box_int", ints.Ref)
 	}
-	boxInt := out["schema_Box_int"]
+	boxInt := out["Box_int"]
 	if boxInt == nil {
-		t.Fatal("schema_Box_int component missing")
+		t.Fatal("Box_int component missing")
 	}
 	v := boxInt.Properties["value"]
 	if v == nil || v.Type != "integer" {
-		t.Errorf("schema_Box_int.value.Type = %v, want integer", v)
+		t.Errorf("Box_int.value.Type = %v, want integer", v)
 	}
 }
 
@@ -1066,5 +1065,78 @@ func TestReflectSchema_ConstraintTagPanics(t *testing.T) {
 			}()
 			tc.reflect()
 		})
+	}
+}
+
+type renamedTask struct {
+	ID string `json:"id"`
+}
+
+func (renamedTask) SchemaName() string { return "Task" }
+
+type ptrNamed struct {
+	X string `json:"x"`
+}
+
+func (*ptrNamed) SchemaName() string { return "Named via pointer!" }
+
+// Component-name control: SchemaName overrides, generic
+// instantiations simplify, collisions still suffix.
+func TestComponentNaming(t *testing.T) {
+	r := NewReflector()
+	s := r.Reflect(renamedTask{})
+	if s.Ref != "#/components/schemas/Task" {
+		t.Errorf("SchemaName override: ref = %q", s.Ref)
+	}
+	if _, ok := r.Components()["Task"]; !ok {
+		t.Errorf("component should register under the override name")
+	}
+
+	// Pointer-receiver namers work too, and the result is sanitized.
+	r2 := NewReflector()
+	s2 := r2.Reflect(ptrNamed{})
+	if s2.Ref != "#/components/schemas/Named_via_pointer" {
+		t.Errorf("pointer-receiver SchemaName: ref = %q", s2.Ref)
+	}
+}
+
+func TestGenericComponentNaming(t *testing.T) {
+	type Task struct {
+		ID string `json:"id"`
+	}
+	type Page[T any] struct {
+		Items []T `json:"items"`
+	}
+	r := NewReflector()
+	s := r.Reflect(Page[Task]{})
+	if s.Ref != "#/components/schemas/Page_Task" {
+		t.Errorf("generic ref = %q, want Page_Task", s.Ref)
+	}
+
+	// Nested instantiation.
+	type List[T any] struct {
+		All []T `json:"all"`
+	}
+	r2 := NewReflector()
+	s3 := r2.Reflect(Page[List[Task]]{})
+	if s3.Ref != "#/components/schemas/Page_List_Task" {
+		t.Errorf("nested generic ref = %q, want Page_List_Task", s3.Ref)
+	}
+}
+
+func TestSimplifyTypeExpr(t *testing.T) {
+	cases := map[string]string{
+		"Task":                       "Task",
+		"main.Task":                  "Task",
+		"github.com/x/pkg.Task":      "Task",
+		"Page[main.Task]":            "Page_Task",
+		"Page[main.List[main.Task]]": "Page_List_Task",
+		"Pair[main.A,main.B]":        "Pair_A_B",
+		"Pair[main.A, other.B]":      "Pair_A_B",
+	}
+	for in, want := range cases {
+		if got := simplifyTypeExpr(in); got != want {
+			t.Errorf("simplifyTypeExpr(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
