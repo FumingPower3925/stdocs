@@ -166,27 +166,46 @@ jobs:
           	Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
           }
 
+          // GenTask is CreateTask without exclusive bounds: Go client
+          // generators (ogen, oapi-codegen) reject the numeric 2020-12
+          // exclusiveMinimum/exclusiveMaximum form that 3.1 documents
+          // correctly emit, so the generator corpus omits them (Lint
+          // documents the same limitation to users).
+          type GenTask struct {
+          	Title    string   `json:"title" doc:"Short title" minLength:"1" maxLength:"200" pattern:"^.+$"`
+          	Priority int      `json:"priority" minimum:"1" maximum:"5" default:"3" example:"2"`
+          	Status   *string  `json:"status" enum:"pending,active,done"`
+          	Tags     []string `json:"tags" minItems:"1" maxItems:"10" uniqueItems:"true"`
+          }
+
+          func build(v stdocs.SpecVersion, body any) []byte {
+          	mux := stdocs.New(
+          		stdocs.WithTitle("Validation API"),
+          		stdocs.WithVersion(v),
+          		stdocs.WithBearerAuth("bearerAuth", "JWT"),
+          		stdocs.WithDefaultResponse(500, APIError{}),
+          	)
+          	mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {},
+          		stdocs.WithParams(ListParams{}))
+          	mux.HandleFunc("POST /tasks", func(w http.ResponseWriter, r *http.Request) {},
+          		stdocs.WithBody(body),
+          		stdocs.WithResponse(201, Task{}),
+          		stdocs.WithSecurity("bearerAuth"))
+          	raw, err := mux.JSON()
+          	if err != nil {
+          		panic(err)
+          	}
+          	return raw
+          }
+
           func main() {
           	for _, v := range []stdocs.SpecVersion{stdocs.OpenAPI30, stdocs.OpenAPI31, stdocs.OpenAPI32} {
-          		mux := stdocs.New(
-          			stdocs.WithTitle("Validation API"),
-          			stdocs.WithVersion(v),
-          			stdocs.WithBearerAuth("bearerAuth", "JWT"),
-          			stdocs.WithDefaultResponse(500, APIError{}),
-          		)
-          		mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {},
-          			stdocs.WithParams(ListParams{}))
-          		mux.HandleFunc("POST /tasks", func(w http.ResponseWriter, r *http.Request) {},
-          			stdocs.WithBody(CreateTask{}),
-          			stdocs.WithResponse(201, Task{}),
-          			stdocs.WithSecurity("bearerAuth"))
-          		raw, err := mux.JSON()
-          		if err != nil {
+          		if err := os.WriteFile("/tmp/spec-"+string(v)+".json", build(v, CreateTask{}), 0o644); err != nil {
           			panic(err)
           		}
-          		if err := os.WriteFile("/tmp/spec-"+string(v)+".json", raw, 0o644); err != nil {
-          			panic(err)
-          		}
+          	}
+          	if err := os.WriteFile("/tmp/spec-generators.json", build(stdocs.OpenAPI31, GenTask{}), 0o644); err != nil {
+          		panic(err)
           	}
           }
           EOF
@@ -197,26 +216,35 @@ jobs:
           python-version: "3.x"
       - name: Validate 3.0 and 3.1 with openapi-spec-validator
         run: |
-          pip install --quiet openapi-spec-validator
+          pip install --quiet 'openapi-spec-validator~=0.7.1'
           python -m openapi_spec_validator /tmp/spec-3.0.4.json
           python -m openapi_spec_validator /tmp/spec-3.1.2.json
-      - name: Consumability — generate a typed client from the 3.1 document with ogen
+      - name: Consumability — generate typed clients with ogen
         run: |
           mkdir -p /tmp/ogencheck && cd /tmp/ogencheck
-          printf 'module ogencheck\n\ngo 1.25.0\n' > go.mod
-          go run github.com/ogen-go/ogen/cmd/ogen@v1.8.1 --target ./out --clean /tmp/spec-3.1.2.json
-          test -s out/oas_client_gen.go && echo "ogen generated a client from the stdocs document"
+          # The full-corpus 3.0.4 document (generators accept the
+          # draft-4 boolean exclusive bounds) and the generator-corpus
+          # 3.1 document (anyOf nullables; no exclusive bounds, which
+          # generators reject in their numeric 2020-12 form).
+          go run github.com/ogen-go/ogen/cmd/ogen@v1.8.1 --target ./out30 --clean /tmp/spec-3.0.4.json
+          test -s out30/oas_client_gen.go
+          go run github.com/ogen-go/ogen/cmd/ogen@v1.8.1 --target ./out31 --clean /tmp/spec-generators.json
+          test -s out31/oas_client_gen.go
+          echo "ogen generated typed clients from both documents"
       - name: Validate 3.2 against the official OpenAPI 3.2 JSON Schema
         run: |
-          pip install --quiet "jsonschema[format]" requests
+          pip install --quiet 'jsonschema[format]~=4.23' 'requests~=2.32'
           python - <<'EOF'
           import json, jsonschema, requests
 
-          schema = requests.get(
+          resp = requests.get(
               "https://spec.openapis.org/oas/3.2/schema/2025-09-17",
               headers={"Accept": "application/schema+json"},
               timeout=30,
-          ).json()
+          )
+          resp.raise_for_status()
+          schema = resp.json()
+          assert schema.get("$id", "").startswith("https://spec.openapis.org/oas/3.2/schema"), schema.get("$id")
           doc = json.load(open("/tmp/spec-3.2.0.json"))
           jsonschema.validate(doc, schema)
           print("3.2.0 valid against", schema.get("$id", "official schema"))
