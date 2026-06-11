@@ -220,7 +220,15 @@
 // contracts, [WithCleanOutput] strips the stdocs annotation
 // extensions and auto-generated descriptions, and [Mux.Lint] reports
 // advisory consumability findings (operations without error
-// responses, untyped fields, collision-suffixed names). [WithOpenAPI]
+// responses, untyped fields, collision-suffixed names).
+//
+// Generator notes: current Go client generators (ogen, oapi-codegen)
+// reject the numeric exclusive-bound form that 3.1/3.2 correctly
+// emit — generate from the 3.0.4 document when exclusiveMinimum or
+// exclusiveMaximum tags are in play ([Mux.Lint] warns about this),
+// and oapi-codegen consumes 3.0 documents only. A document-level
+// default response ([WithDefaultResponse] with status 0) enables
+// ogen's typed convenient-error handling. [WithOpenAPI]
 // registers a hook that may mutate the document before caching, as
 // an escape hatch for anything stdocs does not expose; [Mux.Refresh]
 // forces a rebuild.
