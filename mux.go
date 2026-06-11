@@ -315,23 +315,18 @@ func (m *Mux) buildDoc() map[string]any {
 
 // visibleRoutes returns the routes that the current visibility policy
 // documents: Hidden routes never appear; Internal routes appear only
-// when WithInternal(true) was set, and then carry the conventional
-// "x-internal": true extension so spec-filtering tools can recognise
-// them.
+// when WithInternal(true) was set. The shown internal routes gain
+// their conventional "x-internal": true extension during finalize —
+// this function is a pure filter so concurrent readers (Lint,
+// DriftWarn) can call it without synchronizing writes.
 func (m *Mux) visibleRoutes() []*route {
 	out := make([]*route, 0, len(m.reg.routes))
 	for _, rt := range m.reg.routes {
 		if rt.op.Hidden {
 			continue
 		}
-		if rt.op.Internal {
-			if !m.cfg.ShowInternal {
-				continue
-			}
-			if rt.op.Extensions == nil {
-				rt.op.Extensions = map[string]any{}
-			}
-			rt.op.Extensions["x-internal"] = true
+		if rt.op.Internal && !m.cfg.ShowInternal {
+			continue
 		}
 		out = append(out, rt)
 	}
