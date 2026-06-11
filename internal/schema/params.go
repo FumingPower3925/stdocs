@@ -54,7 +54,15 @@ func ParamFields(v any) []ParamField {
 		if name == "-" {
 			continue
 		}
-		fs := r.reflect(f.Type)
+		var fs *Schema
+		switch override := f.Tag.Get("openapi"); override {
+		case "":
+			fs = r.reflect(f.Type)
+		case "-":
+			continue
+		default:
+			fs = overrideSchema(override, f.Name)
+		}
 		if fs == nil {
 			panic("stdocs: params field " + f.Name + " has a type that cannot be represented in JSON")
 		}

@@ -94,8 +94,10 @@ type Schema struct {
 // The Schema model is version-agnostic (the emitters render Nullable and
 // $ref wrappers per OpenAPI version), so a Reflector needs no version.
 type Reflector struct {
-	seen map[reflect.Type]string // type -> component schema name
-	out  map[string]*Schema      // accumulated components
+	seen     map[reflect.Type]string // type -> component schema name
+	out      map[string]*Schema      // accumulated components
+	reserved map[string]bool         // names handed out, stored or not
+	renamed  map[string]bool         // names that took a collision suffix
 
 	// NoAutoDescriptions suppresses the "Generated from Go type ..."
 	// fallback descriptions on named components. User-supplied doc:
@@ -106,8 +108,10 @@ type Reflector struct {
 // NewReflector returns an empty Reflector.
 func NewReflector() *Reflector {
 	return &Reflector{
-		seen: make(map[reflect.Type]string),
-		out:  make(map[string]*Schema),
+		seen:     make(map[reflect.Type]string),
+		out:      make(map[string]*Schema),
+		reserved: make(map[string]bool),
+		renamed:  make(map[string]bool),
 	}
 }
 
@@ -142,14 +146,29 @@ func ReflectSchema(value any) (*Schema, map[string]*Schema) {
 // reserveName returns a unique component name based on claimed. If
 // claimed is already in use, a numeric suffix is appended (e.g.
 // "User" -> "User", then "User" again -> "User_2", "User_3"...).
+// Reservation is tracked separately from storage: a type reflected
+// from within another type's build (whose schema is not stored yet)
+// must still hold its name, or the two would silently share one
+// component.
 func (r *Reflector) reserveName(claimed string) string {
 	name := claimed
 	for i := 2; ; i++ {
-		if _, exists := r.out[name]; !exists {
+		if !r.reserved[name] {
+			r.reserved[name] = true
+			if name != claimed {
+				r.renamed[name] = true
+			}
 			return name
 		}
 		name = claimed + "_" + strconv.Itoa(i)
 	}
+}
+
+// Renamed reports the component names that took a collision suffix
+// during reflection — genuine renames, not types that merely contain
+// an underscore-digit pattern.
+func (r *Reflector) Renamed() map[string]bool {
+	return r.renamed
 }
 
 // sanitizeComponentName returns a name suitable for use as a JSON
@@ -382,8 +401,38 @@ func (r *Reflector) componentNameFor(t reflect.Type) string {
 
 // schemaNameOf returns t's self-declared component name, when the
 // type implements interface{ SchemaName() string } on its value or
-// pointer receiver, and "" otherwise.
+// pointer receiver, and "" otherwise. A method merely promoted from
+// an embedded field names the EMBEDDED type, not t — Go's method
+// promotion would otherwise silently rename (and alias) every type
+// that embeds a named one — so promoted names are ignored and t
+// falls back to its own type name.
 func schemaNameOf(t reflect.Type) string {
+	name := ownSchemaName(t)
+	if name == "" {
+		return ""
+	}
+	if t.Kind() == reflect.Struct {
+		for i := range t.NumField() {
+			f := t.Field(i)
+			if !f.Anonymous {
+				continue
+			}
+			ft := f.Type
+			for ft.Kind() == reflect.Ptr {
+				ft = ft.Elem()
+			}
+			if ownSchemaName(ft) == name {
+				// Same answer as the embedded type: promoted, not
+				// t's own declaration.
+				return ""
+			}
+		}
+	}
+	return name
+}
+
+// ownSchemaName calls SchemaName on t's value or pointer receiver.
+func ownSchemaName(t reflect.Type) string {
 	type namer interface{ SchemaName() string }
 	if n, ok := reflect.New(t).Elem().Interface().(namer); ok {
 		return n.SchemaName()
@@ -537,21 +586,29 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	// It is resolved before reflection so an overridden struct-typed
 	// field does not register a phantom component.
 	var fieldSchema *Schema
+	overridden := false
 	switch override := f.Tag.Get("openapi"); override {
 	case "":
 		fieldSchema = r.reflect(f.Type)
 	case "-":
 		return fieldMeta{}, false
 	default:
+		if f.Anonymous && tagName == "" {
+			// encoding/json flattens this embedding; a type override
+			// would document a property that never exists on the wire.
+			panic("stdocs: openapi type override on embedded field " + f.Name +
+				" cannot describe a flattened embedding; name the field with a json tag or move the override to its fields")
+		}
 		fieldSchema = overrideSchema(override, f.Name)
 		fieldSchema.Nullable = f.Type.Kind() == reflect.Ptr
+		overridden = true
 	}
 	if fieldSchema == nil {
 		return fieldMeta{}, false
 	}
 	// The json ",string" option wraps integer, number, boolean, and
 	// string values in a JSON string on the wire.
-	if slices.Contains(opts, "string") {
+	if slices.Contains(opts, "string") && !overridden {
 		switch fieldSchema.Type {
 		case "integer", "number", "boolean":
 			fieldSchema = &Schema{
@@ -717,6 +774,7 @@ func overrideSchema(override, fieldName string) *Schema {
 	s := &Schema{}
 	for _, kv := range strings.Split(override, ",") {
 		key, value, found := strings.Cut(strings.TrimSpace(kv), "=")
+		value = strings.TrimSpace(value)
 		if !found || value == "" {
 			panic("stdocs: openapi tag entry " + strconv.Quote(kv) + " on field " + fieldName + ` must be key=value (e.g. "type=string,format=date-time")`)
 		}

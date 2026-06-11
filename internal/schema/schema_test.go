@@ -1221,3 +1221,117 @@ func TestOpenAPIFieldOverridePanics(t *testing.T) {
 		})
 	}
 }
+
+type namedBase struct {
+	B string `json:"b"`
+}
+
+func (namedBase) SchemaName() string { return "BaseSchema" }
+
+type derivedFromNamed struct {
+	namedBase
+	D string `json:"d"`
+}
+
+type clobberInner struct {
+	X string `json:"x"`
+}
+
+type clobberWrapper struct {
+	W clobberInner `json:"w"`
+}
+
+func (clobberWrapper) SchemaName() string { return "clobberInner" }
+
+// A name reserved for a parent must not be clobbered by a same-named
+// child reflected during the parent's own build, and a SchemaName
+// promoted from an embedded field names the embedded type only.
+func TestComponentNameClobbering(t *testing.T) {
+	// Promoted SchemaName: Derived embeds namedBase and inherits its
+	// method; Derived must NOT be named BaseSchema.
+	r := NewReflector()
+	s := r.Reflect(derivedFromNamed{})
+	if s.Ref != "#/components/schemas/derivedFromNamed" {
+		t.Errorf("derived ref = %q; promoted SchemaName must not rename the outer type", s.Ref)
+	}
+	r.Reflect(namedBase{})
+	if _, ok := r.Components()["BaseSchema"]; !ok {
+		t.Errorf("the embedded type keeps its own SchemaName")
+	}
+	base := r.Components()["BaseSchema"]
+	if _, hasD := base.Properties["d"]; hasD {
+		t.Errorf("BaseSchema must describe namedBase, not the derived type")
+	}
+
+	// Explicit SchemaName colliding with a contained type: both
+	// components must exist, distinctly.
+	r2 := NewReflector()
+	s2 := r2.Reflect(clobberWrapper{})
+	if s2.Ref != "#/components/schemas/clobberInner" {
+		t.Errorf("wrapper ref = %q", s2.Ref)
+	}
+	comps := r2.Components()
+	if len(comps) != 2 {
+		t.Fatalf("components = %v, want wrapper and suffixed inner", mapKeys(comps))
+	}
+	inner, ok := comps["clobberInner_2"]
+	if !ok {
+		t.Fatalf("inner type should take the collision suffix; got %v", mapKeys(comps))
+	}
+	if _, hasX := inner.Properties["x"]; !hasX {
+		t.Errorf("suffixed component must hold the inner type's schema")
+	}
+	wrapper := comps["clobberInner"]
+	if wrapper.Properties["w"].Ref != "#/components/schemas/clobberInner_2" {
+		t.Errorf("wrapper field must ref the suffixed inner component, got %q (a self-ref means the schema was clobbered)", wrapper.Properties["w"].Ref)
+	}
+	if !r2.Renamed()["clobberInner_2"] {
+		t.Errorf("Renamed() should record the genuine rename")
+	}
+}
+
+// The openapi override wins over the json ",string" rewrite, params
+// structs honor the tag, values are trimmed, and embedded type
+// overrides panic.
+func TestOpenAPIOverrideInteractions(t *testing.T) {
+	type T struct {
+		N int64  `json:"n,string" openapi:"type=integer,format=int64"`
+		W string `json:"w" openapi:"type=string,format= date-time "`
+	}
+	_, out := schema30(t, T{})
+	n := out["T"].Properties["n"]
+	if n.Type != "integer" || n.Format != "int64" {
+		t.Errorf("override must beat the ,string rewrite: %+v", n)
+	}
+	if out["T"].Properties["w"].Format != "date-time" {
+		t.Errorf("override values must be trimmed: %q", out["T"].Properties["w"].Format)
+	}
+
+	type P struct {
+		At      clobberInner `query:"at" openapi:"type=string,format=date-time"`
+		Skipped string       `query:"skip" openapi:"-"`
+	}
+	fields := ParamFields(P{})
+	if len(fields) != 1 {
+		t.Fatalf("params = %d, want 1 (openapi:\"-\" skips)", len(fields))
+	}
+	if fields[0].Schema.Type != "string" || fields[0].Schema.Format != "date-time" {
+		t.Errorf("params override lost: %+v", fields[0].Schema)
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Errorf("embedded type override should panic")
+		}
+	}()
+	type E struct {
+		ExportedEmbed `openapi:"type=string"`
+	}
+	ReflectSchema(E{})
+}
+
+// ExportedEmbed exists to test openapi overrides on exported embedded
+// fields (unexported embeds take the promoted-inline path instead).
+type ExportedEmbed struct {
+	Inner string `json:"inner"`
+}
