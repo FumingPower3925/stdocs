@@ -138,12 +138,14 @@
 //
 // [WithResponse] declares a response per status; response-decorating
 // opts ([WithResponseDescription], [WithResponseHeader],
-// [WithResponseExample]) are order-independent. Status 0 declares
-// the OpenAPI "default"
+// [WithResponseExample], [WithResponseContentType]) are
+// order-independent. Status 0 declares the OpenAPI "default"
 // response — the catch-all consumers fall back to for undeclared
 // statuses. [WithDefaultResponse] declares a response once at the
 // mux level (typically the shared error envelope) and documents it
 // on every operation that does not declare the status itself.
+// [WithMultipartBody] documents multipart/form-data file uploads
+// from [FilePart] and [FieldPart] declarations.
 //
 // # Visibility
 //
@@ -214,10 +216,14 @@
 // spec endpoints. Output is deterministic — sorted keys, stable
 // operationIds and component names across rebuilds — so the spec
 // works as a committed artifact: golden-file tests, contract diffing
-// in PRs, linting, and client generation. [WithOpenAPI] registers a
-// hook that may mutate the document before caching, as an escape
-// hatch for anything stdocs does not expose; [Mux.Refresh] forces a
-// rebuild.
+// in PRs, linting, and client generation. For documents published as
+// contracts, [WithCleanOutput] strips the stdocs annotation
+// extensions and auto-generated descriptions, and [Mux.Lint] reports
+// advisory consumability findings (operations without error
+// responses, untyped fields, collision-suffixed names). [WithOpenAPI]
+// registers a hook that may mutate the document before caching, as
+// an escape hatch for anything stdocs does not expose; [Mux.Refresh]
+// forces a rebuild.
 //
 // # OpenAPI versions
 //
