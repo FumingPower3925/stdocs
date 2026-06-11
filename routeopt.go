@@ -77,6 +77,15 @@ func Internal() RouteOpt {
 	return func(r *route) { r.op.Internal = true }
 }
 
+// ExternalDocs links the operation to external documentation. The
+// URL is required and must parse as a URI.
+func ExternalDocs(url, description string) RouteOpt {
+	mustValidDocsURL("ExternalDocs", url)
+	return func(r *route) {
+		r.op.ExternalDocs = &spec.ExternalDocs{URL: url, Description: description}
+	}
+}
+
 // OperationID sets the operationId. If not set, stdocs auto-derives one
 // from the method and path.
 func OperationID(id string) RouteOpt {

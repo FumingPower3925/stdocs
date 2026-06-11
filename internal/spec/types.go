@@ -26,6 +26,17 @@ type Contact struct {
 type License struct {
 	Name string
 	URL  string
+	// Identifier is an SPDX license expression (3.1+; ignored on 3.0,
+	// where the field does not exist). Mutually exclusive with URL
+	// per the OpenAPI spec.
+	Identifier string
+}
+
+// ExternalDocs is the OpenAPI "externalDocumentation" object, usable
+// at the document, tag, and operation levels.
+type ExternalDocs struct {
+	URL         string
+	Description string
 }
 
 // Server is the OpenAPI "server" object.
@@ -38,8 +49,9 @@ type Server struct {
 // operations (via stdocs.Tags) are auto-collected; this type is for the
 // optional extended description.
 type TagDecl struct {
-	Name        string
-	Description string
+	Name         string
+	Description  string
+	ExternalDocs *ExternalDocs
 }
 
 // Param describes a single OpenAPI parameter (path, query, header, or cookie).
@@ -105,6 +117,9 @@ type Operation struct {
 	// this operation, overriding any global security requirement.
 	// See WithNoSecurity in the root package.
 	NoSecurity bool
+	// ExternalDocs links to external documentation for this
+	// operation.
+	ExternalDocs *ExternalDocs
 	// Hidden, when true, excludes the operation from the generated
 	// document unconditionally. See Hidden in the root package.
 	Hidden bool
@@ -139,6 +154,7 @@ type SpecInput struct {
 	Info            Info
 	Servers         []Server
 	Tags            []TagDecl
+	ExternalDocs    *ExternalDocs
 	Paths           []PathItem
 	Components      map[string]*schema.Schema
 	Version         version.SpecVersion
