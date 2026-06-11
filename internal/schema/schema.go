@@ -358,15 +358,86 @@ func (r *Reflector) reflectStruct(t reflect.Type, nullable bool) *Schema {
 }
 
 // componentNameFor picks a unique component name for t. The selection
-// rules are documented on reflectStruct.
+// rules are documented on reflectStruct, with two additions:
+//
+//   - a type may name itself by implementing
+//     interface{ SchemaName() string } (value or pointer receiver) —
+//     the override wins over every automatic rule, and
+//   - generic instantiations derive a readable name from the type
+//     expression with package qualifiers dropped
+//     (Page[main.Task] → Page_Task) instead of the fully qualified
+//     sanitization (main_Page_main_Task).
+//
+// Collisions still get numeric suffixes in every case.
 func (r *Reflector) componentNameFor(t reflect.Type) string {
-	candidate := t.Name()
-	if !isValidComponentName(candidate) {
-		// Generic instantiations (or anything with illegal chars)
-		// fall back to a sanitized form of the full type expression.
-		candidate = sanitizeComponentName(t.String())
+	candidate := schemaNameOf(t)
+	if candidate == "" {
+		candidate = t.Name()
+		if !isValidComponentName(candidate) {
+			candidate = simplifyTypeExpr(candidate)
+		}
 	}
-	return r.reserveName(candidate)
+	return r.reserveName(sanitizeComponentName(candidate))
+}
+
+// schemaNameOf returns t's self-declared component name, when the
+// type implements interface{ SchemaName() string } on its value or
+// pointer receiver, and "" otherwise.
+func schemaNameOf(t reflect.Type) string {
+	type namer interface{ SchemaName() string }
+	if n, ok := reflect.New(t).Elem().Interface().(namer); ok {
+		return n.SchemaName()
+	}
+	if n, ok := reflect.New(t).Interface().(namer); ok {
+		return n.SchemaName()
+	}
+	return ""
+}
+
+// simplifyTypeExpr reduces a type expression to bare identifiers:
+// package qualifiers drop ("main.Task" → "Task") and generic
+// brackets become underscores ("Page[main.List[main.Task]]" →
+// "Page_List_Task"). Top-level commas separate type arguments.
+func simplifyTypeExpr(expr string) string {
+	base, args, hasArgs := strings.Cut(expr, "[")
+	name := lastIdentifier(base)
+	if !hasArgs {
+		return name
+	}
+	args = strings.TrimSuffix(args, "]")
+	depth := 0
+	start := 0
+	parts := []string{name}
+	for i, r := range args {
+		switch r {
+		case '[':
+			depth++
+		case ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, simplifyTypeExpr(strings.TrimSpace(args[start:i])))
+				start = i + 1
+			}
+		}
+	}
+	parts = append(parts, simplifyTypeExpr(strings.TrimSpace(args[start:])))
+	return strings.Join(parts, "_")
+}
+
+// lastIdentifier strips package paths and qualifiers from a type
+// name: "github.com/x/pkg.Task" and "main.Task" both become "Task".
+// The runtime's function-local type marker ("Task·54") is dropped
+// too; if two distinct local types share a name, the collision
+// suffixing disambiguates them.
+func lastIdentifier(s string) string {
+	if i := strings.LastIndexByte(s, '.'); i >= 0 {
+		s = s[i+1:]
+	}
+	if i := strings.Index(s, "·"); i >= 0 {
+		s = s[:i]
+	}
+	return s
 }
 
 // isValidComponentName reports whether s is a valid OpenAPI 3.x
