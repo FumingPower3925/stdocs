@@ -188,6 +188,20 @@
 // handler returns a status the document does not declare or serves a
 // JSON-documented response with another content type.
 //
+// # Component names
+//
+// Schema component names come from the Go type name; same-named
+// types from different packages get numeric suffixes, and generic
+// instantiations simplify to readable identifiers
+// (Page[main.Task] → Page_Task). A type can name itself — useful
+// because component names become class names in generated clients —
+// by implementing:
+//
+//	func (TaskPage) SchemaName() string { return "TaskPage" }
+//
+// The override wins over every automatic rule; collisions are still
+// suffixed.
+//
 // # Using the spec downstream
 //
 // [Mux.JSON] and [Mux.YAML] return the exact bytes served at the
