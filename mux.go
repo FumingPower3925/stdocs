@@ -288,6 +288,7 @@ func (m *Mux) buildDoc() map[string]any {
 		Info:            m.cfg.Info,
 		Servers:         m.cfg.Servers,
 		Tags:            m.cfg.Tags,
+		ExternalDocs:    m.cfg.ExternalDocs,
 		Paths:           paths,
 		Version:         m.cfg.Version,
 		SecuritySchemes: m.cfg.Security,

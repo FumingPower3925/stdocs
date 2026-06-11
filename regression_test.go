@@ -1165,3 +1165,74 @@ func TestResponseContentType(t *testing.T) {
 		t.Errorf("a declared text/csv response served as text/csv is not drift: %q", got)
 	}
 }
+
+// The richness batch: externalDocs at all three levels, the SPDX
+// identifier with 3.0 degradation, and operationId templating.
+func TestSpecRichness(t *testing.T) {
+	build := func(v SpecVersion) map[string]any {
+		mux := New(
+			WithTitle("T"),
+			WithVersion(v),
+			WithSPDXLicense("Apache 2.0", "Apache-2.0"),
+			WithExternalDocs("https://docs.example.com", "Full guide"),
+			WithTag("Tasks", "Task management"),
+			WithTagExternalDocs("Tasks", "https://docs.example.com/tasks", ""),
+			WithTagExternalDocs("Orphan", "https://docs.example.com/orphan", ""),
+			WithOperationIDFunc(func(method, path string) string {
+				return strings.ToLower(method) + strings.ReplaceAll(path, "/", ".")
+			}),
+		)
+		mux.HandleFunc("GET /tasks", noop,
+			ExternalDocs("https://docs.example.com/list", "List docs"))
+		mux.HandleFunc("GET /named", noop, OperationID("explicit"))
+		return buildDocMap(t, mux)
+	}
+
+	doc := build(OpenAPI31)
+	if doc["externalDocs"].(map[string]any)["url"] != "https://docs.example.com" {
+		t.Errorf("document externalDocs missing")
+	}
+	lic := doc["info"].(map[string]any)["license"].(map[string]any)
+	if lic["identifier"] != "Apache-2.0" {
+		t.Errorf("3.1 license = %v, want SPDX identifier", lic)
+	}
+	tags := doc["tags"].([]any)
+	found := map[string]bool{}
+	for _, tg := range tags {
+		tm := tg.(map[string]any)
+		if ed, ok := tm["externalDocs"].(map[string]any); ok {
+			found[tm["name"].(string)] = strings.HasPrefix(ed["url"].(string), "https://docs.example.com/")
+		}
+	}
+	if !found["Tasks"] || !found["Orphan"] {
+		t.Errorf("tag externalDocs = %v; both declared-first and docs-first tags must carry links", found)
+	}
+	op := doc["paths"].(map[string]any)["/tasks"].(map[string]any)["get"].(map[string]any)
+	if op["externalDocs"].(map[string]any)["url"] != "https://docs.example.com/list" {
+		t.Errorf("operation externalDocs missing")
+	}
+	if op["operationId"] != "get.tasks" {
+		t.Errorf("operationId = %v, want templated get.tasks", op["operationId"])
+	}
+	named := doc["paths"].(map[string]any)["/named"].(map[string]any)["get"].(map[string]any)
+	if named["operationId"] != "explicit" {
+		t.Errorf("explicit OperationID must win over the func")
+	}
+
+	// 3.0 degrades the SPDX license to name-only.
+	lic30 := build(OpenAPI30)["info"].(map[string]any)["license"].(map[string]any)
+	if _, ok := lic30["identifier"]; ok {
+		t.Errorf("3.0 must not emit license.identifier")
+	}
+	if lic30["name"] != "Apache 2.0" {
+		t.Errorf("3.0 license name lost: %v", lic30)
+	}
+
+	// Required-URL validation.
+	defer func() {
+		if recover() == nil {
+			t.Errorf("empty externalDocs URL should panic")
+		}
+	}()
+	ExternalDocs("", "broken")
+}
