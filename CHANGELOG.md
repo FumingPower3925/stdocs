@@ -9,6 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.4.0] - 2026-06-11
+
+### Added
+
+- `WithCleanOutput(true)` strips the stdocs annotation extensions
+  (`x-stdocs-type`, `x-stdocs-warning`) and the auto-generated
+  "Generated from Go type ..." descriptions for documents published
+  as contracts. `x-stdocs-additionalOperations` survives — it is the
+  only 3.0/3.1 representation of custom-method operations.
+- Component-name control: a `SchemaName() string` method names a
+  type's component (value or pointer receiver), and generic
+  instantiations simplify to readable identifiers
+  (`Page[main.Task]` → `Page_Task`).
+- The `openapi` field tag: `openapi:"-"` excludes a field from the
+  document; `openapi:"type=string,format=date-time"` replaces the
+  reflected schema when reflection cannot infer the wire format.
+  Constraint and doc tags compose on top.
+- `WithResponseContentType(status, ct)` — the response-side
+  counterpart of `WithBodyContentType`; `DriftWarn` treats declared
+  non-JSON content types as the contract.
+- `WithMultipartBody` + `FilePart`/`FieldPart` document
+  multipart/form-data file uploads.
+- Spec richness: `WithExternalDocs` (document), `WithTagExternalDocs`
+  (tags, order-independent with `WithTag`), the `ExternalDocs` route
+  opt (operations), `WithSPDXLicense` (3.1+ `identifier`, degrading
+  to name-only on 3.0), and `WithOperationIDFunc` for operationId
+  style control.
+- `Mux.Lint()` reports advisory consumability findings: operations
+  without error responses or summaries, untyped schema fields,
+  collision-suffixed component names, custom-method extension
+  carriers, and vendor extensions in non-clean output.
+- `MIGRATING.md` (from swaggo/swag, FastAPI, and typed-handler
+  frameworks, with mapping tables) and `COOKBOOK.md` (pagination,
+  auth + errors, mixed hand-written/generated documents), linked from
+  the READMEs.
+
+### Changed
+
+- Nullable scalars on 3.1/3.2 emit the `anyOf` form instead of a
+  `type` array: both are valid JSON Schema 2020-12, but real-world
+  generators digest `anyOf` more reliably (ogen rejects the array
+  form), and nullable `$ref` use sites already emitted it. Verified:
+  ogen now generates a typed client from a stdocs 3.1 document, and
+  CI gains that consumability gate.
+- Generic component names changed from fully-qualified sanitizations
+  (`main_Page_main_Task`) to the simplified form (`Page_Task`).
+  Spec-affecting for documents containing generic types.
+
 ## [0.3.0] - 2026-06-11
 
 ### Added
@@ -183,7 +231,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/FumingPower3925/stdocs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/FumingPower3925/stdocs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/FumingPower3925/stdocs/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/FumingPower3925/stdocs/compare/v0.1.0...v0.1.1
