@@ -1278,3 +1278,46 @@ func TestMultipartBody(t *testing.T) {
 		}()
 	}
 }
+
+// Lint reports the advisory consumability findings.
+func TestLint(t *testing.T) {
+	type Holder struct {
+		Value any `json:"value"`
+	}
+	type APIError struct {
+		Message string `json:"message"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /bare", func(w http.ResponseWriter, r *http.Request) {}) // no error response, no summary
+	mux.HandleFunc("POST /h", noop, WithBody(Holder{}),                          // untyped field
+		Summary("Hold"), WithResponse(0, APIError{})) // has default: no error warning
+	warnings := mux.Lint()
+	byMessage := func(substr string) int {
+		n := 0
+		for _, w := range warnings {
+			if strings.Contains(w.String(), substr) {
+				n++
+			}
+		}
+		return n
+	}
+	if byMessage("documents no error response") != 1 {
+		t.Errorf("want exactly one no-error-response warning (GET /bare), got %d in %v", byMessage("documents no error response"), warnings)
+	}
+	if byMessage("has no summary") < 1 {
+		t.Errorf("want a no-summary warning for the closure route")
+	}
+	if byMessage("has no schema type") != 1 {
+		t.Errorf("want the untyped-field warning for Holder.value")
+	}
+	if byMessage("x-stdocs-") < 1 {
+		t.Errorf("want the vendor-extensions advisory")
+	}
+
+	// A fully documented clean mux lints quiet.
+	quiet := New(WithTitle("T"), WithCleanOutput(true), WithDefaultResponse(500, APIError{}))
+	quiet.HandleFunc("GET /ok", noop, Summary("All good"))
+	if w := quiet.Lint(); len(w) != 0 {
+		t.Errorf("clean mux should lint quiet, got %v", w)
+	}
+}

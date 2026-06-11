@@ -16,6 +16,14 @@ import (
 	"github.com/FumingPower3925/stdocs/internal/spec/yaml"
 )
 
+// newConfiguredReflector builds a schema reflector honoring the
+// mux-level output configuration.
+func newConfiguredReflector(cfg *Config) *schema.Reflector {
+	ref := schema.NewReflector()
+	ref.NoAutoDescriptions = cfg.CleanOutput
+	return ref
+}
+
 // stripVendorKeys removes the stdocs annotation extensions
 // (x-stdocs-type, x-stdocs-warning) from the document in place,
 // recursing through nested objects and arrays.
@@ -261,8 +269,7 @@ func (m *Mux) buildDoc() map[string]any {
 	// registered.
 	visible := &registry{routes: m.visibleRoutes()}
 	visible.finalize(m.cfg)
-	ref := schema.NewReflector()
-	ref.NoAutoDescriptions = m.cfg.CleanOutput
+	ref := newConfiguredReflector(m.cfg)
 	for _, rt := range visible.routes {
 		if rb := rt.op.RequestBody; rb != nil && rb.BodyValue != nil {
 			rb.Schema = ref.Reflect(rb.BodyValue)
