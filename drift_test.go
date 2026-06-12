@@ -246,3 +246,26 @@ func TestDriftSampleBodies(t *testing.T) {
 		}
 	}
 }
+
+// v0.4.2 user-sim finding: declared non-JSON content types are
+// contracts too.
+func TestDriftRawContentTypeContract(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /csv-wrong", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("a,b\n"))
+	}, Summary("W"), WithRawResponse(200, "text/csv"))
+	mux.HandleFunc("GET /csv-right", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Write([]byte("a,b\n"))
+	}, Summary("R"), WithRawResponse(200, "text/csv"))
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf)
+	driftGet(h, "/csv-wrong")
+	driftGet(h, "/csv-wrong")
+	driftGet(h, "/csv-right")
+	got := warnings()
+	if len(got) != 1 || !strings.Contains(got[0], "text/plain") || !strings.Contains(got[0], "text/csv") {
+		t.Errorf("declared CSV served as plain must warn exactly once: %q", got)
+	}
+}

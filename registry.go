@@ -357,10 +357,12 @@ func defaultOperationID(p *pattern.Pattern) string {
 		var v string
 		switch s.Kind {
 		case pattern.KindLiteral:
-			// Hyphenated path segments would otherwise produce
-			// mixed-separator ids (get_reconcile-status); generators
-			// turn ids into method names, so normalize.
+			// Hyphens and dots in path segments would otherwise
+			// produce mixed-separator ids (get_reconcile-status,
+			// get_export_transactions.csv); generators turn ids into
+			// method names, so normalize both.
 			v = strings.ReplaceAll(s.Value, "-", "_")
+			v = strings.ReplaceAll(v, ".", "_")
 		case pattern.KindWildcard:
 			v = "by_" + s.Value
 		case pattern.KindMulti:

@@ -290,11 +290,16 @@ func WithResponseContentType(status int, contentType string) RouteOpt {
 //	legacyErrors := stdocs.Opts(stdocs.WithFallbackResponse(500, LegacyError{}))
 //	modernErrors := stdocs.Opts(stdocs.WithFallbackResponse(500, Envelope{}))
 //
-// An explicit WithResponse for the status wins, the first fallback
-// per status wins over later ones, and route fallbacks win over
-// mux-level defaults (the narrower scope is more specific). Pass
-// status 0 for the OpenAPI "default" response. Statuses outside
-// 100-599 (other than 0) panic.
+// An explicit WithResponse (even with a nil body) or WithRawResponse
+// for the status wins; entries merely materialized by decorators
+// (WithResponseDescription and friends) still take the fallback
+// body. The first fallback per status wins over later ones, and
+// route fallbacks win over mux-level defaults (the narrower scope is
+// more specific). A 401 fallback also supplies the body of the
+// automatic 401 on secured routes — and applies unconditionally on
+// unsecured ones, so keep 401 fallbacks in bundles that pair them
+// with WithSecurity. Pass status 0 for the OpenAPI "default"
+// response. Statuses outside 100-599 (other than 0) panic.
 func WithFallbackResponse(status int, body any) RouteOpt {
 	if status != 0 && (status < 100 || status > 599) {
 		panic("stdocs: WithFallbackResponse status must be 0 (default) or 100-599, got " + itoa(status))

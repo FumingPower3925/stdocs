@@ -423,7 +423,18 @@ func (e *emitter) buildResponses(responses map[string]*Response) map[string]any 
 		if len(r.Headers) > 0 {
 			hdrs := make(map[string]any, len(r.Headers))
 			for name, sch := range r.Headers {
-				hdrs[name] = map[string]any{"schema": e.buildSchema(sch)}
+				// The description belongs to the Header Object, not its
+				// schema — UIs render the header-level field.
+				hm := map[string]any{}
+				if sch != nil && sch.Description != "" {
+					hm["description"] = sch.Description
+					stripped := *sch
+					stripped.Description = ""
+					hm["schema"] = e.buildSchema(&stripped)
+				} else {
+					hm["schema"] = e.buildSchema(sch)
+				}
+				hdrs[name] = hm
 			}
 			m["headers"] = hdrs
 		}
