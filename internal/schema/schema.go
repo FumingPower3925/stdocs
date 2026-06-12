@@ -512,11 +512,13 @@ func isValidComponentName(s string) bool {
 
 // fieldMeta is the per-field result of inspection: the JSON name, the
 // reflected schema, whether the field is flattened into the parent
-// (untagged embedded), and whether it is a required candidate.
+// (untagged embedded), whether its name came from a json tag, and
+// whether it is a required candidate.
 type fieldMeta struct {
 	name        string
 	fieldSchema *Schema
 	embedded    bool
+	tagged      bool
 	// requiredCandidate is true if the field could be required
 	// (no omitempty/omitzero and not a pointer). The dedup pass
 	// decides what actually makes it into s.Required.
@@ -528,27 +530,134 @@ func (r *Reflector) buildStructSchema(t reflect.Type, name string, nullable bool
 	if name != "" && !r.NoAutoDescriptions {
 		s.Description = "Generated from Go type " + t.String() + "."
 	}
-
+	order, byName := r.collectFields(t)
 	var required []string
-
-	for i := range t.NumField() {
-		f := t.Field(i)
-		meta, ok := r.inspectField(f)
+	for _, n := range order {
+		winner, ok := dominantField(byName[n].cands)
 		if !ok {
 			continue
 		}
-		if meta.embedded {
-			if r.inlineEmbedded(s, meta.fieldSchema, &required) {
-				continue
-			}
-		}
-		s.Properties[meta.name] = meta.fieldSchema
-		if meta.requiredCandidate {
-			required = append(required, meta.name)
+		s.Properties[n] = winner.fieldSchema
+		if winner.requiredCandidate {
+			required = append(required, n)
 		}
 	}
 	s.Required = dedupRequired(required, s.Properties)
 	return s
+}
+
+// fieldEntry collects a name's dominance candidates at the shallowest
+// depth the name was seen.
+type fieldEntry struct {
+	depth int
+	cands []fieldMeta
+}
+
+// collectFields walks the embedding tree breadth-first, following
+// encoding/json's dominance rules so the documented shape is what
+// json.Marshal serves: a shallower field hides deeper ones, and
+// same-depth rivals are gathered for dominantField to settle. Names
+// come back in first-encounter order so Required stays deterministic.
+func (r *Reflector) collectFields(t reflect.Type) ([]string, map[string]*fieldEntry) {
+	var order []string
+	byName := map[string]*fieldEntry{}
+	level := []reflect.Type{t}
+	visited := map[reflect.Type]bool{}
+	for depth := 0; len(level) > 0; depth++ {
+		level = r.walkLevel(level, depth, visited, byName, &order)
+	}
+	return order, byName
+}
+
+// walkLevel gathers one depth's candidates and returns the next
+// level's types. A type embedded twice at one depth has its fields
+// added twice, so the diamond ties with itself and drops — exactly
+// encoding/json's behavior.
+func (r *Reflector) walkLevel(level []reflect.Type, depth int, visited map[reflect.Type]bool, byName map[string]*fieldEntry, order *[]string) []reflect.Type {
+	var next []reflect.Type
+	levelCount := map[reflect.Type]int{}
+	for _, lt := range level {
+		levelCount[lt]++
+	}
+	for _, lt := range level {
+		if visited[lt] {
+			continue
+		}
+		visited[lt] = true
+		duplicated := levelCount[lt] > 1
+		for i := range lt.NumField() {
+			f := lt.Field(i)
+			meta, ok := r.inspectField(f)
+			if !ok {
+				continue
+			}
+			if meta.embedded {
+				if et, flattens := r.embeddedType(f, meta); flattens {
+					next = append(next, et)
+					if duplicated {
+						next = append(next, et)
+					}
+					continue
+				}
+				// An embedded non-object (a named scalar, an
+				// interface) is a regular field named by its type,
+				// exactly as encoding/json marshals it.
+				meta.name = f.Name
+			}
+			e := byName[meta.name]
+			if e == nil {
+				e = &fieldEntry{depth: depth}
+				byName[meta.name] = e
+				*order = append(*order, meta.name)
+			} else if e.depth < depth {
+				continue // hidden by a shallower field or conflict
+			}
+			e.cands = append(e.cands, meta)
+			if duplicated {
+				e.cands = append(e.cands, meta)
+			}
+		}
+	}
+	return next
+}
+
+// embeddedType resolves a flattened embed to the struct type whose
+// fields join the walk one level deeper; flattens is false when the
+// embed is not an inlineable object.
+func (r *Reflector) embeddedType(f reflect.StructField, meta fieldMeta) (reflect.Type, bool) {
+	inner := meta.fieldSchema
+	if inner.Ref != "" {
+		if resolved := r.resolveRef(inner.Ref); resolved != nil {
+			inner = resolved
+		}
+	}
+	if !inner.isInlineable() {
+		return nil, false
+	}
+	et := f.Type
+	for et.Kind() == reflect.Ptr {
+		et = et.Elem()
+	}
+	return et, true
+}
+
+// dominantField applies encoding/json's same-depth tie rule: a single
+// candidate wins, a lone tagged candidate beats untagged rivals, and
+// everything else is a conflict that drops the field.
+func dominantField(cands []fieldMeta) (fieldMeta, bool) {
+	if len(cands) == 1 {
+		return cands[0], true
+	}
+	var tagged []fieldMeta
+	for _, c := range cands {
+		if c.tagged {
+			tagged = append(tagged, c)
+		}
+	}
+	if len(tagged) == 1 {
+		return tagged[0], true
+	}
+	return fieldMeta{}, false
 }
 
 // inspectField returns a fieldMeta for a struct field, or
@@ -558,14 +667,7 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	tag := f.Tag.Get("json")
 	tagName, opts := parseJSONTag(tag)
 	if !f.IsExported() {
-		// encoding/json promotes the exported fields of an embedded
-		// unexported struct type (but not of an embedded unexported
-		// pointer type); everything else unexported is skipped.
-		if f.Anonymous && f.Type.Kind() == reflect.Struct && tagName == "" {
-			inner := r.buildStructSchema(f.Type, "", false)
-			return fieldMeta{fieldSchema: inner, embedded: true}, true
-		}
-		return fieldMeta{}, false
+		return r.unexportedEmbed(f, tagName)
 	}
 	if tagName == "-" {
 		return fieldMeta{}, false
@@ -649,8 +751,24 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 		// has no name; `Inner `json:"inner"`` marshals as a nested
 		// object under "inner".
 		embedded:          f.Anonymous && tagName == "",
+		tagged:            tagName != "",
 		requiredCandidate: requiredFor(f, opts, f.Name),
 	}, true
+}
+
+// unexportedEmbed handles the one unexported case encoding/json
+// promotes: an anonymous struct — pointer or not, it dereferences
+// before the struct-kind check — without a json name. Everything
+// else unexported is skipped.
+func (r *Reflector) unexportedEmbed(f reflect.StructField, tagName string) (fieldMeta, bool) {
+	et := f.Type
+	if et.Kind() == reflect.Ptr {
+		et = et.Elem()
+	}
+	if f.Anonymous && et.Kind() == reflect.Struct && tagName == "" {
+		return fieldMeta{fieldSchema: r.buildStructSchema(et, "", false), embedded: true}, true
+	}
+	return fieldMeta{}, false
 }
 
 // requiredFor decides a field's required-ness: the encoding/json
@@ -973,33 +1091,9 @@ func parseScalar(value, schemaType, tagName, fieldName string) any {
 	return value
 }
 
-// inlineEmbedded flattens an anonymous struct's properties into s.
-// Returns true if flattening happened (caller should skip further
-// processing of the field); false if the embedded schema was not an
-// object with properties, in which case the caller should treat the
-// field as a regular property.
-func (r *Reflector) inlineEmbedded(s *Schema, fieldSchema *Schema, required *[]string) bool {
-	inner := fieldSchema
-	if inner.Ref != "" {
-		if resolved := r.resolveRef(inner.Ref); resolved != nil {
-			inner = resolved
-		}
-	}
-	if !inner.isInlineable() {
-		return false
-	}
-	for k, v := range inner.Properties {
-		if _, exists := s.Properties[k]; !exists {
-			s.Properties[k] = v
-		}
-	}
-	*required = append(*required, inner.Required...)
-	return true
-}
-
 // isInlineable reports whether a schema can have its properties
 // merged into a parent (i.e. it is an object with at least one
-// property). Used by inlineEmbedded.
+// property) — the test for whether an embedded field flattens.
 func (s *Schema) isInlineable() bool {
 	return s != nil && s.Type == "object" && len(s.Properties) > 0
 }

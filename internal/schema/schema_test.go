@@ -3,6 +3,8 @@ package schema
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1442,5 +1444,128 @@ func TestOpenAPINullableEntry(t *testing.T) {
 			}()
 			f()
 		}()
+	}
+}
+
+// v0.5.1 (#70): embedding dominance follows encoding/json exactly —
+// every case is asserted against json.Marshal's actual output, so
+// agreement is the test.
+func TestEmbeddingDominance(t *testing.T) {
+	resolve := func(v any) *Schema {
+		root, comps := ReflectSchema(v)
+		s := root
+		if s != nil && s.Ref != "" {
+			s = comps[strings.TrimPrefix(s.Ref, "#/components/schemas/")]
+		}
+		if s == nil {
+			t.Fatalf("no schema for %T", v)
+		}
+		return s
+	}
+	jsonKeys := func(v any) map[string]bool {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("marshal %T: %v", v, err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("unmarshal %T: %v", v, err)
+		}
+		keys := make(map[string]bool, len(m))
+		for k := range m {
+			keys[k] = true
+		}
+		return keys
+	}
+	agree := func(name string, v any) *Schema {
+		t.Helper()
+		s := resolve(v)
+		keys := jsonKeys(v)
+		for k := range s.Properties {
+			if !keys[k] {
+				t.Errorf("%s: schema documents %q but json.Marshal does not emit it (wire keys %v)", name, k, keys)
+			}
+		}
+		for k := range keys {
+			if _, ok := s.Properties[k]; !ok {
+				t.Errorf("%s: json.Marshal emits %q but the schema omits it", name, k)
+			}
+		}
+		return s
+	}
+
+	type emA struct {
+		X string `json:"x"`
+		Y string `json:"y"`
+	}
+	type emB struct {
+		X int `json:"x"`
+	}
+	type conflict struct {
+		emA
+		emB //nolint:govet // the repeated json tag is the collision under test
+	}
+	s := agree("equal-depth conflict", conflict{emA{X: "a", Y: "y"}, emB{X: 1}})
+	if slices.Contains(s.Required, "x") {
+		t.Errorf("a dropped field must not be required: %v", s.Required)
+	}
+
+	type emC struct{ V string }
+	type emD struct {
+		V int `json:"V"`
+	}
+	type tagWins struct {
+		emC
+		emD
+	}
+	if s := agree("tagged beats untagged", tagWins{emC{"s"}, emD{9}}); s.Properties["V"] == nil || s.Properties["V"].Type != "integer" {
+		t.Errorf("the tagged int must win: %+v", s.Properties["V"])
+	}
+
+	type hidden struct {
+		Sec string `json:"s"`
+	}
+	type holder struct {
+		*hidden
+		P string `json:"p"`
+	}
+	if s := agree("unexported pointer embed", holder{&hidden{"sec"}, "p"}); s.Properties["s"] == nil {
+		t.Errorf("exported fields of an unexported pointer embed must promote")
+	}
+
+	type core struct {
+		ID string `json:"id"`
+	}
+	type viaB struct{ core }
+	type viaC struct{ core }
+	type diamond struct {
+		viaB
+		viaC
+	}
+	agree("diamond drop", diamond{viaB{core{"a"}}, viaC{core{"b"}}})
+
+	type crossDepth struct {
+		viaB // id at depth 2
+		emB  // x at depth 1... and another id at depth 1 wins below
+	}
+	_ = crossDepth{}
+	type shallowID struct {
+		ID int `json:"id"`
+	}
+	type depthRace struct {
+		viaB // -> core -> id (depth 2)
+		shallowID
+	}
+	if s := agree("shallower wins across branches", depthRace{viaB{core{"a"}}, shallowID{7}}); s.Properties["id"] == nil || s.Properties["id"].Type != "integer" {
+		t.Errorf("the depth-1 int id must beat the depth-2 string id: %+v", s.Properties["id"])
+	}
+
+	type shadowReq struct {
+		core         // id required at depth 1
+		ID   *string `json:"id,omitempty"` // optional at depth 0 wins
+	}
+	outer := "y"
+	if s := agree("shadowed required must not leak", shadowReq{core{"x"}, &outer}); slices.Contains(s.Required, "id") {
+		t.Errorf("the winning optional field must not inherit the loser's required-ness: %v", s.Required)
 	}
 }
