@@ -302,3 +302,121 @@ func TestDriftWarnObservedViaQualifier(t *testing.T) {
 		}
 	}
 }
+
+func TestDriftNotify(t *testing.T) {
+	type Task struct {
+		ID   string `json:"id" required:"true"`
+		Name string `json:"name"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"name":"a","secret":true}`)) // id missing, secret extra
+	}, Summary("L"), WithResponse(200, Task{}))
+	mux.HandleFunc("GET /surprise", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}, Summary("S"))
+	mux.HandleFunc("GET /wrongct", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte("plain"))
+	}, Summary("C"), WithResponse(200, Task{}))
+
+	var mu sync.Mutex
+	var found []DriftFinding
+	var second int
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf,
+		DriftSampleBodies(),
+		DriftNotify(func(f DriftFinding) {
+			mu.Lock()
+			defer mu.Unlock()
+			found = append(found, f)
+		}),
+		DriftNotify(func(DriftFinding) { mu.Lock(); second++; mu.Unlock() }),
+	)
+	driftGet(h, "/tasks")
+	driftGet(h, "/tasks") // deduplicated: no second delivery
+	driftGet(h, "/surprise")
+	driftGet(h, "/wrongct")
+
+	mu.Lock()
+	defer mu.Unlock()
+	byCode := map[string]DriftFinding{}
+	for _, f := range found {
+		byCode[f.Code] = f
+	}
+	if len(found) != 4 || len(byCode) != 4 {
+		t.Fatalf("findings = %+v, want 4 distinct codes", found)
+	}
+	if second != 4 {
+		t.Errorf("second callback got %d deliveries, want 4", second)
+	}
+	if f := byCode["missing-required-field"]; f.Route != "GET /tasks" || f.Status != 200 || f.Field != "id" {
+		t.Errorf("missing-required-field = %+v", f)
+	}
+	if f := byCode["undocumented-fields"]; f.Route != "GET /tasks" || f.Status != 200 || f.Field != "" {
+		t.Errorf("undocumented-fields = %+v", f)
+	}
+	if f := byCode["undeclared-status"]; f.Route != "GET /surprise" || f.Status != 418 {
+		t.Errorf("undeclared-status = %+v", f)
+	}
+	if f := byCode["content-type-mismatch"]; f.Route != "GET /wrongct" || f.Status != 200 {
+		t.Errorf("content-type-mismatch = %+v", f)
+	}
+	// Each Message matches its log line minus the prefix, so gates and
+	// logs never tell different stories.
+	got := warnings()
+	if len(got) != 4 {
+		t.Fatalf("log lines = %d (%q), want 4", len(got), got)
+	}
+	for _, line := range got {
+		rest, ok := strings.CutPrefix(line, "stdocs drift: ")
+		if !ok {
+			t.Fatalf("log line %q lacks the prefix", line)
+		}
+		matched := false
+		for _, f := range found {
+			if f.Message == rest {
+				matched = true
+			}
+		}
+		if !matched {
+			t.Errorf("log line %q has no matching finding message", line)
+		}
+	}
+}
+
+func TestDriftNotifyBuildFailed(t *testing.T) {
+	mux := New(WithTitle("T"), WithOpenAPI(func(doc map[string]any) {
+		// An out-of-band edit referencing an unregistered scheme is the
+		// one way a build fails after registration-time validation.
+		doc["security"] = []any{map[string]any{"ghost": []any{}}}
+	}))
+	mux.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {}, Summary("X"))
+
+	var mu sync.Mutex
+	var found []DriftFinding
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf, DriftNotify(func(f DriftFinding) {
+		// Callbacks run outside the build lock, so reaching back into
+		// the document — the natural move for a gate that wants Lint
+		// findings next to drift findings — must not deadlock.
+		mux.Lint()
+		mu.Lock()
+		defer mu.Unlock()
+		found = append(found, f)
+	}))
+	driftGet(h, "/x")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(found) != 1 || found[0].Code != "build-failed" || found[0].Route != "" || found[0].Status != 0 {
+		t.Fatalf("findings = %+v, want one build-failed", found)
+	}
+	if !strings.Contains(found[0].Message, "ghost") {
+		t.Errorf("Message = %q, want the build error", found[0].Message)
+	}
+	if got := warnings(); len(got) != 1 || !strings.Contains(got[0], "build failed") {
+		t.Errorf("log = %q", got)
+	}
+}
