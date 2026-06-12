@@ -165,6 +165,11 @@ func (m *Mux) validateLateRoute(rt *route) {
 			ref.Reflect(resp.BodyValue)
 		}
 	}
+	for _, fb := range rt.fallbacks {
+		if fb.Body != nil {
+			ref.Reflect(fb.Body)
+		}
+	}
 }
 
 // underDocsPrefix reports whether path is the docs prefix itself or

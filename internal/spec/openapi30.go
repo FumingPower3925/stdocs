@@ -73,7 +73,9 @@ func buildSchema30(s *schema.Schema) map[string]any {
 	if s.Description != "" {
 		m["description"] = s.Description
 	}
-	if s.Nullable {
+	if s.Nullable && s.Type != "" {
+		// nullable is only meaningful next to a type in 3.0; untyped
+		// schemas accept null anyway (3.1/3.2 are silent here too).
 		m["nullable"] = true
 	}
 	if s.Type == "object" {

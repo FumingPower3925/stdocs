@@ -579,6 +579,11 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 		ft = ft.Elem()
 	}
 	if ft.Kind() == reflect.Chan || ft.Kind() == reflect.Func || ft.Kind() == reflect.UnsafePointer {
+		if tag := f.Tag.Get("openapi"); tag != "" && tag != "-" {
+			// The tag promises documentation the field cannot have —
+			// silent dropping would hide the mistake.
+			panic("stdocs: openapi tag on field " + f.Name + " cannot apply; the field type is not representable in JSON (tag it openapi:\"-\" to silence)")
+		}
 		return fieldMeta{}, false
 	}
 	// The openapi tag is the per-field escape hatch: "-" excludes the
@@ -824,14 +829,17 @@ func lengthConstraint(tag reflect.StructTag, name, wantType, schemaType, fieldNa
 func splitNullableEntry(override, fieldName string) (nullable bool, rest string) {
 	var kept []string
 	for _, entry := range strings.Split(override, ",") {
-		if strings.TrimSpace(entry) == "nullable" {
+		switch strings.TrimSpace(entry) {
+		case "nullable":
 			if nullable {
 				panic("stdocs: openapi tag on field " + fieldName + " repeats nullable")
 			}
 			nullable = true
-			continue
+		case "":
+			panic("stdocs: openapi tag on field " + fieldName + " has an empty entry (stray comma)")
+		default:
+			kept = append(kept, entry)
 		}
-		kept = append(kept, entry)
 	}
 	return nullable, strings.Join(kept, ",")
 }
@@ -859,6 +867,8 @@ func overrideSchema(override, fieldName string) *Schema {
 			}
 		case "format":
 			s.Format = value
+		case "nullable":
+			panic("stdocs: openapi nullable takes no value; write openapi:\"nullable\" (field " + fieldName + ")")
 		default:
 			panic("stdocs: openapi tag on field " + fieldName + " has unknown key " + strconv.Quote(key) + `; supported keys are "type" and "format"`)
 		}
