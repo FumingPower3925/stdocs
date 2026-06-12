@@ -267,7 +267,10 @@
 // contracts, [WithCleanOutput] strips the stdocs annotation
 // extensions and auto-generated descriptions, and [Mux.Lint] reports
 // advisory consumability findings (operations without error
-// responses, untyped fields, collision-suffixed names).
+// responses, untyped fields, collision-suffixed names). Determinism
+// holds within a release; upgrading stdocs itself may legitimately
+// change the emitted bytes, so regenerate golden files when bumping
+// the dependency and review the diff like any contract change.
 //
 // Generator notes: current Go client generators (ogen, oapi-codegen)
 // reject the numeric exclusive-bound form that 3.1/3.2 correctly
