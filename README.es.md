@@ -51,7 +51,7 @@ El mismo documento generado, mostrado por cada una de las cuatro UI incluidas �
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requiere Go 1.25 o posterior. La referencia completa también está disponible offline una vez el módulo está en tu `go.mod`: `go doc github.com/FumingPower3925/stdocs`. stdocs sigue la misma política de soporte que el proyecto Go — las dos releases más recientes, actualmente 1.25 y 1.26 — y la CI ejecuta la suite completa de tests en cada patch release de ambas. Los patrones de ruta que stdocs documenta (`"GET /users/{id}"`) son la sintaxis método+ruta que `net/http.ServeMux` incorporó en Go 1.22.
+Requiere Go 1.25 o posterior. La referencia completa también está disponible offline en cuanto un archivo fuente importa el módulo (ejecuta `go mod tidy` tras añadir el import): `go doc github.com/FumingPower3925/stdocs`. stdocs sigue la misma política de soporte que el proyecto Go — las dos releases más recientes, actualmente 1.25 y 1.26 — y la CI ejecuta la suite completa de tests en cada patch release de ambas. Los patrones de ruta que stdocs documenta (`"GET /users/{id}"`) son la sintaxis método+ruta que `net/http.ServeMux` incorporó en Go 1.22.
 
 ## Uso
 
