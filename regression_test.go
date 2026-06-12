@@ -1635,3 +1635,43 @@ func TestHostScopedPatterns(t *testing.T) {
 		t.Errorf("host routing must be unaffected: %d", rr.Code)
 	}
 }
+
+// v0.4.1: every Lint finding carries a stable code; the new
+// advisories fire.
+func TestLintCodesAndNewAdvisories(t *testing.T) {
+	type Contradiction struct {
+		Country string `json:"country" default:"ES"` // required (no omitempty) + defaulted
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("POST /c", noop, Summary("C"), WithBody(Contradiction{}),
+		WithResponse(400, nil), OperationID("explicit_7"))
+	byCode := map[string]int{}
+	for _, w := range mux.Lint() {
+		if w.Code == "" {
+			t.Errorf("finding without a code: %v", w)
+		}
+		byCode[w.Code]++
+	}
+	if byCode["required-with-default"] != 1 {
+		t.Errorf("required-with-default advisory missing: %v", byCode)
+	}
+	if byCode["auto-descriptions"] != 1 {
+		t.Errorf("auto-descriptions advisory missing: %v", byCode)
+	}
+	if byCode["dangling-id-suffix"] != 1 {
+		t.Errorf("dangling-id-suffix advisory missing (explicit_7 has no explicit base): %v", byCode)
+	}
+
+	// Clean output silences the description advisory; omitempty
+	// silences the contradiction.
+	type Fine struct {
+		Country string `json:"country,omitempty" default:"ES"`
+	}
+	quiet := New(WithTitle("T"), WithCleanOutput(true))
+	quiet.HandleFunc("POST /c", noop, Summary("C"), WithBody(Fine{}), WithResponse(400, nil))
+	for _, w := range quiet.Lint() {
+		if w.Code == "required-with-default" || w.Code == "auto-descriptions" {
+			t.Errorf("unexpected advisory on the clean mux: %v", w)
+		}
+	}
+}
