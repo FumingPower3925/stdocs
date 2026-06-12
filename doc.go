@@ -119,9 +119,12 @@
 //
 // When reflection cannot infer a field's wire format, the openapi
 // tag is the per-field escape hatch: openapi:"-" excludes the field
-// from the document (JSON serialization is unaffected), and
+// from the document (JSON serialization is unaffected),
 // openapi:"type=string,format=date-time" replaces the reflected
-// schema entirely — constraint and doc tags still compose on top.
+// schema entirely — constraint and doc tags still compose on top —
+// and a bare openapi:"nullable" stacks with reflection, decoupling
+// wire-level null from Go pointers (with required:"true", that is
+// required-but-nullable without changing the Go type).
 //
 // # Parameters
 //
@@ -155,7 +158,14 @@
 // mux level (typically the shared error envelope) and documents it
 // on every operation that does not declare the status itself.
 // [WithMultipartBody] documents multipart/form-data file uploads
-// from [FilePart] and [FieldPart] declarations.
+// from [FilePart] and [FieldPart] declarations. [WithRawResponse]
+// documents raw responses (CSV, plain text, downloads) as a
+// string-typed body under a given content type in one opt, and
+// [WithFallbackResponse] is the route-scoped counterpart of
+// [WithDefaultResponse] — built for [Opts] bundles, so codebases
+// with several error-shape eras declare one fallback per era
+// (explicit declarations win, then route fallbacks, then mux
+// defaults).
 //
 // # Visibility
 //
@@ -229,7 +239,9 @@
 // restrict what they may do — never use it to grant access.
 // [DriftWarn] wraps the mux in a development aid that warns when a
 // handler returns a status the document does not declare or serves a
-// JSON-documented response with another content type.
+// JSON-documented response with another content type; with
+// [DriftSampleBodies] it additionally compares response bodies'
+// top-level keys against the documented schema.
 //
 // # Component names
 //
