@@ -1472,3 +1472,76 @@ func TestOptionalOrderAndHyphenIDs(t *testing.T) {
 		t.Errorf("operationId = %v, want get_internal_reconcile_status", op["operationId"])
 	}
 }
+
+// v0.4.1: routes registered after a build appear on the next read —
+// no manual Refresh needed — and repeated rebuilds stay stable.
+func TestLateRegistrationRebuild(t *testing.T) {
+	type APIError struct {
+		Message string `json:"message"`
+	}
+	mux := New(WithTitle("T"), WithDefaultResponse(500, APIError{}))
+	mux.HandleFunc("GET /a", noop, Summary("A"))
+	doc1 := buildDocMap(t, mux)
+	if _, ok := doc1["paths"].(map[string]any)["/a"]; !ok {
+		t.Fatal("first build missing /a")
+	}
+	mux.HandleFunc("GET /late", noop, Summary("Late"))
+	doc2 := buildDocMap(t, mux)
+	late, ok := doc2["paths"].(map[string]any)["/late"].(map[string]any)
+	if !ok {
+		t.Fatal("late registration missing after rebuild")
+	}
+	op := late["get"].(map[string]any)
+	if op["summary"] != "Late" {
+		t.Errorf("late route not finalized: %v", op)
+	}
+	if _, has500 := op["responses"].(map[string]any)["500"]; !has500 {
+		t.Errorf("late route missing mux-level default response")
+	}
+	// Lint sees the fresh document too.
+	for _, w := range mux.Lint() {
+		if strings.Contains(w.Where, "/late") && strings.Contains(w.Message, "no error response") {
+			t.Errorf("Lint linted a stale build: %v", w)
+		}
+	}
+	// Stability: a third read without changes is byte-identical.
+	b1, _ := mux.JSON()
+	b2, _ := mux.JSON()
+	if !bytes.Equal(b1, b2) {
+		t.Errorf("rebuilds must be stable")
+	}
+}
+
+// v0.4.1: Mount auto-registers embedded assets and builds eagerly so
+// tag panics fire at startup.
+func TestMountEagerAndAssets(t *testing.T) {
+	// Eager build: a bad constraint tag panics at Mount, not at the
+	// first docs request.
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Errorf("Mount should surface tag panics eagerly")
+			}
+		}()
+		type Bad struct {
+			N int `json:"n" minLength:"1"`
+		}
+		mux := New(WithTitle("T"))
+		mux.HandleFunc("POST /b", noop, WithBody(Bad{}))
+		mux.Mount()
+	}()
+
+	// Assets handler from the config registers under the prefix.
+	served := false
+	mux := New(WithTitle("T"))
+	mux.Config().Assets = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		served = true
+		w.Write([]byte("js"))
+	})
+	mux.Mount()
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest("GET", "/docs/_assets/bundle.js", nil))
+	if rr.Code != http.StatusOK || !served {
+		t.Errorf("assets route not auto-registered: %d served=%v", rr.Code, served)
+	}
+}

@@ -73,6 +73,9 @@ type Mux struct {
 	// cached spec bytes, lazy-built on first call.
 	specJSON []byte
 	specYAML []byte
+	// builtGen is the registry generation the cached spec was built
+	// from; see registry.gen.
+	builtGen uint64
 	specMu   sync.Mutex
 
 	// mounted guards Mount against double registration.
@@ -154,7 +157,7 @@ func (m *Mux) JSON() ([]byte, error) {
 func (m *Mux) YAML() ([]byte, error) {
 	m.specMu.Lock()
 	defer m.specMu.Unlock()
-	if m.specYAML != nil {
+	if m.specYAML != nil && m.builtGen == m.reg.gen {
 		return m.specYAML, nil
 	}
 	jsonBytes, err := m.cachedJSON()
@@ -170,11 +173,14 @@ func (m *Mux) YAML() ([]byte, error) {
 }
 
 // cachedJSON returns the JSON bytes, building and caching them on the
-// first call. The caller must hold m.specMu.
+// first call and rebuilding when routes were registered since the
+// last build. The caller must hold m.specMu.
 func (m *Mux) cachedJSON() ([]byte, error) {
-	if m.specJSON != nil {
+	if m.specJSON != nil && m.builtGen == m.reg.gen {
 		return m.specJSON, nil
 	}
+	m.specJSON = nil
+	m.specYAML = nil
 	doc := m.buildDoc()
 	if m.cfg.CleanOutput {
 		stripVendorKeys(doc)
@@ -194,6 +200,7 @@ func (m *Mux) cachedJSON() ([]byte, error) {
 		return nil, err
 	}
 	m.specJSON = b
+	m.builtGen = m.reg.gen
 	return b, nil
 }
 
@@ -418,7 +425,22 @@ func (m *Mux) Mount(enabled ...bool) {
 	m.ServeMux.Handle("GET "+prefix+"/openapi.json", docs)
 	m.ServeMux.Handle("GET "+prefix+"/openapi.yaml", docs)
 	m.ServeMux.Handle("GET "+prefix+"/", docs)
+	// Embedded UI sub-packages provide their asset bundle through the
+	// config; registering it here means the documented happy path —
+	// WithUI() + Mount() — works without a second registration line
+	// (a missed one used to render a silently blank page).
+	if m.cfg.Assets != nil {
+		m.ServeMux.Handle("GET "+prefix+"/_assets/",
+			http.StripPrefix(prefix+"/_assets/", m.cfg.Assets))
+	}
 	m.mounted = true
+
+	// Build the document eagerly: fail-fast panics from invalid
+	// constraint or params tags belong at startup, not inside the
+	// first docs request days later. Build *errors* (an unregistered
+	// security scheme) stay with the endpoint, which serves the
+	// reason as a 500 — only panics escape here.
+	_, _ = m.JSON()
 }
 
 // Docs returns an http.Handler that serves the docs UI and the OpenAPI
