@@ -172,12 +172,15 @@ jobs:
           // generators (ogen, oapi-codegen) reject the numeric 2020-12
           // exclusiveMinimum/exclusiveMaximum form that 3.1 documents
           // correctly emit, so the generator corpus omits them (Lint
-          // documents the same limitation to users).
+          // documents the same limitation to users). Window pairs
+          // nullability with a default — the anyOf form ogen accepts
+          // since v1.17.0 — so the pin proves it stays consumable.
           type GenTask struct {
           	Title    string   `json:"title" doc:"Short title" minLength:"1" maxLength:"200" pattern:"^.+$"`
           	Priority int      `json:"priority" minimum:"1" maximum:"5" default:"3" example:"2"`
           	Status   *string  `json:"status" enum:"pending,active,done"`
           	Tags     []string `json:"tags" minItems:"1" maxItems:"10" uniqueItems:"true"`
+          	Window   *int     `json:"window" default:"30"`
           }
 
           func build(v stdocs.SpecVersion, body any) []byte {
@@ -228,9 +231,9 @@ jobs:
           # draft-4 boolean exclusive bounds) and the generator-corpus
           # 3.1 document (anyOf nullables; no exclusive bounds, which
           # generators reject in their numeric 2020-12 form).
-          go run github.com/ogen-go/ogen/cmd/ogen@v1.8.1 --target ./out30 --clean /tmp/spec-3.0.4.json
+          go run github.com/ogen-go/ogen/cmd/ogen@v1.20.3 --target ./out30 --clean /tmp/spec-3.0.4.json
           test -s out30/oas_client_gen.go
-          go run github.com/ogen-go/ogen/cmd/ogen@v1.8.1 --target ./out31 --clean /tmp/spec-generators.json
+          go run github.com/ogen-go/ogen/cmd/ogen@v1.20.3 --target ./out31 --clean /tmp/spec-generators.json
           test -s out31/oas_client_gen.go
           echo "ogen generated typed clients from both documents"
       - name: Style-lint the 3.0.4 document with Spectral
