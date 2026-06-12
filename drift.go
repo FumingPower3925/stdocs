@@ -29,11 +29,12 @@ import (
 //	}
 //	log.Fatal(http.ListenAndServe(":8080", handler))
 //
-// Call DriftWarn after registering all routes: it builds and caches
-// the document, so routes registered later are neither checked nor
-// documented. Because it builds the document up front, the fail-fast
-// panics from invalid constraint or params tags surface at the
-// DriftWarn call.
+// DriftWarn builds the document up front, so the fail-fast panics
+// from invalid constraint or params tags surface at the DriftWarn
+// call; routes registered later are picked up automatically on the
+// next request. A mux-level "default" response counts as documenting
+// any status — but its body contract still applies: a JSON-documented
+// default served with a non-JSON Content-Type is drift.
 //
 // DriftWarn is a development aid, not validation: it observes
 // statuses and content types, never request or body schemas, and adds
@@ -47,36 +48,91 @@ func DriftWarn(m *Mux, logf func(format string, args ...any)) http.Handler {
 	if logf == nil {
 		logf = log.Printf
 	}
-	// Building the document finalizes the visible routes' operations
-	// (auto-200, default responses, auto-401), so the runtime check
-	// compares against exactly what the document says. A build error
-	// (e.g. an unregistered security scheme) is the document's
-	// problem, not this tool's — report it once and check what we
-	// can.
-	if _, err := m.JSON(); err != nil {
-		logf("stdocs drift: document build failed, warnings may be incomplete: %v", err)
-	}
-	routes := make(map[string]*route, len(m.reg.routes))
-	for _, rt := range m.visibleRoutes() {
-		routes[rt.pattern] = rt
-	}
-	d := &driftWarner{mux: m, logf: logf, routes: routes, seen: make(map[string]bool)}
+	d := &driftWarner{mux: m, logf: logf, seen: make(map[string]bool)}
+	d.refresh()
 	return d
+}
+
+// driftRoute is the immutable per-route snapshot the request path
+// checks against — copied out of the route's finalized operation
+// under the build lock, so serving never touches state that
+// finalize/Refresh mutate.
+type driftRoute struct {
+	statuses    map[string]bool // documented response keys
+	hasDefault  bool
+	jsonByKey   map[string]bool // key -> declared with a JSON body
+	defaultJSON bool            // the "default" entry declares a JSON body
 }
 
 // driftWarner is the http.Handler returned by DriftWarn.
 type driftWarner struct {
-	mux    *Mux
-	logf   func(format string, args ...any)
-	routes map[string]*route
+	mux  *Mux
+	logf func(format string, args ...any)
 
-	mu   sync.Mutex
-	seen map[string]bool
+	mu      sync.Mutex
+	seen    map[string]bool
+	snapGen uint64
+	routes  map[string]driftRoute
+}
+
+// refresh rebuilds the route snapshot from the current document. The
+// build lock is held for the whole copy, so finalize cannot mutate
+// operations mid-snapshot; the copied maps are never shared.
+func (d *driftWarner) refresh() {
+	d.mux.specMu.Lock()
+	defer d.mux.specMu.Unlock()
+	// Building finalizes the visible routes' operations (auto-200,
+	// default responses, auto-401), so the snapshot reflects exactly
+	// what the document says. A build error (an unregistered security
+	// scheme) is the document's problem — note it once and snapshot
+	// what we can.
+	if _, err := d.mux.cachedJSON(); err != nil {
+		d.logf("stdocs drift: document build failed, warnings may be incomplete: %v", err)
+	}
+	routes := make(map[string]driftRoute, len(d.mux.reg.routes))
+	for _, rt := range d.mux.visibleRoutes() {
+		dr := driftRoute{
+			statuses:  make(map[string]bool, len(rt.op.Responses)),
+			jsonByKey: make(map[string]bool, len(rt.op.Responses)),
+		}
+		for key, resp := range rt.op.Responses {
+			dr.statuses[key] = true
+			declaredJSON := resp != nil && (resp.BodyValue != nil || resp.Schema != nil) &&
+				(resp.ContentType == "" || strings.Contains(resp.ContentType, "json"))
+			dr.jsonByKey[key] = declaredJSON
+			if key == "default" {
+				dr.hasDefault = true
+				dr.defaultJSON = declaredJSON
+			}
+		}
+		routes[rt.pattern] = dr
+	}
+	d.routes = routes
+	d.snapGen = d.mux.reg.gen
+}
+
+// snapshot returns the current route map, rebuilding it when routes
+// were registered since the last build.
+func (d *driftWarner) snapshot() map[string]driftRoute {
+	d.mux.specMu.Lock()
+	gen := d.mux.reg.gen
+	d.mux.specMu.Unlock()
+	d.mu.Lock()
+	stale := gen != d.snapGen
+	routes := d.routes
+	d.mu.Unlock()
+	if stale {
+		d.refresh()
+		d.mu.Lock()
+		routes = d.routes
+		d.mu.Unlock()
+	}
+	return routes
 }
 
 func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, pattern := d.mux.Handler(r)
-	rt, tracked := d.routes[pattern]
+	dr, tracked := d.snapshot()[pattern]
 	if !tracked {
 		// Unregistered handlers, the 404 fallback, docs-prefix routes,
 		// and routes excluded from the document have no contract to
@@ -97,17 +153,24 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusOK // a body written without WriteHeader
 	}
 	key := itoa(status)
-	resp, documented := rt.op.Responses[key]
-	if !documented {
-		if _, hasDefault := rt.op.Responses["default"]; !hasDefault {
-			d.warn(pattern+"\x00"+key,
-				"stdocs drift: %s (observed via %s) returned %d, which the document does not declare",
-				pattern, r.Method, status)
-		}
+	declaredJSON, declared := false, false
+	switch {
+	case dr.statuses[key]:
+		declared = true
+		declaredJSON = dr.jsonByKey[key]
+	case dr.hasDefault:
+		// The default entry covers the status — including its body
+		// contract: a JSON-documented default served as text/plain is
+		// drift even though the status itself is covered.
+		declared = true
+		declaredJSON = dr.defaultJSON
+	}
+	if !declared {
+		d.warn(pattern+"\x00"+key,
+			"stdocs drift: %s (observed via %s) returned %d, which the document does not declare",
+			pattern, r.Method, status)
 		return
 	}
-	declaredJSON := resp != nil && (resp.BodyValue != nil || resp.Schema != nil) &&
-		(resp.ContentType == "" || strings.Contains(resp.ContentType, "json"))
 	if declaredJSON {
 		ct := rec.Header().Get("Content-Type")
 		if ct != "" && !strings.Contains(ct, "json") {

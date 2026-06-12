@@ -122,3 +122,49 @@ func TestDriftWarnRespectsDefaultsAndVisibility(t *testing.T) {
 		t.Errorf("warnings = %q, want none", got)
 	}
 }
+
+// v0.4.1: DriftWarn is race-free against Refresh, tracks late
+// registrations, and applies the content-type check to
+// default-covered statuses.
+func TestDriftWarnSnapshotSemantics(t *testing.T) {
+	type Envelope struct {
+		Message string `json:"message"`
+	}
+	mux := New(WithTitle("T"), WithDefaultResponse(0, Envelope{}))
+	mux.HandleFunc("GET /a", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad", http.StatusBadRequest) // text/plain under a JSON default: drift
+	}, Summary("A"))
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf)
+	driftGet(h, "/a")
+	got := warnings()
+	if len(got) != 1 || !strings.Contains(got[0], "text/plain") {
+		t.Errorf("JSON-documented default served as text/plain must warn: %q", got)
+	}
+
+	// Late registration: tracked after the snapshot refreshes.
+	mux.HandleFunc("GET /late", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTeapot) // covered by default, JSON body: no warning
+		w.Write([]byte(`{"message":"hi"}`))
+	}, Summary("Late"))
+	driftGet(h, "/late")
+	if len(warnings()) != 1 {
+		t.Errorf("late JSON-clean route should add no warnings: %q", warnings())
+	}
+
+	// Race: concurrent traffic + Refresh under -race.
+	var wg sync.WaitGroup
+	for range 6 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 20 {
+				driftGet(h, "/late")
+				mux.Refresh()
+				mux.JSON()
+			}
+		}()
+	}
+	wg.Wait()
+}
