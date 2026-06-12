@@ -261,6 +261,54 @@ func WithResponseContentType(status int, contentType string) RouteOpt {
 	}
 }
 
+// WithFallbackResponse documents a response on this route only when
+// the route does not declare the same status itself — the
+// route-scoped counterpart of the mux-level [WithDefaultResponse],
+// built for reusable bundles: a codebase with several error-shape
+// eras declares one fallback per era and applies it through [Opts]:
+//
+//	legacyErrors := stdocs.Opts(stdocs.WithFallbackResponse(500, LegacyError{}))
+//	modernErrors := stdocs.Opts(stdocs.WithFallbackResponse(500, Envelope{}))
+//
+// An explicit WithResponse for the status wins, the first fallback
+// per status wins over later ones, and route fallbacks win over
+// mux-level defaults (the narrower scope is more specific). Pass
+// status 0 for the OpenAPI "default" response. Statuses outside
+// 100-599 (other than 0) panic.
+func WithFallbackResponse(status int, body any) RouteOpt {
+	if status != 0 && (status < 100 || status > 599) {
+		panic("stdocs: WithFallbackResponse status must be 0 (default) or 100-599, got " + itoa(status))
+	}
+	return func(r *route) {
+		r.fallbacks = append(r.fallbacks, DefaultResponse{Status: status, Body: body})
+	}
+}
+
+// WithRawResponse documents a raw (non-JSON) response — CSV exports,
+// plain-text bodies, file downloads — as a string-typed body under
+// the given content type, in one opt:
+//
+//	mux.HandleFunc("GET /export", exportCSV,
+//	    stdocs.WithRawResponse(200, "text/csv"),
+//	    stdocs.WithResponseHeader(200, "Content-Disposition", "string", "attachment"),
+//	)
+//
+// It is order-independent like the other response decorators,
+// supports status 0 for the "default" response, and composes with
+// WithResponseDescription/WithResponseHeader. The content type is
+// required.
+func WithRawResponse(status int, contentType string) RouteOpt {
+	if contentType == "" {
+		panic("stdocs: WithRawResponse requires a content type")
+	}
+	return func(r *route) {
+		resp := ensureResponse(r.op, statusKey(status))
+		resp.BodyValue = nil
+		resp.Schema = &schema.Schema{Type: "string"}
+		resp.ContentType = contentType
+	}
+}
+
 // WithSecurity requires the named security scheme on this operation.
 // scopes are only meaningful for OAuth2 schemes; pass no scopes for
 // non-OAuth schemes.
