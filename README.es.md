@@ -16,7 +16,7 @@ mux.Mount() // UI de docs en /docs/, spec en /docs/openapi.json
 log.Fatal(http.ListenAndServe(":8080", mux))
 ```
 
-Eso es todo. `stdocs` recorre tus rutas registradas, genera un spec OpenAPI a partir de tus tipos Go y sirve una UI de documentación en `/docs/`.
+Eso es todo. `stdocs` recorre tus rutas registradas, genera un spec OpenAPI a partir de tus tipos Go y sirve una UI de documentación en `/docs/`. ¿Vienes de swaggo/swag, FastAPI o un framework de handlers tipados? [MIGRATING.md](MIGRATING.md) traduce tus costumbres a stdocs.
 
 ![Las cuatro UI completas — Scalar, Swagger UI, Redoc y Stoplight Elements — mostrando el mismo spec generado](.github/uis.png)
 
@@ -51,7 +51,7 @@ El mismo documento generado, mostrado por cada una de las cuatro UI incluidas �
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requiere Go 1.25 o posterior. stdocs sigue la misma política de soporte que el proyecto Go — las dos releases más recientes, actualmente 1.25 y 1.26 — y la CI ejecuta la suite completa de tests en cada patch release de ambas. Los patrones de ruta que stdocs documenta (`"GET /users/{id}"`) son la sintaxis método+ruta que `net/http.ServeMux` incorporó en Go 1.22.
+Requiere Go 1.25 o posterior. La referencia completa también está disponible offline una vez el módulo está en tu `go.mod`: `go doc github.com/FumingPower3925/stdocs`. stdocs sigue la misma política de soporte que el proyecto Go — las dos releases más recientes, actualmente 1.25 y 1.26 — y la CI ejecuta la suite completa de tests en cada patch release de ambas. Los patrones de ruta que stdocs documenta (`"GET /users/{id}"`) son la sintaxis método+ruta que `net/http.ServeMux` incorporó en Go 1.22.
 
 ## Uso
 
@@ -93,7 +93,7 @@ mux.HandleFunc("POST /tasks", createTask,
 mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
-Una documentación mal declarada — un tipo de parámetro con un typo, un `minLength` en un `int`, un `example` que no parsea — provoca un panic al registrar o al construir el documento, en lugar de publicar un contrato erróneo.
+Una documentación mal declarada — un tipo de parámetro con un typo, un `minLength` en un `int`, un `example` que no parsea — provoca un panic o se niega a construir el documento, en lugar de publicar un contrato erróneo.
 
 ## UIs
 
