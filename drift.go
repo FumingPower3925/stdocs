@@ -69,12 +69,15 @@ func DriftWarn(m *Mux, logf func(format string, args ...any), opts ...DriftOptio
 type DriftOption func(*driftWarner)
 
 // DriftSampleBodies additionally compares response bodies against the
-// documented schema — top-level keys only, for responses documented
-// with a JSON object schema: each missing documented-required key
-// warns once per route, status, and field; the appearance of
-// undocumented keys warns once per route and status. Values, nesting, and arrays are not checked. Sampling
-// copies up to 64 KB of each tracked response, which is why it is a
-// separate opt; like DriftWarn itself, it is a development aid.
+// documented schema, for responses documented with a JSON object or
+// array-of-objects schema: each missing documented-required key warns
+// once per route, status, and field; the appearance of undocumented
+// keys warns once per route and status. The comparison covers
+// top-level keys and one level of rows — elements of array-of-object
+// properties ("orders[].fee_cents") and of array bodies ("[].id") —
+// never values, deeper nesting, or rows of rows. Sampling copies up
+// to 64 KB of each tracked response, which is why it is a separate
+// opt; like DriftWarn itself, it is a development aid.
 func DriftSampleBodies() DriftOption {
 	return func(d *driftWarner) { d.sampleBodies = true }
 }
@@ -104,8 +107,10 @@ type DriftFinding struct {
 	// Status is the observed response status; 0 for document-level
 	// findings.
 	Status int
-	// Field locates body findings: a top-level key ("fee_cents").
-	// Empty for everything else.
+	// Field locates body findings: a top-level key ("fee_cents"), a
+	// row path ("orders[].fee_cents", "[].id"), or the row prefix
+	// alone when rows carry undocumented fields ("orders[]"). Empty
+	// for everything else.
 	Field string
 	// Message is the human-readable line — the logged text without
 	// its "stdocs drift: " prefix.
@@ -151,10 +156,14 @@ func DriftNotify(fn func(DriftFinding)) DriftOption {
 }
 
 // driftShape is the documented top-level object shape for one
-// response entry.
+// response entry, plus the row shapes one level down: array-of-object
+// properties carry their element shape in rows, and a body that is
+// itself an array of objects carries it in arrayRow.
 type driftShape struct {
 	props    map[string]bool
 	required []string
+	rows     map[string]driftShape
+	arrayRow *driftShape
 }
 
 // driftRoute is the immutable per-route snapshot the request path
@@ -357,6 +366,14 @@ func (d *driftWarner) checkBodyShape(dr driftRoute, pattern, key string, status 
 			return
 		}
 	}
+	if shape.arrayRow != nil {
+		var rows []any
+		if json.Unmarshal(rec.body.Bytes(), &rows) != nil {
+			return // not a JSON array; the schema check has nothing to say
+		}
+		d.checkRows(pattern, key, status, "[]", *shape.arrayRow, rows)
+		return
+	}
 	var body map[string]any
 	if json.Unmarshal(rec.body.Bytes(), &body) != nil {
 		return // not a JSON object; the schema check has nothing to say
@@ -381,27 +398,121 @@ func (d *driftWarner) checkBodyShape(dr driftRoute, pattern, key string, status 
 		d.emit(pattern+"\x00"+key+"\x00bextra", DriftFinding{Code: "undocumented-fields", Route: pattern, Status: status},
 			"%s response %d carries fields not in its documented schema (e.g. %s)", pattern, status, strings.Join(extras, ", "))
 	}
+	for prop, row := range shape.rows {
+		if items, ok := body[prop].([]any); ok {
+			d.checkRows(pattern, key, status, prop+"[]", row, items)
+		}
+	}
+}
+
+// checkRows compares sampled rows' keys against the documented row
+// shape, accumulating across rows first so warn volume is bounded by
+// the schema, never the row count. Null and non-object entries
+// declare nothing about fields and are skipped.
+func (d *driftWarner) checkRows(pattern, key string, status int, path string, row driftShape, items []any) {
+	missing := make(map[string]bool)
+	extraSet := make(map[string]bool)
+	sampled := false
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		sampled = true
+		for _, req := range row.required {
+			if _, present := m[req]; !present {
+				missing[req] = true
+			}
+		}
+		for k := range m {
+			if !row.props[k] {
+				extraSet[k] = true
+			}
+		}
+	}
+	if !sampled {
+		return
+	}
+	for _, req := range row.required {
+		if missing[req] {
+			qualified := path + "." + req
+			d.emit(pattern+"\x00"+key+"\x00breq\x00"+qualified, DriftFinding{Code: "missing-required-field", Route: pattern, Status: status, Field: qualified},
+				"%s response %d is missing required field %q declared by its documented schema", pattern, status, qualified)
+		}
+	}
+	if len(extraSet) > 0 {
+		extras := make([]string, 0, len(extraSet))
+		for k := range extraSet {
+			extras = append(extras, path+"."+k)
+		}
+		sort.Strings(extras)
+		if len(extras) > 3 {
+			extras = extras[:3]
+		}
+		d.emit(pattern+"\x00"+key+"\x00bextra\x00"+path, DriftFinding{Code: "undocumented-fields", Route: pattern, Status: status, Field: path},
+			"%s response %d carries fields not in its documented schema (e.g. %s)", pattern, status, strings.Join(extras, ", "))
+	}
 }
 
 // objectShape reflects a response body value and resolves it to its
-// top-level object shape, when it has one.
+// top-level shape, when it has one: an object's keys and one level of
+// array-of-object row shapes, or the row shape alone when the body is
+// itself an array.
 func objectShape(bodyValue any) (driftShape, bool) {
 	root, comps := schema.ReflectSchema(bodyValue)
-	s := root
-	if s != nil && s.Ref != "" {
-		name := strings.TrimPrefix(s.Ref, "#/components/schemas/")
-		s = comps[name]
+	s := resolveShapeRef(root, comps)
+	if s == nil {
+		return driftShape{}, false
 	}
-	if s == nil || s.Type != "object" || len(s.Properties) == 0 {
+	if s.Type == "array" {
+		if row := rowShape(s.Items, comps); row != nil {
+			return driftShape{arrayRow: row}, true
+		}
+		return driftShape{}, false
+	}
+	if s.Type != "object" || len(s.Properties) == 0 {
 		return driftShape{}, false
 	}
 	shape := driftShape{props: make(map[string]bool, len(s.Properties))}
-	for name := range s.Properties {
+	for name, p := range s.Properties {
 		shape.props[name] = true
+		if p = resolveShapeRef(p, comps); p != nil && p.Type == "array" {
+			if row := rowShape(p.Items, comps); row != nil {
+				if shape.rows == nil {
+					shape.rows = make(map[string]driftShape)
+				}
+				shape.rows[name] = *row
+			}
+		}
 	}
 	shape.required = append(shape.required, s.Required...)
 	sort.Strings(shape.required)
 	return shape, true
+}
+
+// rowShape resolves an array's element schema to an object shape —
+// one level only; rows of rows are out of sampling's scope.
+func rowShape(items *schema.Schema, comps map[string]*schema.Schema) *driftShape {
+	s := resolveShapeRef(items, comps)
+	if s == nil || s.Type != "object" || len(s.Properties) == 0 {
+		return nil
+	}
+	row := driftShape{props: make(map[string]bool, len(s.Properties))}
+	for name := range s.Properties {
+		row.props[name] = true
+	}
+	row.required = append(row.required, s.Required...)
+	sort.Strings(row.required)
+	return &row
+}
+
+// resolveShapeRef follows a $ref into the reflected components.
+func resolveShapeRef(s *schema.Schema, comps map[string]*schema.Schema) *schema.Schema {
+	if s != nil && s.Ref != "" {
+		name := strings.TrimPrefix(s.Ref, "#/components/schemas/")
+		return comps[name]
+	}
+	return s
 }
 
 // emit logs once per dedup key and delivers the structured finding to

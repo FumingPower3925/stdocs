@@ -420,3 +420,108 @@ func TestDriftNotifyBuildFailed(t *testing.T) {
 		t.Errorf("log = %q", got)
 	}
 }
+
+func TestDriftSampleBodiesRows(t *testing.T) {
+	type Order struct {
+		ID       string `json:"id" required:"true"`
+		FeeCents int    `json:"fee_cents" required:"true"`
+	}
+	type OrderList struct {
+		Orders []Order `json:"orders" required:"true"`
+		Total  int     `json:"total"`
+	}
+	mux := New(WithTitle("T"))
+	// The wrapped-list shape that escaped top-level-only sampling:
+	// some rows omit fee_cents, some carry an undocumented debug key.
+	mux.HandleFunc("GET /orders", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"orders":[
+			{"id":"a","fee_cents":100},
+			{"id":"b","_dbg":1},
+			{"id":"c","fee_cents":300,"_dbg":2},
+			null
+		],"total":3}`))
+	}, Summary("L"), WithResponse(200, OrderList{}))
+	mux.HandleFunc("GET /orders-bare", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"id":"a"},{"id":"b","fee_cents":2}]`))
+	}, Summary("B"), WithResponse(200, []Order{}))
+	mux.HandleFunc("GET /orders-empty", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"orders":[],"total":0}`))
+	}, Summary("E"), WithResponse(200, OrderList{}))
+	mux.HandleFunc("GET /orders-null", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"orders":null,"total":0}`))
+	}, Summary("N"), WithResponse(200, OrderList{}))
+
+	var mu sync.Mutex
+	var found []DriftFinding
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf, DriftSampleBodies(), DriftNotify(func(f DriftFinding) {
+		mu.Lock()
+		defer mu.Unlock()
+		found = append(found, f)
+	}))
+	driftGet(h, "/orders")
+	driftGet(h, "/orders") // dedup: rows warn once, not per request
+	driftGet(h, "/orders-bare")
+	driftGet(h, "/orders-empty") // empty array proves nothing
+	driftGet(h, "/orders-null")  // null array proves nothing
+
+	mu.Lock()
+	defer mu.Unlock()
+	fields := make(map[string]string, len(found)) // Field -> Code
+	for _, f := range found {
+		fields[f.Field] = f.Code
+	}
+	want := map[string]string{
+		"orders[].fee_cents": "missing-required-field",
+		"orders[]":           "undocumented-fields",
+		"[].fee_cents":       "missing-required-field",
+	}
+	for field, code := range want {
+		if fields[field] != code {
+			t.Errorf("field %q: code = %q, want %q (all: %+v)", field, fields[field], code, found)
+		}
+	}
+	if len(found) != len(want) {
+		t.Errorf("findings = %d (%+v), want %d", len(found), found, len(want))
+	}
+	for _, line := range warnings() {
+		if strings.Contains(line, "orders[]._dbg") {
+			return
+		}
+	}
+	t.Errorf("no warning names the undocumented row key: %q", warnings())
+}
+
+func TestDriftSampleBodiesRowVolumeBounded(t *testing.T) {
+	type Row struct {
+		ID string `json:"id" required:"true"`
+	}
+	type List struct {
+		Rows []Row `json:"rows" required:"true"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /rows", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var b strings.Builder
+		b.WriteString(`{"rows":[`)
+		for i := range 200 {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			fmt.Fprintf(&b, `{"x%d":1}`, i) // every row misses id, every row adds a unique extra
+		}
+		b.WriteString(`]}`)
+		w.Write([]byte(b.String()))
+	}, Summary("R"), WithResponse(200, List{}))
+
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf, DriftSampleBodies())
+	driftGet(h, "/rows")
+	if got := warnings(); len(got) != 2 { // one missing-required, one extras digest
+		t.Errorf("warnings = %d (%q), want 2 regardless of 200 rows", len(got), got)
+	}
+}
