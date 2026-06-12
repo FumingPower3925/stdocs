@@ -1452,3 +1452,23 @@ func TestDeclarationOrderContracts(t *testing.T) {
 		t.Errorf("explicit WithBodyContentType must survive WithBody")
 	}
 }
+
+// v0.4.1: Optional is order-independent, hyphenated paths produce
+// clean operationIds.
+func TestOptionalOrderAndHyphenIDs(t *testing.T) {
+	type B struct {
+		X string `json:"x"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("POST /a", noop, Optional(), WithBody(B{})) // Optional first
+	mux.HandleFunc("GET /internal/reconcile-status", noop)
+	doc := buildDocMap(t, mux)
+	rb := doc["paths"].(map[string]any)["/a"].(map[string]any)["post"].(map[string]any)["requestBody"].(map[string]any)
+	if req, ok := rb["required"]; ok && req == true {
+		t.Errorf("Optional before WithBody must mark the body optional, got required=%v", req)
+	}
+	op := doc["paths"].(map[string]any)["/internal/reconcile-status"].(map[string]any)["get"].(map[string]any)
+	if op["operationId"] != "get_internal_reconcile_status" {
+		t.Errorf("operationId = %v, want get_internal_reconcile_status", op["operationId"])
+	}
+}
