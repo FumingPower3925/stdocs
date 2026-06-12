@@ -9,6 +9,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
+	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -72,12 +74,15 @@ type DriftOption func(*driftWarner)
 // documented schema, for responses documented with a JSON object or
 // array-of-objects schema: each missing documented-required key warns
 // once per route, status, and field; the appearance of undocumented
-// keys warns once per route and status. The comparison covers
+// keys warns once per route, status, and path. The comparison covers
 // top-level keys and one level of rows — elements of array-of-object
 // properties ("orders[].fee_cents") and of array bodies ("[].id") —
-// never values, deeper nesting, or rows of rows. Sampling copies up
-// to 64 KB of each tracked response, which is why it is a separate
-// opt; like DriftWarn itself, it is a development aid.
+// never values, deeper nesting, or rows of rows. A body of the wrong
+// top-level kind entirely (an object where an array is documented,
+// or vice versa) is outside sampling's scope and stays quiet.
+// Sampling copies up to 64 KB of each tracked response, which is why
+// it is a separate opt; like DriftWarn itself, it is a development
+// aid.
 func DriftSampleBodies() DriftOption {
 	return func(d *driftWarner) { d.sampleBodies = true }
 }
@@ -120,8 +125,9 @@ type DriftFinding struct {
 // DriftNotify registers fn to receive every finding DriftWarn would
 // log, in structured form — the bridge from log lines to CI gates
 // and dashboards. fn runs once per deduplicated finding, on the
-// goroutine serving the request that observed it, so it must
-// synchronize anything it touches:
+// goroutine serving the request that observed it (the up-front build
+// failure arrives on the DriftWarn caller's goroutine instead), so
+// it must synchronize anything it touches:
 //
 //	var mu sync.Mutex
 //	var found []stdocs.DriftFinding
@@ -229,11 +235,15 @@ func (d *driftWarner) rebuild() error {
 		}
 		for key, resp := range rt.op.Responses {
 			dr.statuses[key] = true
+			declaredCT := ""
+			if resp != nil {
+				declaredCT = strings.ToLower(resp.ContentType)
+			}
 			declaredJSON := resp != nil && (resp.BodyValue != nil || resp.Schema != nil) &&
-				(resp.ContentType == "" || strings.Contains(resp.ContentType, "json"))
+				(declaredCT == "" || strings.Contains(declaredCT, "json"))
 			dr.jsonByKey[key] = declaredJSON
-			if resp != nil && resp.ContentType != "" && !strings.Contains(resp.ContentType, "json") {
-				dr.ctByKey[key] = mediaTypeBase(resp.ContentType)
+			if declaredCT != "" && !strings.Contains(declaredCT, "json") {
+				dr.ctByKey[key] = mediaTypeBase(declaredCT)
 			}
 			if key == "default" {
 				dr.hasDefault = true
@@ -296,6 +306,12 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if status == 0 {
 		status = http.StatusOK // a body written without WriteHeader
 	}
+	if isCanonicalRedirect(status, rec.Header().Get("Location"), r.URL) {
+		// ServeMux's own canonicalization redirect (path cleaning, the
+		// subtree trailing slash): the route's handler never ran, so
+		// there is no contract to compare.
+		return
+	}
 	key := itoa(status)
 	declaredJSON, declared := false, false
 	switch {
@@ -323,8 +339,9 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if declaredJSON {
+		// Media types are case-insensitive; "Application/JSON" is JSON.
 		ct := rec.Header().Get("Content-Type")
-		if ct != "" && !strings.Contains(ct, "json") {
+		if ct != "" && !strings.Contains(strings.ToLower(ct), "json") {
 			d.emit(pattern+"\x00"+key+"\x00ct", DriftFinding{Code: "content-type-mismatch", Route: pattern, Status: status},
 				"%s wrote Content-Type %q for status %d, which the document declares with a JSON body", pattern, ct, status)
 			return
@@ -346,6 +363,37 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"%s wrote Content-Type %q for status %d, which the document declares as %s", pattern, served, status, declared)
 		}
 	}
+}
+
+// isCanonicalRedirect reports whether a response is net/http's
+// internally generated canonicalization redirect rather than the
+// handler speaking — Handler(r) names the route that would match
+// after the redirect, but its handler never ran.
+func isCanonicalRedirect(status int, location string, u *url.URL) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+	default:
+		return false
+	}
+	if location == "" {
+		return false
+	}
+	if i := strings.IndexByte(location, '?'); i >= 0 {
+		location = location[:i]
+	}
+	for _, p := range []string{u.Path, u.EscapedPath()} {
+		if location == p {
+			continue // not a move at all
+		}
+		cleaned := path.Clean(p)
+		if strings.HasSuffix(p, "/") && cleaned != "/" {
+			cleaned += "/"
+		}
+		if location == cleaned || location == cleaned+"/" || location == p+"/" {
+			return true
+		}
+	}
+	return false
 }
 
 // mediaTypeBase strips parameters from a media type ("text/csv;
@@ -449,8 +497,11 @@ func (d *driftWarner) checkRows(pattern, key string, status int, path string, ro
 	}
 	for _, req := range row.required {
 		if missing[req] {
+			// The marker differs from the top-level one so a property
+			// literally named like a row path cannot swallow the row's
+			// finding.
 			qualified := path + "." + req
-			d.emit(pattern+"\x00"+key+"\x00breq\x00"+qualified, DriftFinding{Code: "missing-required-field", Route: pattern, Status: status, Field: qualified},
+			d.emit(pattern+"\x00"+key+"\x00brow\x00"+qualified, DriftFinding{Code: "missing-required-field", Route: pattern, Status: status, Field: qualified},
 				"%s response %d is missing required field %q declared by its documented schema", pattern, status, qualified)
 		}
 	}
