@@ -326,7 +326,15 @@
 // prefer documenting webhook auth in the description until upstream
 // fixes it. openapi-typescript and similar TypeScript generators consume
 // either version directly; enums become string-literal unions and
-// SchemaName methods control the generated type names. A
+// SchemaName methods control the generated type names. TypeScript
+// types also generate natively: the
+// [github.com/FumingPower3925/stdocs/tsgen] subpackage emits the
+// contract as declarations straight from the internal model — pure
+// Go, no node toolchain at generation time, operations keyed by the
+// rebuild-stable operationIds — and the committed api.ts follows the
+// same regenerate-on-upgrade doctrine as the spec bytes. Generation
+// reads the model, so [WithOpenAPI] hook edits are invisible to it.
+// A
 // document-level default response ([WithDefaultResponse] with
 // status 0) enables ogen's typed convenient-error handling;
 // [DriftWarn] still checks the default entry's body and content-type
@@ -351,8 +359,15 @@
 // stdocs documents stdlib ServeMux applications; it does not
 // integrate with third-party routers, does not validate requests or
 // enforce the documented contract at runtime, and uses no code
-// generation, comment annotations, or dependencies — permanently, by
-// design. The document describes intent; keeping handlers honest is
-// the application's job ([DriftWarn] helps notice when they are
-// not).
+// generation, comment annotations, or dependencies to understand
+// your Go code — permanently, by design. What it emits is the other
+// side of that line: the OpenAPI document, the docs UI, and the
+// TypeScript declarations from the
+// [github.com/FumingPower3925/stdocs/tsgen] subpackage are all views
+// of the same model. None of them will ever include a runtime
+// client, a fetch wrapper, or an npm package — types are the part of
+// an SDK generation can own; the transport belongs to the
+// application. The document describes intent; keeping handlers
+// honest is the application's job ([DriftWarn] helps notice when
+// they are not).
 package stdocs
