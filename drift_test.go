@@ -269,3 +269,36 @@ func TestDriftRawContentTypeContract(t *testing.T) {
 		t.Errorf("declared CSV served as plain must warn exactly once: %q", got)
 	}
 }
+
+func TestDriftWarnObservedViaQualifier(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("POST /qualified", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+	}, Summary("Q"))
+	mux.HandleFunc("/any", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+	}, Summary("A"))
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/qualified", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPut, "/any", nil))
+	got := warnings()
+	if len(got) != 2 {
+		t.Fatalf("warnings = %d (%q), want 2", len(got), got)
+	}
+	for _, w := range got {
+		switch {
+		case strings.Contains(w, "POST /qualified"):
+			// The pattern already names the method; repeating it is noise.
+			if strings.Contains(w, "observed via") {
+				t.Errorf("method-qualified warning repeats the method: %q", w)
+			}
+		case strings.Contains(w, "/any"):
+			if !strings.Contains(w, "(observed via PUT)") {
+				t.Errorf("method-less warning lost the observed method: %q", w)
+			}
+		default:
+			t.Errorf("unexpected warning %q", w)
+		}
+	}
+}
