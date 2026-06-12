@@ -1335,3 +1335,55 @@ func TestOpenAPIOverrideInteractions(t *testing.T) {
 type ExportedEmbed struct {
 	Inner string `json:"inner"`
 }
+
+// v0.4.1: unsigned kinds document minimum 0; required tags work on
+// body/response structs (including required-but-nullable).
+func TestUnsignedMinimumAndRequiredTag(t *testing.T) {
+	type T struct {
+		Count    uint    `json:"count"`
+		Small    uint8   `json:"small"`
+		Explicit uint    `json:"explicit" minimum:"5"`
+		Excl     uint    `json:"excl" exclusiveMinimum:"0"`
+		Items    *[]int  `json:"items" required:"true"`
+		Loose    string  `json:"loose" required:"false"`
+		Plain    float64 `json:"plain"`
+	}
+	_, out := schema30(t, T{})
+	comp := out["T"]
+	if comp.Properties["count"].Minimum != "0" || comp.Properties["small"].Minimum != "0" {
+		t.Errorf("unsigned fields must document minimum 0: count=%q small=%q",
+			comp.Properties["count"].Minimum, comp.Properties["small"].Minimum)
+	}
+	if comp.Properties["explicit"].Minimum != "5" {
+		t.Errorf("explicit minimum overrides the auto bound: %q", comp.Properties["explicit"].Minimum)
+	}
+	if comp.Properties["excl"].ExclusiveMinimum != "0" || comp.Properties["excl"].Minimum != "" {
+		t.Errorf("explicit exclusive bound displaces the auto minimum: %+v", comp.Properties["excl"])
+	}
+	if comp.Properties["plain"].Minimum != "" {
+		t.Errorf("signed/float fields gain no auto minimum")
+	}
+	req := map[string]bool{}
+	for _, n := range comp.Required {
+		req[n] = true
+	}
+	if !req["items"] {
+		t.Errorf("required:\"true\" must force the pointer field into required; got %v", comp.Required)
+	}
+	if !comp.Properties["items"].Nullable {
+		t.Errorf("required:\"true\" composes with nullability")
+	}
+	if req["loose"] {
+		t.Errorf("required:\"false\" must exclude the field; got %v", comp.Required)
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Errorf("invalid required tag should panic")
+		}
+	}()
+	type Bad struct {
+		X string `json:"x" required:"yep"`
+	}
+	ReflectSchema(Bad{})
+}
