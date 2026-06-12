@@ -231,6 +231,22 @@ jobs:
           go run github.com/ogen-go/ogen/cmd/ogen@v1.8.1 --target ./out31 --clean /tmp/spec-generators.json
           test -s out31/oas_client_gen.go
           echo "ogen generated typed clients from both documents"
+      - name: Style-lint the 3.0.4 document with Spectral
+        run: |
+          cat > /tmp/.spectral.yaml <<'EOF'
+          extends: ["spectral:oas"]
+          # Spectral's JSONPath engine crashes evaluating enum rules
+          # over arrays containing a null member, which 3.0 nullable
+          # enums legally require (upstream bug) — the two enum rules
+          # stay off until that is fixed. Spectral is run on the 3.0.4
+          # document only: v6 misvalidates 3.1 keywords against the
+          # 3.0 schema and does not know 3.2; the official validators
+          # above cover those versions structurally.
+          rules:
+            typed-enum: off
+            duplicated-entry-in-enum: off
+          EOF
+          npx -y @stoplight/spectral-cli@6 lint --ruleset /tmp/.spectral.yaml --fail-severity=error /tmp/spec-3.0.4.json
       - name: Validate 3.2 against the official OpenAPI 3.2 JSON Schema
         run: |
           pip install --quiet 'jsonschema[format]~=4.23' 'requests~=2.32'
@@ -314,6 +330,13 @@ jobs:
           cache: true
       - name: Generate coverage
         run: go test -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Enforce the coverage floor
+        run: |
+          total="$(go tool cover -func=coverage.out | awk '/^total:/{sub("%","",$3); print $3}')"
+          floor=80.0
+          echo "total statement coverage: ${total}% (floor: ${floor}%)"
+          awk -v t="$total" -v f="$floor" 'BEGIN { exit (t+0 >= f+0) ? 0 : 1 }' || {
+            echo "coverage ${total}% fell below the ${floor}% floor"; exit 1; }
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
