@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.4.1] - 2026-06-12
+
+A bugs-polish-and-deep-testing release: every known defect from the
+adversarial verification backlog and a five-persona user-simulation
+study, fixed and pinned.
+
+### Fixed
+
+- Embedded UIs no longer render a silent blank page when mounted the
+  documented way: `Mount` registers the `*emb` packages' asset route
+  automatically through the new `Config.Assets` field (manual
+  `Docs()` mounting keeps the explicit `AssetHandler` registration).
+- Routes registered after a build now appear on the next read — the
+  spec cache tracks a registration generation, so `JSON`, `YAML`,
+  the served endpoints, `Lint`, and `DriftWarn` stop serving stale
+  documents and the "register everything first" caveats are gone.
+- `Mount` builds the document eagerly: fail-fast tag panics fire at
+  startup instead of inside the first docs request.
+- `DriftWarn` is snapshot-based: no more race against
+  `Refresh`/finalize, late registrations are picked up, and a
+  JSON-documented `default` response served with a non-JSON
+  Content-Type now warns (the text/plain straggler that previously
+  slipped through).
+- Webhook operations no longer inherit document-level security —
+  they emit an explicit `security: []` override (or the new
+  `Webhook.Security`), so generated clients compile again.
+- Host-scoped patterns are handled honestly: a deterministic
+  survivor per (method, path) — hostless wins — with an
+  `x-stdocs-warning` on hosted survivors, no dangling operationId
+  suffixes, host-free tag/summary inference, and a `shadowed-route`
+  Lint finding for the registrations the document cannot express.
+- `required:"true"` now works on body/response structs (previously a
+  silent no-op outside `WithParams`); with a pointer field it
+  documents required-but-nullable, and `required:"false"` opts out.
+- Unsigned integer fields document `minimum: 0`, yielding to
+  explicit bound tags. Spec-affecting.
+- Default operationIds normalize hyphenated path segments
+  (`get_internal_reconcile_status`). Spec-affecting.
+- `Optional()` is order-independent with `WithBody`.
+- Tag inference skips version segments (`/v1/tasks` groups under
+  `Tasks`, not `V1`); `WithTagFunc` overrides the inference for
+  other conventions. Spec-affecting for version-prefixed APIs.
+
+### Added
+
+- `Lint` findings carry a stable `Warning.Code` for CI allow-lists,
+  plus new advisories: `required-with-default`, `auto-descriptions`,
+  `dangling-id-suffix`, and `shadowed-route`; `exclusive-bounds`
+  warns that current Go generators reject the numeric 3.1/3.2 form.
+- The `ParamOpt` vocabulary is complete: `ParamFormat`,
+  `ParamExclusiveMinimum`/`Maximum`, `ParamMinItems`/`MaxItems`/
+  `UniqueItems`, and `ParamItems` for typed array elements.
+- Reflector fuzzing (`reflect.StructOf` over arbitrary shapes and
+  tag mixes) and a 500-case emitter property test pinning the
+  per-version dialect rules.
+- Headless rendering smoke tests for all nine bundled UIs (build tag
+  `uismoke`; manual-dispatch CI job), through a shadow-DOM-piercing
+  harness.
+- CI gates: Spectral style errors on the 3.0.4 corpus document and
+  an 80% statement-coverage floor.
+- `MIGRATING.md` gains a retrofit guide (mirror types, docs behind
+  auth middleware, raw responses, generic envelopes, error-shape
+  eras); the reference explains the default response plainly,
+  documents the required-tag override, map reflection, the raw
+  download idiom, embedded-asset auto-registration, and extends the
+  generator notes (oapi-codegen nullable-enum caveat, TypeScript
+  generators).
+
 ## [0.4.0] - 2026-06-11
 
 ### Added
@@ -243,7 +311,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/FumingPower3925/stdocs/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/FumingPower3925/stdocs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/FumingPower3925/stdocs/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/FumingPower3925/stdocs/compare/v0.1.1...v0.2.0
