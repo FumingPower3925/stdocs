@@ -2132,3 +2132,98 @@ func TestHeaderDescriptionAndDotIDs(t *testing.T) {
 		}
 	}
 }
+
+// v0.5.0: raw fallbacks and raw mux defaults complete the 2x2 of
+// default/fallback x JSON/raw.
+func TestRawFallbackAndDefaultResponses(t *testing.T) {
+	type Envelope struct {
+		Message string `json:"message"`
+	}
+	gen1 := Opts(
+		WithFallbackRawResponse(400, "text/plain; charset=utf-8"),
+		WithFallbackRawResponse(404, "text/plain; charset=utf-8"),
+	)
+	mux := New(WithTitle("T"),
+		WithDefaultRawResponse(500, "text/plain"),
+		WithDefaultResponse(502, Envelope{}),
+	)
+	mux.HandleFunc("GET /venue", noop, Summary("V"), gen1)
+	mux.HandleFunc("GET /venue-json", noop, Summary("J"), gen1,
+		WithResponse(404, Envelope{})) // explicit beats the raw fallback
+	mux.HandleFunc("GET /venue-first", noop, Summary("F"),
+		WithFallbackResponse(404, Envelope{}), gen1) // first fallback per status wins
+	mux.HandleFunc("GET /decorated", noop, Summary("D"), gen1,
+		WithResponseContentType(404, "application/problem+text")) // decorator CT survives
+	doc := buildDocMap(t, mux)
+	resp := func(p, status string) map[string]any {
+		return doc["paths"].(map[string]any)[p].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)[status].(map[string]any)
+	}
+	rawType := func(r map[string]any, ct string) string {
+		media, ok := r["content"].(map[string]any)[ct].(map[string]any)
+		if !ok {
+			return "(no " + ct + " entry: " + strings.Join(mapKeysOf(r["content"].(map[string]any)), ",") + ")"
+		}
+		typ, _ := media["schema"].(map[string]any)["type"].(string)
+		return typ
+	}
+	if got := rawType(resp("/venue", "404"), "text/plain; charset=utf-8"); got != "string" {
+		t.Errorf("/venue 404 = %s; raw fallback must fill a string body", got)
+	}
+	if got := rawType(resp("/venue", "500"), "text/plain"); got != "string" {
+		t.Errorf("/venue 500 = %s; raw mux default must apply", got)
+	}
+	if _, ok := resp("/venue", "502")["content"].(map[string]any)["application/json"]; !ok {
+		t.Errorf("/venue 502: JSON mux default must coexist with raw entries")
+	}
+	if _, ok := resp("/venue-json", "404")["content"].(map[string]any)["application/json"]; !ok {
+		t.Errorf("/venue-json 404: explicit WithResponse must beat the raw fallback")
+	}
+	if _, ok := resp("/venue-first", "404")["content"].(map[string]any)["application/json"]; !ok {
+		t.Errorf("/venue-first 404: the first fallback per status must win")
+	}
+	if got := rawType(resp("/decorated", "404"), "application/problem+text"); got != "string" {
+		t.Errorf("/decorated 404 = %s; WithResponseContentType must survive the raw fallback", got)
+	}
+	// Rebuild stability.
+	b1, _ := mux.JSON()
+	mux.Refresh()
+	b2, _ := mux.JSON()
+	if !bytes.Equal(b1, b2) {
+		t.Errorf("raw fallbacks must be rebuild-stable")
+	}
+
+	// The filled entry emits identically across all three versions.
+	for _, v := range []SpecVersion{OpenAPI30, OpenAPI31, OpenAPI32} {
+		m := New(WithTitle("T"), WithVersion(v), WithDefaultRawResponse(500, "text/plain"))
+		m.HandleFunc("GET /x", noop, Summary("X"))
+		vdoc := buildDocMap(t, m)
+		r := vdoc["paths"].(map[string]any)["/x"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["500"].(map[string]any)
+		if got := rawType(r, "text/plain"); got != "string" {
+			t.Errorf("%s: raw default = %s, want string", v, got)
+		}
+	}
+
+	// The duplicate-status panic spans both default forms.
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Errorf("duplicate status across default forms should panic")
+			}
+		}()
+		New(WithTitle("T"), WithDefaultResponse(500, Envelope{}), WithDefaultRawResponse(500, "text/plain"))
+	}()
+	for _, f := range []func(){
+		func() { WithFallbackRawResponse(42, "text/plain") },
+		func() { WithFallbackRawResponse(400, "") },
+		func() { WithDefaultRawResponse(0, "") },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected validation panic")
+				}
+			}()
+			f()
+		}()
+	}
+}

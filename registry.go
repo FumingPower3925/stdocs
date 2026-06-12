@@ -259,10 +259,23 @@ func applyResponseDefaults(rt *route, cfg *Config) {
 // unless the route declared one: an explicit WithResponse (even with
 // a nil body) or WithRawResponse wins, but an entry merely
 // materialized by a decorator (WithResponseDescription and friends)
-// still takes the fallback body. Idempotent across rebuilds.
+// still takes the fallback body. Raw entries fill exactly what
+// WithRawResponse declares, except a content type a decorator already
+// set survives — WithResponseContentType names the route's media type
+// more specifically than a bundle can. Idempotent across rebuilds.
 func fillUndeclaredBody(op *Operation, dr DefaultResponse) {
 	resp := ensureResponse(op, statusKey(dr.Status))
 	if resp.BodyDeclared {
+		return
+	}
+	if dr.RawContentType != "" {
+		resp.BodyValue = nil
+		resp.Schema = &schema.Schema{Type: "string"}
+		if resp.ContentType == "" {
+			resp.ContentType = dr.RawContentType
+		}
+		resp.BodyDeclared = true
+		resp.RawBody = true
 		return
 	}
 	resp.BodyValue = dr.Body
