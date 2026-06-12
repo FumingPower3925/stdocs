@@ -202,8 +202,10 @@ func WithAutoUnauthorized(enabled bool) Option {
 //	    stdocs.WithDefaultResponse(500, APIError{}),
 //	)
 //
-// A per-route WithResponse (or response-decorating opt) for the same
-// status wins. Pass status 0 for the OpenAPI "default" response and
+// A per-route WithResponse (even with a nil body) or WithRawResponse
+// for the same status wins; an entry materialized only by decorators
+// (WithResponseDescription and friends) still takes the default
+// body. Pass status 0 for the OpenAPI "default" response and
 // nil for a body-less entry. The entry applies to every operation —
 // to document a 401 only on secured routes, rely on the automatic
 // 401 instead (see WithAutoUnauthorized). Multiple calls accumulate;
@@ -216,7 +218,7 @@ func WithDefaultResponse(status int, body any) Option {
 	return func(c *Config) {
 		for _, dr := range c.DefaultResponses {
 			if dr.Status == status {
-				panic("stdocs: WithDefaultResponse called twice for status " + statusKey(status))
+				panic("stdocs: WithDefaultResponse: status " + statusKey(status) + " already has a mux-level default response")
 			}
 		}
 		c.DefaultResponses = append(c.DefaultResponses, DefaultResponse{Status: status, Body: body})
@@ -249,7 +251,7 @@ func WithDefaultRawResponse(status int, contentType string) Option {
 	return func(c *Config) {
 		for _, dr := range c.DefaultResponses {
 			if dr.Status == status {
-				panic("stdocs: WithDefaultRawResponse called twice for status " + statusKey(status))
+				panic("stdocs: WithDefaultRawResponse: status " + statusKey(status) + " already has a mux-level default response")
 			}
 		}
 		c.DefaultResponses = append(c.DefaultResponses, DefaultResponse{Status: status, RawContentType: contentType})
