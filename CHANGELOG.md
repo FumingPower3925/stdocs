@@ -16,13 +16,29 @@ Nothing yet.
 - Embedded-field flattening now follows `encoding/json`'s dominance
   rules exactly: a shallower field hides deeper ones, a lone tagged
   field beats untagged same-depth rivals, any other same-depth name
-  collision drops the field entirely (including diamond embedding),
-  unexported pointer embeds promote their exported fields, and a
-  shadowed embed's required-ness no longer leaks onto the winning
-  field. Documents change only where they disagreed with what
-  `json.Marshal` actually serves — schemas with colliding embeds stop
-  claiming fields that never reach the wire, so golden files over
-  such shapes will show a diff worth reading.
+  collision drops the field entirely (including diamond embedding —
+  while a field below a shared join point survives, since
+  `encoding/json` loses embed multiplicity there), unexported pointer
+  embeds promote their exported fields, and a shadowed embed's
+  required-ness no longer leaks onto the winning field. Documents
+  change only where they disagreed with what `json.Marshal` actually
+  serves — schemas with colliding embeds stop claiming fields that
+  never reach the wire, so golden files over such shapes will show a
+  diff worth reading.
+- Flattening is decided by struct kind, as `encoding/json` decides
+  it, which retires a family of phantom properties: an embedded
+  struct with no JSON-visible fields (`sync.Mutex`, marker structs)
+  no longer documents a required property named after the type,
+  recursive pointer embeds no longer document a self-referential
+  phantom, and marshaler embeds whose method promotion is blocked
+  flatten their exported fields like the wire does. Tag-named
+  unexported struct embeds — which `json.Marshal` serves as nested
+  objects — are documented now, `json:"-,"` names a key `-` instead
+  of dropping the field, an `openapi:"-"` field keeps participating
+  in name dominance (hiding a field cannot resurface a rival the
+  wire drops), and an `openapi` override on an embedded named scalar
+  applies instead of panicking about a flattening that never
+  happens.
 - The DriftWarn reference told users to place the wrapper around
   their middleware, which its signature makes impossible; it now
   states the real limitation — responses written by surrounding

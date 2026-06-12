@@ -146,11 +146,14 @@
 //	type OrderSummary struct{ OrderCore }
 //
 // The embedded core appears as its own component schema; that is
-// expected, not a leak. There is deliberately no doc-only subset
-// helper: encoding/json has no way to drop a promoted field at
-// serialization time, so a document trimmed below what the handler
-// writes would be precisely the divergence [DriftWarn] exists to
-// catch.
+// expected, not a leak. Fields promoted through a pointer embed are
+// documented per their own declarations — a nil embed omits them all
+// at serialization time, an all-or-nothing gap OpenAPI cannot
+// express and [DriftWarn] exists to catch. There is deliberately no
+// doc-only subset helper: encoding/json has no way to drop a
+// promoted field at serialization time, so a document trimmed below
+// what the handler writes would be precisely the divergence DriftWarn
+// reports.
 //
 // # Parameters
 //
