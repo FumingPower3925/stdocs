@@ -2227,3 +2227,50 @@ func TestRawFallbackAndDefaultResponses(t *testing.T) {
 		}()
 	}
 }
+
+// v0.5.0: the documented pattern for list-row subsets — a shared
+// embedded core — keeps wire and schema in agreement by construction.
+func TestComposedViewTypes(t *testing.T) {
+	type OrderCore struct {
+		ID     string `json:"id" required:"true"`
+		Status string `json:"status" enum:"open,paid,refunded"`
+	}
+	type Item struct {
+		SKU string `json:"sku"`
+	}
+	type Order struct {
+		OrderCore
+		Items []Item `json:"items"`
+	}
+	type OrderSummary struct{ OrderCore }
+
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /orders/{id}", noop, Summary("Get"), WithResponse(200, Order{}))
+	mux.HandleFunc("GET /orders", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]OrderSummary{{OrderCore{ID: "a", Status: "open"}}})
+	}, Summary("List"), WithResponse(200, []OrderSummary{}))
+
+	doc := buildDocMap(t, mux)
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+	summary, ok := schemas["OrderSummary"].(map[string]any)
+	if !ok {
+		t.Fatalf("components = %v", mapKeysOf(schemas))
+	}
+	props := summary["properties"].(map[string]any)
+	if _, ok := props["id"]; !ok || len(props) != 2 {
+		t.Errorf("embedded core must flatten into the view: %v", mapKeysOf(props))
+	}
+	if full := schemas["Order"].(map[string]any)["properties"].(map[string]any); len(full) != 3 {
+		t.Errorf("canonical model keeps its own fields: %v", mapKeysOf(full))
+	}
+
+	// The served JSON matches the documented shape — sampling, which
+	// would flag a doc-only subset, stays quiet on this pattern.
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf, DriftSampleBodies())
+	driftGet(h, "/orders")
+	if got := warnings(); len(got) != 0 {
+		t.Errorf("embedded-core view must not drift: %q", got)
+	}
+}
