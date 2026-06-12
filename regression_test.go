@@ -1675,3 +1675,75 @@ func TestLintCodesAndNewAdvisories(t *testing.T) {
 		}
 	}
 }
+
+// v0.4.1: version segments skip tag inference, WithTagFunc overrides,
+// and the completed ParamOpt vocabulary emits.
+func TestTagInferenceAndParamVocabulary(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /v1/tasks", noop, Summary("L"))
+	mux.HandleFunc("GET /v12/users/{id}", noop, Summary("G"))
+	mux.HandleFunc("GET /vault/keys", noop, Summary("K")) // not a version segment
+	doc := buildDocMap(t, mux)
+	tag := func(p string) any {
+		return doc["paths"].(map[string]any)[p].(map[string]any)["get"].(map[string]any)["tags"].([]any)[0]
+	}
+	if tag("/v1/tasks") != "Tasks" || tag("/v12/users/{id}") != "Users" {
+		t.Errorf("version segments must not become tags: %v %v", tag("/v1/tasks"), tag("/v12/users/{id}"))
+	}
+	if tag("/vault/keys") != "Vault" {
+		t.Errorf("non-version v-segments keep the old inference: %v", tag("/vault/keys"))
+	}
+
+	fmux := New(WithTitle("T"), WithTagFunc(func(method, path string) string {
+		if strings.HasPrefix(path, "/admin/") {
+			return "Admin"
+		}
+		return ""
+	}))
+	fmux.HandleFunc("GET /admin/keys", noop, Summary("K"))
+	fmux.HandleFunc("GET /tasks", noop, Summary("L"))
+	fdoc := buildDocMap(t, fmux)
+	ftag := func(p string) any {
+		return fdoc["paths"].(map[string]any)[p].(map[string]any)["get"].(map[string]any)["tags"].([]any)[0]
+	}
+	if ftag("/admin/keys") != "Admin" || ftag("/tasks") != "Tasks" {
+		t.Errorf("WithTagFunc + fallback: %v %v", ftag("/admin/keys"), ftag("/tasks"))
+	}
+
+	pmux := New(WithTitle("T"))
+	pmux.HandleFunc("GET /q", noop, Summary("Q"),
+		QueryParam("ratio", "number", "", ParamExclusiveMinimum(0), ParamFormat("double")),
+		QueryParam("ids", "array", "", ParamItems("integer"), ParamMinItems(1), ParamMaxItems(5), ParamUniqueItems()),
+	)
+	pdoc := buildDocMap(t, pmux)
+	params := pdoc["paths"].(map[string]any)["/q"].(map[string]any)["get"].(map[string]any)["parameters"].([]any)
+	byName := map[string]map[string]any{}
+	for _, p := range params {
+		pm := p.(map[string]any)
+		byName[pm["name"].(string)] = pm["schema"].(map[string]any)
+	}
+	ratio := byName["ratio"]
+	if ratio["exclusiveMinimum"] != true || ratio["minimum"] != json.Number("0") || ratio["format"] != "double" {
+		t.Errorf("ratio schema (3.0 boolean form) = %#v", ratio)
+	}
+	ids := byName["ids"]
+	if ids["items"].(map[string]any)["type"] != "integer" || ids["minItems"] != json.Number("1") ||
+		ids["maxItems"] != json.Number("5") || ids["uniqueItems"] != true {
+		t.Errorf("ids schema = %#v", ids)
+	}
+
+	for _, f := range []func(){
+		func() { QueryParam("x", "integer", "", ParamMinimum(1), ParamExclusiveMinimum(0)) },
+		func() { QueryParam("x", "string", "", ParamMinItems(1)) },
+		func() { QueryParam("x", "array", "", ParamItems("object")) },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic")
+				}
+			}()
+			f()
+		}()
+	}
+}
