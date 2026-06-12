@@ -208,13 +208,18 @@ func (d *driftWarner) refresh() {
 func (d *driftWarner) rebuild() error {
 	d.mux.specMu.Lock()
 	defer d.mux.specMu.Unlock()
+	// The generation is captured before building — the same
+	// lost-update discipline as cachedJSON: a route registered while
+	// we build bumps the generation past what we record, so the next
+	// request refreshes again instead of trusting a snapshot that may
+	// hold the late route unfinalized.
+	_, gen := d.mux.reg.snapshot()
 	// Building finalizes the visible routes' operations (auto-200,
 	// default responses, auto-401), so the snapshot reflects exactly
 	// what the document says. A build error (an unregistered security
 	// scheme) is the document's problem — note it once and snapshot
 	// what we can.
 	_, buildErr := d.mux.cachedJSON()
-	_, gen := d.mux.reg.snapshot()
 	routes := make(map[string]driftRoute, 16)
 	for _, rt := range d.mux.visibleRoutes() {
 		dr := driftRoute{
@@ -328,8 +333,14 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Declared non-JSON contracts are contracts too: a route
-	// documented as text/csv serving text/plain (or JSON) is drift.
-	if declared := dr.ctByKey[key]; declared != "" {
+	// documented as text/csv serving text/plain (or JSON) is drift —
+	// including when the status is covered by the default entry,
+	// whose declared media type is then the contract.
+	ctKey := key
+	if !dr.statuses[key] {
+		ctKey = "default"
+	}
+	if declared := dr.ctByKey[ctKey]; declared != "" {
 		if served := mediaTypeBase(rec.Header().Get("Content-Type")); served != "" && served != declared {
 			d.emit(pattern+"\x00"+key+"\x00ct", DriftFinding{Code: "content-type-mismatch", Route: pattern, Status: status},
 				"%s wrote Content-Type %q for status %d, which the document declares as %s", pattern, served, status, declared)
@@ -377,6 +388,9 @@ func (d *driftWarner) checkBodyShape(dr driftRoute, pattern, key string, status 
 	var body map[string]any
 	if json.Unmarshal(rec.body.Bytes(), &body) != nil {
 		return // not a JSON object; the schema check has nothing to say
+	}
+	if body == nil {
+		return // a literal null declares nothing about fields
 	}
 	for _, req := range shape.required {
 		if _, present := body[req]; !present {
@@ -599,10 +613,14 @@ func (r *driftRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 // ReadFrom preserves the sendfile fast path when the underlying
-// writer supports it.
+// writer supports it — except while sampling, where the bytes must
+// pass through Write to reach the capture buffer.
 func (r *driftRecorder) ReadFrom(src io.Reader) (int64, error) {
 	if r.status == 0 {
 		r.status = http.StatusOK
+	}
+	if r.captureBody {
+		return io.Copy(struct{ io.Writer }{r}, src)
 	}
 	if rf, ok := r.ResponseWriter.(io.ReaderFrom); ok {
 		return rf.ReadFrom(src)
