@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -41,14 +42,15 @@ import (
 // any status — but its body contract still applies: a JSON-documented
 // default served with a non-JSON Content-Type is drift.
 //
-// DriftWarn is a development aid, not validation: it observes
-// statuses and content types, never request or body schemas, and adds
-// a small per-request bookkeeping cost — wrap only in environments
-// where the warnings are read. Routes excluded from the document
-// (Hidden, non-shown Internal) and requests under the docs prefix are
-// ignored. The documented-status set is the served document's:
-// mux-level default responses and the automatic 401 count as
-// documented.
+// DriftWarn is a development aid, not validation: it checks
+// responses only, by design — request bodies and parameters are
+// never sampled — and adds a small per-request bookkeeping cost, so
+// wrap only in environments where the warnings are read. Routes
+// excluded from the document (Hidden, non-shown Internal) and
+// requests under the docs prefix are ignored. The documented-status
+// set is the served document's: mux-level default responses and the
+// automatic 401 count as documented. [DriftNotify] delivers the same
+// findings in structured form for CI gates and dashboards.
 func DriftWarn(m *Mux, logf func(format string, args ...any), opts ...DriftOption) http.Handler {
 	if logf == nil {
 		logf = log.Printf
@@ -77,6 +79,77 @@ func DriftSampleBodies() DriftOption {
 	return func(d *driftWarner) { d.sampleBodies = true }
 }
 
+// DriftFinding is one drift observation in structured form, delivered
+// to [DriftNotify] callbacks alongside the log line.
+type DriftFinding struct {
+	// Code identifies the finding kind stably across releases —
+	// allow-lists and CI gates should match on it, never on Message
+	// prose, which is free to improve. The same discipline as
+	// [Warning].Code. The codes:
+	//
+	//	build-failed           the document could not be built;
+	//	                       findings may be incomplete
+	//	undeclared-status      a handler wrote a status the document
+	//	                       does not declare
+	//	content-type-mismatch  the served Content-Type contradicts
+	//	                       the declared body
+	//	missing-required-field a sampled body lacks a key its schema
+	//	                       requires (DriftSampleBodies)
+	//	undocumented-fields    a sampled body carries keys its schema
+	//	                       does not document (DriftSampleBodies)
+	Code string
+	// Route is the registered pattern ("GET /tasks"); empty for
+	// document-level findings (build-failed).
+	Route string
+	// Status is the observed response status; 0 for document-level
+	// findings.
+	Status int
+	// Field locates body findings: a top-level key ("fee_cents").
+	// Empty for everything else.
+	Field string
+	// Message is the human-readable line — the logged text without
+	// its "stdocs drift: " prefix.
+	Message string
+}
+
+// DriftNotify registers fn to receive every finding DriftWarn would
+// log, in structured form — the bridge from log lines to CI gates
+// and dashboards. fn runs once per deduplicated finding, on the
+// goroutine serving the request that observed it, so it must
+// synchronize anything it touches:
+//
+//	var mu sync.Mutex
+//	var found []stdocs.DriftFinding
+//	h := stdocs.DriftWarn(mux, nil, stdocs.DriftNotify(func(f stdocs.DriftFinding) {
+//	    mu.Lock()
+//	    defer mu.Unlock()
+//	    found = append(found, f)
+//	}))
+//
+// Replaying traffic through h in a test and asserting on the
+// collected findings turns drift into a CI gate, with the same
+// allow-list shape as [Mux.Lint]:
+//
+//	accepted := map[string]bool{"undocumented-fields": true}
+//	for _, f := range found {
+//	    if !accepted[f.Code] {
+//	        t.Errorf("%s", f.Message)
+//	    }
+//	}
+//
+// A gate is only as strong as its traffic — findings exist for
+// exercised routes only — and build-failed arrives through fn too,
+// so a broken document cannot pass as zero drift. Findings are
+// deduplicated for the warner's lifetime; multiple DriftNotify
+// callbacks all receive each finding.
+func DriftNotify(fn func(DriftFinding)) DriftOption {
+	return func(d *driftWarner) {
+		if fn != nil {
+			d.notify = append(d.notify, fn)
+		}
+	}
+}
+
 // driftShape is the documented top-level object shape for one
 // response entry.
 type driftShape struct {
@@ -102,6 +175,7 @@ type driftWarner struct {
 	mux          *Mux
 	logf         func(format string, args ...any)
 	sampleBodies bool
+	notify       []func(DriftFinding)
 
 	mu      sync.Mutex
 	seen    map[string]bool
@@ -109,10 +183,20 @@ type driftWarner struct {
 	routes  map[string]driftRoute
 }
 
-// refresh rebuilds the route snapshot from the current document. The
-// build lock is held for the whole copy, so finalize cannot mutate
-// operations mid-snapshot; the copied maps are never shared.
+// refresh rebuilds the route snapshot and reports any build error —
+// outside the build lock, so notify callbacks are free to call the
+// mux's document methods.
 func (d *driftWarner) refresh() {
+	if err := d.rebuild(); err != nil {
+		d.emit("\x00build-failed\x00"+err.Error(), DriftFinding{Code: "build-failed"},
+			"document build failed, warnings may be incomplete: %v", err)
+	}
+}
+
+// rebuild copies the route snapshot under the build lock, so finalize
+// cannot mutate operations mid-snapshot; the copied maps are never
+// shared.
+func (d *driftWarner) rebuild() error {
 	d.mux.specMu.Lock()
 	defer d.mux.specMu.Unlock()
 	// Building finalizes the visible routes' operations (auto-200,
@@ -120,9 +204,7 @@ func (d *driftWarner) refresh() {
 	// what the document says. A build error (an unregistered security
 	// scheme) is the document's problem — note it once and snapshot
 	// what we can.
-	if _, err := d.mux.cachedJSON(); err != nil {
-		d.logf("stdocs drift: document build failed, warnings may be incomplete: %v", err)
-	}
+	_, buildErr := d.mux.cachedJSON()
 	_, gen := d.mux.reg.snapshot()
 	routes := make(map[string]driftRoute, 16)
 	for _, rt := range d.mux.visibleRoutes() {
@@ -158,6 +240,7 @@ func (d *driftWarner) refresh() {
 	d.routes = routes
 	d.snapGen = gen
 	d.mu.Unlock()
+	return buildErr
 }
 
 // snapshot returns the current route map, rebuilding it when routes
@@ -220,16 +303,16 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(pattern, " ") {
 			via = " (observed via " + r.Method + ")"
 		}
-		d.warn(pattern+"\x00"+key,
-			"stdocs drift: %s%s returned %d, which the document does not declare",
+		d.emit(pattern+"\x00"+key, DriftFinding{Code: "undeclared-status", Route: pattern, Status: status},
+			"%s%s returned %d, which the document does not declare",
 			pattern, via, status)
 		return
 	}
 	if declaredJSON {
 		ct := rec.Header().Get("Content-Type")
 		if ct != "" && !strings.Contains(ct, "json") {
-			d.warn(pattern+"\x00"+key+"\x00ct",
-				"stdocs drift: %s wrote Content-Type %q for status %d, which the document declares with a JSON body", pattern, ct, status)
+			d.emit(pattern+"\x00"+key+"\x00ct", DriftFinding{Code: "content-type-mismatch", Route: pattern, Status: status},
+				"%s wrote Content-Type %q for status %d, which the document declares with a JSON body", pattern, ct, status)
 			return
 		}
 		d.checkBodyShape(dr, pattern, key, status, rec)
@@ -239,8 +322,8 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// documented as text/csv serving text/plain (or JSON) is drift.
 	if declared := dr.ctByKey[key]; declared != "" {
 		if served := mediaTypeBase(rec.Header().Get("Content-Type")); served != "" && served != declared {
-			d.warn(pattern+"\x00"+key+"\x00ct",
-				"stdocs drift: %s wrote Content-Type %q for status %d, which the document declares as %s", pattern, served, status, declared)
+			d.emit(pattern+"\x00"+key+"\x00ct", DriftFinding{Code: "content-type-mismatch", Route: pattern, Status: status},
+				"%s wrote Content-Type %q for status %d, which the document declares as %s", pattern, served, status, declared)
 		}
 	}
 }
@@ -280,8 +363,8 @@ func (d *driftWarner) checkBodyShape(dr driftRoute, pattern, key string, status 
 	}
 	for _, req := range shape.required {
 		if _, present := body[req]; !present {
-			d.warn(pattern+"\x00"+key+"\x00breq\x00"+req,
-				"stdocs drift: %s response %d is missing required field %q declared by its documented schema", pattern, status, req)
+			d.emit(pattern+"\x00"+key+"\x00breq\x00"+req, DriftFinding{Code: "missing-required-field", Route: pattern, Status: status, Field: req},
+				"%s response %d is missing required field %q declared by its documented schema", pattern, status, req)
 		}
 	}
 	var extras []string
@@ -295,8 +378,8 @@ func (d *driftWarner) checkBodyShape(dr driftRoute, pattern, key string, status 
 		if len(extras) > 3 {
 			extras = extras[:3]
 		}
-		d.warn(pattern+"\x00"+key+"\x00bextra",
-			"stdocs drift: %s response %d carries fields not in its documented schema (e.g. %s)", pattern, status, strings.Join(extras, ", "))
+		d.emit(pattern+"\x00"+key+"\x00bextra", DriftFinding{Code: "undocumented-fields", Route: pattern, Status: status},
+			"%s response %d carries fields not in its documented schema (e.g. %s)", pattern, status, strings.Join(extras, ", "))
 	}
 }
 
@@ -321,14 +404,21 @@ func objectShape(bodyValue any) (driftShape, bool) {
 	return shape, true
 }
 
-// warn logs once per key.
-func (d *driftWarner) warn(key, format string, args ...any) {
+// emit logs once per dedup key and delivers the structured finding to
+// the notify callbacks. Formatting is deferred past the dedup check,
+// and callbacks run outside every lock.
+func (d *driftWarner) emit(dedup string, f DriftFinding, format string, args ...any) {
 	d.mu.Lock()
-	already := d.seen[key]
-	d.seen[key] = true
+	already := d.seen[dedup]
+	d.seen[dedup] = true
 	d.mu.Unlock()
-	if !already {
-		d.logf(format, args...)
+	if already {
+		return
+	}
+	f.Message = fmt.Sprintf(format, args...)
+	d.logf("stdocs drift: %s", f.Message)
+	for _, fn := range d.notify {
+		fn(f)
 	}
 }
 
