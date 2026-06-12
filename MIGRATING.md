@@ -1,6 +1,6 @@
 # Migrating to stdocs
 
-Three guides for the most common starting points. Each is a mapping
+Four guides for the most common starting points. Each is a mapping
 table plus the workflow differences worth knowing — the [package
 reference](https://pkg.go.dev/github.com/FumingPower3925/stdocs) has
 the full detail on every option.
@@ -88,3 +88,53 @@ validation library) — the constraint tags describe the same rules to
 consumers, and `DriftWarn` plus the golden-file test keep the
 document honest while you migrate route by route: both stacks can
 serve side by side under one `http.ServeMux` during the transition.
+
+## Retrofitting an existing API
+
+Adding stdocs to a grown codebase is an additive diff: handlers and
+middleware keep their signatures, and the stdocs-referencing lines
+concentrate where routes are registered. The patterns that carry a
+real retrofit:
+
+**Doc-only mirror types.** Handlers that decode anonymous structs or
+build `map[string]any` responses need named types for `WithBody`/
+`WithResponse`. Collect them in a `docs.go` next to the registration
+— zero runtime effect, one reviewable file. The mirror can drift from
+the handler the same way any documentation can; `stdocs.DriftWarn`
+catches status and content-type divergence in development, and the
+golden-file test (reference: "Using the spec downstream") makes any
+spec change reviewable in PRs.
+
+**Docs behind auth middleware.** `Mount` registers the docs on the
+mux itself, so blanket auth middleware guards the docs page too. Skip
+the docs prefix in the middleware when the docs should stay open —
+the reference's "Mounting and toggling" section shows the pattern.
+
+**Raw and file responses.** CSV exports and plain-text errors
+document with a string body plus a content-type override:
+
+```go
+stdocs.WithResponse(200, ""),
+stdocs.WithResponseContentType(200, "text/csv"),
+stdocs.WithResponseHeader(200, "Content-Disposition", "string", "attachment; filename=export.csv"),
+```
+
+**Generic envelopes.** A `ListPage[T]` wrapper documents naturally;
+give each instantiation a deliberate component name with a
+`SchemaName` method when the simplified automatic one
+(`ListPage_Shipment`) is not what your consumers should see.
+
+**Inconsistent error shapes.** Different handler eras with different
+error bodies document honestly per route; declare the dominant shape
+once with `stdocs.WithDefaultResponse` and override the exceptions
+per route or per `stdocs.Opts` bundle.
+
+**Same-named types across packages.** `handlers.Stats` and
+`store.Stats` collide on the component name; the second takes a
+`Stats_2` suffix and `Lint` flags it (`name-collision`). Two one-line
+`SchemaName` methods give both deliberate names.
+
+**Keeping it honest in CI.** The golden-file test plus a
+`Lint` gate (allow-listing accepted findings by `Warning.Code`)
+turns the retrofit's documentation debt into a visible, reviewable
+list instead of silent rot.
