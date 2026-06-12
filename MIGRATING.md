@@ -114,10 +114,14 @@ redundant and can be deleted (Mount tolerates it either way).
 expect them to change on upgrade: body sampling now looks one level
 into list rows (`orders[].fee_cents`) and into array bodies, statuses
 covered only by a `default` entry get its media-type contract
-checked, and literal-null JSON bodies no longer produce false
-missing-field warnings. New warnings on upgrade mean the divergence
-was already being served; `stdocs.DriftNotify` turns the same
-findings into structured input for a CI gate.
+checked, and a body of the wrong top-level JSON kind — the classic
+literal-null 200 — warns once as `body-kind-mismatch` instead of
+producing a false missing-field warning per key. One class of
+warnings disappears: the ServeMux's own canonicalization redirects
+(`/sub` hitting a `GET /sub/` registration) are no longer attributed
+to the route, since its handler never ran. New warnings on upgrade
+mean the divergence was already being served; `stdocs.DriftNotify`
+turns the same findings into structured input for a CI gate.
 
 **Docs behind auth middleware.** `Mount` registers the docs on the
 mux itself, so blanket auth middleware guards the docs page too. Skip
@@ -132,6 +136,12 @@ stdocs.WithRawResponse(200, "text/csv"),
 stdocs.WithResponseHeader(200, "Content-Disposition", "string", "attachment; filename=export.csv"),
 ```
 
+**List-row subsets.** When summaries repeat half of a canonical model
+(`StationSummary` next to `Station`), share the common fields through
+an embedded core instead of re-declaring them — the reference's
+"Composing view types" passage (under Field tags) shows the pattern
+and why a doc-only subset helper deliberately does not exist.
+
 **Generic envelopes.** A `ListPage[T]` wrapper documents naturally;
 give each instantiation a deliberate component name with a
 `SchemaName` method when the simplified automatic one
@@ -144,6 +154,10 @@ error bodies document honestly: declare the dominant shape once with
 fallbacks beat the mux default, explicit declarations beat both. A
 plain-text era bundles the same way with
 `stdocs.WithFallbackRawResponse(404, "text/plain; charset=utf-8")`.
+Include a status-0 fallback in each bundle (`WithFallbackResponse(0,
+EraError{})` or its raw twin): without it, the era's routes carry the
+mux-wide default entry as their documented catch-all — the wrong
+era's shape.
 
 **Same-named types across packages.** `handlers.Stats` and
 `store.Stats` collide on the component name; the second takes a

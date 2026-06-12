@@ -19,7 +19,7 @@ have.
 
 - `DriftNotify(fn)`: every drift warning is also delivered as a
   structured `DriftFinding` with a stable `Code` (`build-failed`,
-  `undeclared-status`, `content-type-mismatch`,
+  `undeclared-status`, `content-type-mismatch`, `body-kind-mismatch`,
   `missing-required-field`, `undocumented-fields`) — allow-list by
   Code in a test that replays traffic and drift becomes a CI gate,
   the same discipline as `Warning.Code`.
@@ -46,8 +46,13 @@ have.
   a `default` entry now have its declared media type checked (a CSV
   default served as plain text warns like an explicit status would),
   and new row-level warnings surface divergence that was already
-  being served. A literal JSON `null` body no longer counts every
-  required field missing.
+  being served. A sampled body of the wrong top-level JSON kind —
+  the classic literal-null 200 against an object schema — warns once
+  as `body-kind-mismatch` instead of counting every required field
+  missing. One class of warnings disappears: the ServeMux's own
+  canonicalization redirects (`/sub` hitting a `GET /sub/`
+  registration, path cleaning) are no longer attributed to the
+  route — its handler never ran, so there is no contract to compare.
 - The generator notes were re-verified against current releases:
   ogen v1.17.0 fixed the nullable anyOf-with-facets rejection, and
   the `nullable-facet-generators` advisory now says so precisely
