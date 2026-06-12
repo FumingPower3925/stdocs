@@ -2108,3 +2108,27 @@ func mustReflect(v any) {
 	m.HandleFunc("POST /x", noop, WithBody(v))
 	m.JSON()
 }
+
+// v0.4.2 user-sim findings: header descriptions on the Header
+// Object, dots normalized in operationIds.
+func TestHeaderDescriptionAndDotIDs(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /v1/export/transactions.csv", noop, Summary("Export"),
+		WithRawResponse(200, "text/csv"),
+		WithResponseHeader(200, "Content-Disposition", "string", "attachment"),
+	)
+	doc := buildDocMap(t, mux)
+	op := doc["paths"].(map[string]any)["/v1/export/transactions.csv"].(map[string]any)["get"].(map[string]any)
+	if op["operationId"] != "get_v1_export_transactions_csv" {
+		t.Errorf("operationId = %v, want dots normalized", op["operationId"])
+	}
+	hdr := op["responses"].(map[string]any)["200"].(map[string]any)["headers"].(map[string]any)["Content-Disposition"].(map[string]any)
+	if hdr["description"] != "attachment" {
+		t.Errorf("description belongs on the Header Object: %v", hdr)
+	}
+	if sch, ok := hdr["schema"].(map[string]any); ok {
+		if _, leaked := sch["description"]; leaked {
+			t.Errorf("description must not duplicate into the header schema: %v", sch)
+		}
+	}
+}

@@ -40,10 +40,11 @@ func TestResponseHeader_AddsHeader(t *testing.T) {
 	)
 	b, _ := m.JSON()
 	doc := jx(t, b)
-	hdr := doc["paths"].(map[string]any)["/x"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["200"].(map[string]any)["headers"].(map[string]any)["X-Trace-Id"].(map[string]any)["schema"].(map[string]any)
-	if hdr["type"] != "string" {
-		t.Errorf("X-Trace-Id type = %v, want string", hdr["type"])
+	hdr := doc["paths"].(map[string]any)["/x"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["200"].(map[string]any)["headers"].(map[string]any)["X-Trace-Id"].(map[string]any)
+	if hdr["schema"].(map[string]any)["type"] != "string" {
+		t.Errorf("X-Trace-Id schema type = %v, want string", hdr["schema"])
 	}
+	// The description sits on the Header Object, where UIs render it.
 	if hdr["description"] != "Trace id" {
 		t.Errorf("X-Trace-Id description = %v", hdr["description"])
 	}
