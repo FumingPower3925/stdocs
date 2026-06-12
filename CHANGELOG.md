@@ -9,6 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.5.0] - 2026-06-12
+
+DriftWarn graduates from log lines to a CI-gateable contract checker,
+and raw responses get the same default/fallback treatment JSON bodies
+have.
+
+### Added
+
+- `DriftNotify(fn)`: every drift warning is also delivered as a
+  structured `DriftFinding` with a stable `Code` (`build-failed`,
+  `undeclared-status`, `content-type-mismatch`,
+  `missing-required-field`, `undocumented-fields`) — allow-list by
+  Code in a test that replays traffic and drift becomes a CI gate,
+  the same discipline as `Warning.Code`.
+- `DriftSampleBodies` now looks one level into rows: elements of
+  array-of-object properties (`orders[].fee_cents`) and of array
+  bodies (`[].id`) have their keys compared against the documented
+  row schema, accumulated per field so warn volume stays bounded by
+  the schema, never the row count.
+- `WithFallbackRawResponse(status, contentType)` and
+  `WithDefaultRawResponse(status, contentType)`: raw string-typed
+  default responses at both scopes, completing the
+  default/fallback x JSON/raw grid — a plain-text error era bundles
+  the way a JSON one does. Precedence is unchanged, and a
+  `WithResponseContentType` on the route survives a raw fallback.
+- A documented pattern for list-row subsets: share the canonical
+  model's common fields through an embedded core (reflection
+  flattens embedding exactly as `encoding/json` does). There is
+  deliberately no doc-only subset helper — a document trimmed below
+  what the handler writes is what `DriftWarn` exists to catch.
+
+### Changed
+
+- Drift logs get more accurate on upgrade: statuses covered only by
+  a `default` entry now have its declared media type checked (a CSV
+  default served as plain text warns like an explicit status would),
+  and new row-level warnings surface divergence that was already
+  being served. A literal JSON `null` body no longer counts every
+  required field missing.
+- The generator notes were re-verified against current releases:
+  ogen v1.17.0 fixed the nullable anyOf-with-facets rejection, and
+  the `nullable-facet-generators` advisory now says so precisely
+  (the Code is unchanged; exclusive bounds, the webhook-security
+  bug, and the oapi-codegen nullable-enum constant still stand).
+  CI generates with ogen v1.20.3.
+
+### Fixed
+
+- `DriftWarn`'s route snapshot records its registration generation
+  before building, closing a window where a route registered
+  mid-build could be snapshotted unfinalized and never revisited.
+- Bodies streamed via `ReadFrom` (sendfile) flow through the
+  sampling capture buffer instead of bypassing the body check.
+
 ## [0.4.2] - 2026-06-12
 
 ### Added
@@ -340,7 +394,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/FumingPower3925/stdocs/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/FumingPower3925/stdocs/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/FumingPower3925/stdocs/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/FumingPower3925/stdocs/compare/v0.3.0...v0.4.0

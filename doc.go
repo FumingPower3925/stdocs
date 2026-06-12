@@ -267,9 +267,12 @@
 // restrict what they may do — never use it to grant access.
 // [DriftWarn] wraps the mux in a development aid that warns when a
 // handler returns a status the document does not declare or serves a
-// JSON-documented response with another content type; with
+// response with a content type contradicting the declared body; with
 // [DriftSampleBodies] it additionally compares response bodies'
-// top-level keys against the documented schema.
+// keys — top-level and one level of list rows — against the
+// documented schema. [DriftNotify] delivers every finding as a
+// [DriftFinding] with a stable Code, turning replayed traffic into a
+// CI gate.
 //
 // # Component names
 //
