@@ -60,6 +60,7 @@ var assetsSubFS, _ = fs.Sub(assetsFS, "assets")
 func WithUI() stdocs.Option {
 	return func(c *stdocs.Config) {
 		c.UIDoc = html
+		c.Assets = AssetHandler()
 	}
 }
 
