@@ -110,6 +110,15 @@ the `_assets` route itself; the manual
 `mux.Handle("GET /docs/_assets/", ...)` line from the old example is
 redundant and can be deleted (Mount tolerates it either way).
 
+**Upgrading DriftWarn to v0.5.0.** Drift logs get more accurate, so
+expect them to change on upgrade: body sampling now looks one level
+into list rows (`orders[].fee_cents`) and into array bodies, statuses
+covered only by a `default` entry get its media-type contract
+checked, and literal-null JSON bodies no longer produce false
+missing-field warnings. New warnings on upgrade mean the divergence
+was already being served; `stdocs.DriftNotify` turns the same
+findings into structured input for a CI gate.
+
 **Docs behind auth middleware.** `Mount` registers the docs on the
 mux itself, so blanket auth middleware guards the docs page too. Skip
 the docs prefix in the middleware when the docs should stay open —
@@ -132,7 +141,9 @@ give each instantiation a deliberate component name with a
 error bodies document honestly: declare the dominant shape once with
 `stdocs.WithDefaultResponse`, and give each era its own
 `stdocs.WithFallbackResponse` inside an `stdocs.Opts` bundle — route
-fallbacks beat the mux default, explicit declarations beat both.
+fallbacks beat the mux default, explicit declarations beat both. A
+plain-text era bundles the same way with
+`stdocs.WithFallbackRawResponse(404, "text/plain; charset=utf-8")`.
 
 **Same-named types across packages.** `handlers.Stats` and
 `store.Stats` collide on the component name; the second takes a
