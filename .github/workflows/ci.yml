@@ -250,6 +250,25 @@ jobs:
           print("3.2.0 valid against", schema.get("$id", "official schema"))
           EOF
 
+  # Headless rendering smoke tests for all nine bundled UIs. Needs a
+  # browser and (for the CDN variants) the network, so it runs on
+  # manual dispatch rather than gating every push; the same command
+  # runs locally with any Chrome/Chromium.
+  ui-smoke:
+    name: UI smoke
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+      - name: Render all UIs headlessly
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: go test -tags uismoke -run TestUISmoke -v -timeout 15m .
+
   # Single fan-in check for branch protection: required status checks
   # are matched by name, and the compat matrix's job names change with
   # every Go patch release — so protection requires only this job,
