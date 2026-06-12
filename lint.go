@@ -29,7 +29,9 @@ func (w Warning) String() string { return w.Where + ": " + w.Message }
 //   - component names that needed a collision suffix (User_2) —
 //     fixable with a SchemaName method,
 //   - custom-method operations, which 3.0/3.1 consumers only see
-//     under the x-stdocs-additionalOperations extension, and
+//     under the x-stdocs-additionalOperations extension,
+//   - host-scoped registrations shadowed in the document (OpenAPI
+//     paths cannot express ServeMux host scoping), and
 //   - vendor extensions in the output when WithCleanOutput is off.
 //
 // Lint never affects emission and the findings list may grow in
@@ -76,6 +78,13 @@ func (m *Mux) Lint() []Warning {
 		if msg, ok := rt.op.Extensions["x-stdocs-warning"].(string); ok {
 			out = append(out, Warning{Where: where, Message: msg})
 		}
+	}
+
+	_, shadowed := m.routeVisibility()
+	for _, rt := range shadowed {
+		where := strings.TrimSpace(rt.parsed.Method + " " + rt.parsed.Path())
+		out = append(out, Warning{Where: where,
+			Message: "registered on host " + rt.parsed.Host + " but shadowed in the document by another registration of the same method and path (OpenAPI cannot express hosts); the route serves traffic yet is absent from the published contract"})
 	}
 
 	report := m.lintComponents()
