@@ -325,8 +325,10 @@
 // SchemaName methods control the generated type names. A
 // document-level default response ([WithDefaultResponse] with
 // status 0) enables ogen's typed convenient-error handling;
-// [DriftWarn] still checks the default entry's body contract, so
-// the combination keeps drift detection meaningful. [WithOpenAPI]
+// [DriftWarn] still checks the default entry's body and content-type
+// contracts, but a default entry covers every status, so
+// undeclared-status findings are off the table — weigh that against
+// the generator convenience when drift gating matters. [WithOpenAPI]
 // registers a hook that may mutate the document before caching, as
 // an escape hatch for anything stdocs does not expose; [Mux.Refresh]
 // forces a rebuild.

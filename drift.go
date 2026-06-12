@@ -42,7 +42,10 @@ import (
 // call; routes registered later are picked up automatically on the
 // next request. A mux-level "default" response counts as documenting
 // any status — but its body contract still applies: a JSON-documented
-// default served with a non-JSON Content-Type is drift.
+// default served with a non-JSON Content-Type is drift. Place
+// DriftWarn outermost — around recovery and auth middleware — so the
+// responses they write are checked too; whatever writes outside the
+// wrapper is invisible to it.
 //
 // DriftWarn is a development aid, not validation: it checks
 // responses only, by design — request bodies and parameters are
@@ -78,11 +81,11 @@ type DriftOption func(*driftWarner)
 // top-level keys and one level of rows — elements of array-of-object
 // properties ("orders[].fee_cents") and of array bodies ("[].id") —
 // never values, deeper nesting, or rows of rows. A body of the wrong
-// top-level kind entirely (an object where an array is documented,
-// or vice versa) is outside sampling's scope and stays quiet.
-// Sampling copies up to 64 KB of each tracked response, which is why
-// it is a separate opt; like DriftWarn itself, it is a development
-// aid.
+// top-level kind entirely (a literal null, an array where an object
+// is documented, or vice versa) warns as body-kind-mismatch instead
+// of being compared key by key. Sampling copies up to 64 KB of each
+// tracked response, which is why it is a separate opt; like
+// DriftWarn itself, it is a development aid.
 func DriftSampleBodies() DriftOption {
 	return func(d *driftWarner) { d.sampleBodies = true }
 }
@@ -101,25 +104,29 @@ type DriftFinding struct {
 	//	                       does not declare
 	//	content-type-mismatch  the served Content-Type contradicts
 	//	                       the declared body
+	//	body-kind-mismatch     a sampled body is valid JSON of the
+	//	                       wrong top-level kind — null, an array
+	//	                       where an object is documented, or vice
+	//	                       versa (DriftSampleBodies)
 	//	missing-required-field a sampled body lacks a key its schema
 	//	                       requires (DriftSampleBodies)
 	//	undocumented-fields    a sampled body carries keys its schema
 	//	                       does not document (DriftSampleBodies)
-	Code string
+	Code string `json:"code"`
 	// Route is the registered pattern ("GET /tasks"); empty for
 	// document-level findings (build-failed).
-	Route string
+	Route string `json:"route"`
 	// Status is the observed response status; 0 for document-level
 	// findings.
-	Status int
+	Status int `json:"status"`
 	// Field locates body findings: a top-level key ("fee_cents"), a
 	// row path ("orders[].fee_cents", "[].id"), or the row prefix
 	// alone when rows carry undocumented fields ("orders[]"). Empty
 	// for everything else.
-	Field string
+	Field string `json:"field,omitempty"`
 	// Message is the human-readable line — the logged text without
 	// its "stdocs drift: " prefix.
-	Message string
+	Message string `json:"message"`
 }
 
 // DriftNotify registers fn to receive every finding DriftWarn would
@@ -150,9 +157,14 @@ type DriftFinding struct {
 //
 // A gate is only as strong as its traffic — findings exist for
 // exercised routes only — and build-failed arrives through fn too,
-// so a broken document cannot pass as zero drift. Findings are
-// deduplicated for the warner's lifetime; multiple DriftNotify
-// callbacks all receive each finding.
+// so a broken document cannot pass as zero drift. The flat fields
+// support finer allow-lists than the Code-only map above:
+// f.Code+" "+f.Route waives one route's known divergence without
+// waiving the whole class. Findings are deduplicated for the
+// warner's lifetime — a long-running process reports each finding
+// once and never re-emits it, so dashboards distinguish "fixed" from
+// "already reported" by restart, not by silence. Multiple
+// DriftNotify callbacks all receive each finding.
 func DriftNotify(fn func(DriftFinding)) DriftOption {
 	return func(d *driftWarner) {
 		if fn != nil {
@@ -396,6 +408,25 @@ func isCanonicalRedirect(status int, location string, u *url.URL) bool {
 	return false
 }
 
+// jsonKind names a decoded JSON value's kind for the body-kind
+// finding.
+func jsonKind(v any) string {
+	switch v.(type) {
+	case nil:
+		return "null"
+	case map[string]any:
+		return "object"
+	case []any:
+		return "array"
+	case string:
+		return "string"
+	case bool:
+		return "boolean"
+	default:
+		return "number"
+	}
+}
+
 // mediaTypeBase strips parameters from a media type ("text/csv;
 // charset=utf-8" -> "text/csv").
 func mediaTypeBase(ct string) string {
@@ -425,20 +456,29 @@ func (d *driftWarner) checkBodyShape(dr driftRoute, pattern, key string, status 
 			return
 		}
 	}
+	var v any
+	if json.Unmarshal(rec.body.Bytes(), &v) != nil {
+		return // not valid JSON; the content-type check has that beat
+	}
+	want := "object"
 	if shape.arrayRow != nil {
-		var rows []any
-		if json.Unmarshal(rec.body.Bytes(), &rows) != nil {
-			return // not a JSON array; the schema check has nothing to say
-		}
+		want = "array"
+	}
+	rows, isArray := v.([]any)
+	body, isObject := v.(map[string]any)
+	if got := jsonKind(v); got != want {
+		// A null balance, an object where rows are documented: the
+		// wrong top-level kind is the bluntest body drift there is.
+		d.emit(pattern+"\x00"+key+"\x00bkind", DriftFinding{Code: "body-kind-mismatch", Route: pattern, Status: status},
+			"%s response %d carries a JSON %s body, but its documented schema is an %s", pattern, status, got, want)
+		return
+	}
+	if isArray {
 		d.checkRows(pattern, key, status, "[]", *shape.arrayRow, rows)
 		return
 	}
-	var body map[string]any
-	if json.Unmarshal(rec.body.Bytes(), &body) != nil {
-		return // not a JSON object; the schema check has nothing to say
-	}
-	if body == nil {
-		return // a literal null declares nothing about fields
+	if !isObject {
+		return
 	}
 	for _, req := range shape.required {
 		if _, present := body[req]; !present {
