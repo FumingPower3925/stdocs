@@ -2,9 +2,11 @@ package schema
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -1501,11 +1503,17 @@ func TestEmbeddingDominance(t *testing.T) {
 	type emB struct {
 		X int `json:"x"`
 	}
-	type conflict struct {
-		emA
-		emB //nolint:govet // the repeated json tag is the collision under test
-	}
-	s := agree("equal-depth conflict", conflict{emA{X: "a", Y: "y"}, emB{X: 1}})
+	// The colliding embeds are assembled with reflect.StructOf: vet's
+	// structtag check (rightly) rejects declaring this shape, and the
+	// collision is exactly what is under test.
+	conflictT := reflect.StructOf([]reflect.StructField{
+		{Name: "EmA", Type: reflect.TypeOf(emA{}), Anonymous: true},
+		{Name: "EmB", Type: reflect.TypeOf(emB{}), Anonymous: true},
+	})
+	conflictV := reflect.New(conflictT).Elem()
+	conflictV.Field(0).Set(reflect.ValueOf(emA{X: "a", Y: "y"}))
+	conflictV.Field(1).Set(reflect.ValueOf(emB{X: 1}))
+	s := agree("equal-depth conflict", conflictV.Interface())
 	if slices.Contains(s.Required, "x") {
 		t.Errorf("a dropped field must not be required: %v", s.Required)
 	}
@@ -1568,4 +1576,172 @@ func TestEmbeddingDominance(t *testing.T) {
 	if s := agree("shadowed required must not leak", shadowReq{core{"x"}, &outer}); slices.Contains(s.Required, "id") {
 		t.Errorf("the winning optional field must not inherit the loser's required-ness: %v", s.Required)
 	}
+}
+
+// v0.5.1 verification: the shapes the adversarial round surfaced —
+// each pinned against json.Marshal, the oracle for every flattening
+// question.
+func TestEmbeddingDominanceEdges(t *testing.T) {
+	resolve := func(v any) *Schema {
+		root, comps := ReflectSchema(v)
+		s := root
+		if s != nil && s.Ref != "" {
+			s = comps[strings.TrimPrefix(s.Ref, "#/components/schemas/")]
+		}
+		if s == nil {
+			t.Fatalf("no schema for %T", v)
+		}
+		return s
+	}
+	props := func(v any) map[string]bool {
+		s := resolve(v)
+		out := make(map[string]bool, len(s.Properties))
+		for k := range s.Properties {
+			out[k] = true
+		}
+		return out
+	}
+	wire := func(v any) map[string]bool {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			t.Fatalf("marshal %T: %v", v, err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatalf("unmarshal %T: %v", v, err)
+		}
+		out := make(map[string]bool, len(m))
+		for k := range m {
+			out[k] = true
+		}
+		return out
+	}
+	same := func(name string, v any) {
+		t.Helper()
+		p, w := props(v), wire(v)
+		if !maps.Equal(p, w) {
+			t.Errorf("%s: schema %v != wire %v", name, p, w)
+		}
+	}
+
+	// The shared-intermediate diamond: json loses embed multiplicity
+	// at the queueing step, so the field below the join point
+	// survives while the duplicated type's own leaves annihilate.
+	type leafE struct {
+		Z int `json:"z"`
+	}
+	type mid struct {
+		leafE
+		L int `json:"l"`
+	}
+	type d1 struct{ mid }
+	type d2 struct{ mid }
+	type sharedDiamond struct {
+		d1
+		d2
+		X int `json:"x"`
+	}
+	same("shared-intermediate diamond", sharedDiamond{d1{mid{leafE{11}, 1}}, d2{mid{leafE{22}, 2}}, 3})
+
+	// Embeds with no JSON-visible fields flatten into nothing instead
+	// of inventing a required type-named property.
+	type guarded struct {
+		sync.Mutex
+		X int `json:"x"`
+	}
+	same("sync.Mutex embed", guarded{X: 7})
+	type marker struct{}
+	type marked struct {
+		marker
+		X int `json:"x"`
+	}
+	same("empty marker embed", marked{marker{}, 1})
+
+	// Recursive pointer embeds terminate without a phantom property.
+	type recA struct {
+		Next *recA `json:"-"`
+		X    int   `json:"x"`
+	}
+	_ = recA{}
+	same("self-recursive pointer embed", struct {
+		*selfRec
+		X int `json:"x"`
+	}{&selfRec{nil, 5}, 1})
+
+	// A tag-named unexported struct embed is a leaf field on the wire.
+	same("tagged unexported embed", taggedUnexported{hiddenLeaf{"v"}, 2})
+
+	// Marshaler embeds whose promotion is blocked flatten their
+	// exported fields, exactly as typeFields does.
+	same("blocked marshaler embeds", struct {
+		mj1
+		mj2
+		X int `json:"x"`
+	}{mj1{1}, mj2{2}, 3})
+
+	// json:"-," names the key "-"; only the bare "-" tag skips.
+	same("dash-named field", struct {
+		A int `json:"-,"` //nolint:staticcheck // naming a key "-" is the case under test
+		X int `json:"x"`
+	}{1, 2})
+
+	// An embedded named scalar is a regular wire field; an openapi
+	// override on it must apply, not panic.
+	if s := resolve(scalarEmbedOverride{7, 1}); s.Properties["MyScalar"] == nil || s.Properties["MyScalar"].Type != "string" {
+		t.Errorf("scalar embed override must apply: %+v", s.Properties["MyScalar"])
+	}
+
+	// openapi:"-" hides a field from the document but it still exists
+	// on the wire, so a collision json drops must not resurface the
+	// rival.
+	hiddenCollisionT := reflect.StructOf([]reflect.StructField{
+		{Name: "EmHideA", Type: reflect.TypeOf(emHideA{}), Anonymous: true},
+		{Name: "EmHideB", Type: reflect.TypeOf(emHideB{}), Anonymous: true},
+		{Name: "N", Type: reflect.TypeOf(0), Tag: `json:"n"`},
+	})
+	hv := reflect.New(hiddenCollisionT).Elem().Interface()
+	if p := props(hv); p["v"] {
+		t.Errorf("an openapi:\"-\" candidate must still annihilate its rival: %v", p)
+	}
+}
+
+type selfRec struct {
+	*selfRec
+	S int `json:"s"`
+}
+
+type hiddenLeaf struct {
+	V string `json:"v"`
+}
+
+type taggedUnexported struct {
+	hiddenLeaf `json:"h"`
+	X          int `json:"x"`
+}
+
+type mj1 struct {
+	A1 int `json:"a1"`
+}
+
+func (mj1) MarshalJSON() ([]byte, error) { return []byte(`"m1"`), nil }
+
+type mj2 struct {
+	B2 int `json:"b2"`
+}
+
+func (mj2) MarshalJSON() ([]byte, error) { return []byte(`"m2"`), nil }
+
+type MyScalar int
+
+type scalarEmbedOverride struct {
+	MyScalar `openapi:"type=string"`
+	X        int `json:"x"`
+}
+
+type emHideA struct {
+	V string `json:"v" openapi:"-"`
+}
+
+type emHideB struct {
+	V int `json:"v"`
 }
