@@ -115,12 +115,11 @@ mux itself, so blanket auth middleware guards the docs page too. Skip
 the docs prefix in the middleware when the docs should stay open —
 the reference's "Mounting and toggling" section shows the pattern.
 
-**Raw and file responses.** CSV exports and plain-text errors
-document with a string body plus a content-type override:
+**Raw and file responses.** CSV exports, plain-text errors, and
+downloads document in one opt:
 
 ```go
-stdocs.WithResponse(200, ""),
-stdocs.WithResponseContentType(200, "text/csv"),
+stdocs.WithRawResponse(200, "text/csv"),
 stdocs.WithResponseHeader(200, "Content-Disposition", "string", "attachment; filename=export.csv"),
 ```
 
@@ -130,9 +129,10 @@ give each instantiation a deliberate component name with a
 (`ListPage_Shipment`) is not what your consumers should see.
 
 **Inconsistent error shapes.** Different handler eras with different
-error bodies document honestly per route; declare the dominant shape
-once with `stdocs.WithDefaultResponse` and override the exceptions
-per route or per `stdocs.Opts` bundle.
+error bodies document honestly: declare the dominant shape once with
+`stdocs.WithDefaultResponse`, and give each era its own
+`stdocs.WithFallbackResponse` inside an `stdocs.Opts` bundle — route
+fallbacks beat the mux default, explicit declarations beat both.
 
 **Same-named types across packages.** `handlers.Stats` and
 `store.Stats` collide on the component name; the second takes a
