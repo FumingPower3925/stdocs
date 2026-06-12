@@ -1745,3 +1745,38 @@ type emHideA struct {
 type emHideB struct {
 	V int `json:"v"`
 }
+
+// v0.6.0 verification: invalid json tag names fall back to the Go
+// field name, exactly as encoding/json's isValidTag does — the
+// document must describe the keys json.Marshal actually emits.
+func TestInvalidJSONTagNames(t *testing.T) {
+	type T struct {
+		Emoji string `json:"🚀"`
+		Ctrl  string `json:"a\tb"`
+		Cafe  string `json:"café"`
+		Punct string `json:"ok$_-"`
+	}
+	root, comps := ReflectSchema(T{})
+	s := root
+	if s.Ref != "" {
+		s = comps[strings.TrimPrefix(s.Ref, "#/components/schemas/")]
+	}
+	raw, err := json.Marshal(T{"e", "c", "k", "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	for k := range wire {
+		if s.Properties[k] == nil {
+			t.Errorf("wire key %q missing from the schema (props %v)", k, slices.Sorted(maps.Keys(s.Properties)))
+		}
+	}
+	for k := range s.Properties {
+		if _, ok := wire[k]; !ok {
+			t.Errorf("schema documents %q but the wire never carries it", k)
+		}
+	}
+}

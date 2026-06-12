@@ -9,7 +9,51 @@ import (
 
 	"github.com/FumingPower3925/stdocs/internal/schema"
 	"github.com/FumingPower3925/stdocs/internal/spec"
+	"github.com/FumingPower3925/stdocs/internal/version"
 )
+
+// reservedNames are unusable as component declarations: the module's
+// own glue interfaces (a same-named user component would
+// declaration-merge with them into a type no wire value satisfies)
+// plus ECMAScript reserved words and TypeScript's built-in type
+// names, which tsc rejects or shadows as declaration names. Exported
+// Go type names never collide (they are capitalized); only
+// unexported types surfaced through any-typed helpers can.
+var reservedNames = map[string]bool{
+	"components": true, "operations": true, "webhooks": true,
+	"break": true, "case": true, "catch": true, "class": true,
+	"const": true, "continue": true, "debugger": true, "default": true,
+	"delete": true, "do": true, "else": true, "enum": true,
+	"export": true, "extends": true, "false": true, "finally": true,
+	"for": true, "function": true, "if": true, "import": true,
+	"in": true, "instanceof": true, "new": true, "null": true,
+	"return": true, "super": true, "switch": true, "this": true,
+	"throw": true, "true": true, "try": true, "typeof": true,
+	"var": true, "void": true, "while": true, "with": true,
+	"implements": true, "interface": true, "let": true,
+	"package": true, "private": true, "protected": true,
+	"public": true, "static": true, "yield": true, "await": true,
+	"any": true, "unknown": true, "never": true, "boolean": true,
+	"number": true, "string": true, "symbol": true, "object": true,
+	"bigint": true, "undefined": true,
+}
+
+// checkNames rejects component names TypeScript cannot declare —
+// fail-fast with the remedy, never a silent rename that would move
+// the contract's names.
+func checkNames(in spec.SpecInput) error {
+	var bad []string
+	for name := range in.Components {
+		if reservedNames[name] {
+			bad = append(bad, name)
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	sort.Strings(bad)
+	return fmt.Errorf("tsgen: component name %q is reserved in TypeScript declarations; a SchemaName method on the Go type picks a usable name", strings.Join(bad, `", "`))
+}
 
 // emit renders the whole module. Everything is sorted, so the output
 // is deterministic across rebuilds and processes.
@@ -28,7 +72,12 @@ func emit(in spec.SpecInput) []byte {
 
 	emitComponents(&b, in.Components)
 	emitOperations(&b, in.Paths)
-	emitWebhooks(&b, in.Webhooks)
+	if in.Version != version.OpenAPI30 {
+		// 3.0 documents cannot carry webhooks and the emitters drop
+		// them there; the TypeScript view matches the served
+		// document, not the wish.
+		emitWebhooks(&b, in.Webhooks)
+	}
 	return []byte(b.String())
 }
 
@@ -404,7 +453,7 @@ func opJSDoc(op *spec.Operation, path string) []string {
 	if op.Description != "" {
 		lines = append(lines, op.Description)
 	}
-	lines = append(lines, op.Method+" "+path)
+	lines = append(lines, strings.TrimSpace(op.Method+" "+path))
 	if op.Deprecated {
 		lines = append(lines, "@deprecated")
 	}

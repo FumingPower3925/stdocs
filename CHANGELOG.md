@@ -32,7 +32,13 @@ natively, from the same model as the document.
   stdocs upgrade is a contract change, review the diff. CI compiles
   the generated corpus with the pinned `typescript` release under
   `--strict`; current TypeScript releases under default compiler
-  settings plus `--strict` are the supported surface.
+  settings plus `--strict` are the supported surface. Webhooks
+  appear for 3.1 and 3.2 muxes only, matching the served document,
+  and a component named after a TypeScript reserved word (or the
+  module's own `components`/`operations`/`webhooks` interfaces —
+  reachable only through unexported Go types) fails generation with
+  the `SchemaName` remedy instead of declaration-merging into a
+  type no wire value satisfies.
 
 ### Changed
 
@@ -42,7 +48,18 @@ natively, from the same model as the document.
   (the document, the UI, now TypeScript declarations) sits on the
   other side of that line. The previous wording read as a promise to
   never emit generated artifacts; this release would have quietly
-  contradicted it, so the sentence changed in the open instead.
+  contradicted it, so the sentence changed in the open instead — in
+  the reference and in all three READMEs.
+
+### Fixed
+
+- Invalid `json` tag names (control characters, emoji — anything
+  `encoding/json`'s `isValidTag` rejects) now fall back to the Go
+  field name in the document, the way they always did on the wire;
+  the schema no longer requires a key `json.Marshal` never emits.
+- A 3.0 mux with registered webhooks no longer leaks their payload
+  schemas into the document as orphan components — 3.0 has no
+  webhooks field, and now no residue of one.
 
 ## [0.5.1] - 2026-06-12
 
