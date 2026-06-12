@@ -195,13 +195,12 @@ func ensureRequestBody(op *Operation) *RequestBody {
 	return op.RequestBody
 }
 
-// Optional marks the route's request body as not required. Only
-// meaningful when called after WithBody.
+// Optional marks the route's request body as not required, creating
+// the request-body entry if it does not exist yet — like the other
+// body decorators, the order relative to WithBody does not matter.
 func Optional() RouteOpt {
 	return func(r *route) {
-		if r.op.RequestBody != nil {
-			r.op.RequestBody.Required = false
-		}
+		ensureRequestBody(r.op).Required = false
 	}
 }
 
