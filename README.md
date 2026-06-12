@@ -41,6 +41,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 - **Smart defaults** — function names become summaries, path segments become tags, path params and a 200 are auto-documented, secured routes document their 401, and the shared error envelope is declared once mux-wide.
 - **Environment control** — turn docs on/off per environment, hide individual routes, and detect try-it console traffic, all without touching registered routes.
 - **Honest by default** — invalid documentation input panics instead of publishing a wrong contract, and an opt-in dev middleware warns when handlers drift from the document.
+- **TypeScript types, natively** — the `tsgen` subpackage emits the contract as TypeScript declarations from the same model as the document: pure Go, no node toolchain, types only.
 - **Zero deps** — only the Go standard library at runtime.
 
 ## Install
