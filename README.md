@@ -14,7 +14,7 @@ mux.Mount() // docs UI at /docs/, spec at /docs/openapi.json
 log.Fatal(http.ListenAndServe(":8080", mux))
 ```
 
-That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from your Go types, and serves a docs UI at `/docs/`.
+That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from your Go types, and serves a docs UI at `/docs/`. Coming from swaggo/swag, FastAPI, or a typed-handler framework? [MIGRATING.md](MIGRATING.md) maps your habits onto stdocs.
 
 ![The four rich UIs — Scalar, Swagger UI, Redoc, and Stoplight Elements — rendering the same generated spec](.github/uis.png)
 
@@ -49,7 +49,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requires Go 1.25 or later. stdocs follows the Go project's release support policy — the two most recent Go releases, currently 1.25 and 1.26 — and CI runs the full test suite on every patch release of both. The route patterns stdocs documents (`"GET /users/{id}"`) are the method+path syntax that `net/http.ServeMux` gained in Go 1.22.
+Requires Go 1.25 or later. The full reference is also available offline once the module is in your `go.mod`: `go doc github.com/FumingPower3925/stdocs`. stdocs follows the Go project's release support policy — the two most recent Go releases, currently 1.25 and 1.26 — and CI runs the full test suite on every patch release of both. The route patterns stdocs documents (`"GET /users/{id}"`) are the method+path syntax that `net/http.ServeMux` gained in Go 1.22.
 
 ## Usage
 
@@ -91,7 +91,7 @@ mux.HandleFunc("POST /tasks", createTask,
 mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
-Misdeclared documentation — a typo'd parameter type, a `minLength` on an `int`, an `example` that doesn't parse — panics at registration or build time instead of publishing a wrong contract.
+Misdeclared documentation — a typo'd parameter type, a `minLength` on an `int`, an `example` that doesn't parse — panics or refuses to build instead of publishing a wrong contract.
 
 ## UIs
 
