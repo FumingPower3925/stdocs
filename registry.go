@@ -149,7 +149,8 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 
 	// Default summary: from function name, or from DefaultSummary
 	// template, but only if Summary was not provided. The template's
-	// {resource} placeholder is replaced with the first path segment,
+	// {resource} placeholder is replaced with the first non-version
+	// path segment,
 	// e.g. "List {resource}" for GET /users becomes "List users".
 	if rt.op.Summary == "" {
 		if s := summaryFromFuncName(rt.funcName); s != "" {
@@ -159,7 +160,8 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 		}
 	}
 
-	// Default tag: from first path segment, but only if no tags
+	// Default tag: from the first non-version path segment (or the
+	// configured TagFunc), but only if no tags
 	// were provided. When a tag declared via WithTag matches
 	// case-insensitively, adopt the declared casing so the
 	// operation groups under the described tag in UIs (inferred
