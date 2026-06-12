@@ -90,4 +90,12 @@ type Webhook struct {
 	RequestBody *RequestBody
 	// Responses lists expected responses (e.g. 200, 202).
 	Responses map[string]*Response
+	// Security is the webhook operation's own security requirement.
+	// Webhook operations never inherit the document-level security:
+	// a webhook is the provider calling out, so the receiving
+	// endpoint's auth is a different contract — without an explicit
+	// requirement here, the emitter writes "security": [] to override
+	// any global requirement (which would otherwise make generated
+	// clients reference schemes their webhook plumbing does not have).
+	Security []SecurityRequirement
 }
