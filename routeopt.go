@@ -309,6 +309,35 @@ func WithFallbackResponse(status int, body any) RouteOpt {
 	}
 }
 
+// WithFallbackRawResponse is [WithFallbackResponse] for raw bodies:
+// it documents a string-typed response under the given content type
+// only when the route does not declare the status itself, so an
+// error-shape era that speaks plain text gets a reusable bundle like
+// a JSON era does:
+//
+//	gen1Errors := stdocs.Opts(
+//	    stdocs.WithFallbackRawResponse(400, "text/plain; charset=utf-8"),
+//	    stdocs.WithFallbackRawResponse(404, "text/plain; charset=utf-8"),
+//	)
+//
+// Precedence is identical to WithFallbackResponse: explicit
+// declarations win, the first fallback per status wins, route
+// fallbacks beat mux-level defaults. The filled entry is exactly what
+// [WithRawResponse] declares — except a content type already set by
+// WithResponseContentType survives, since the decorator names the
+// route's actual media type more specifically than a bundle can.
+// Pass status 0 for the OpenAPI "default" response. The content type
+// is required.
+func WithFallbackRawResponse(status int, contentType string) RouteOpt {
+	validateStatus("WithFallbackRawResponse", status)
+	if contentType == "" {
+		panic("stdocs: WithFallbackRawResponse requires a content type")
+	}
+	return func(r *route) {
+		r.fallbacks = append(r.fallbacks, DefaultResponse{Status: status, RawContentType: contentType})
+	}
+}
+
 // WithRawResponse documents a raw (non-JSON) response — CSV exports,
 // plain-text bodies, file downloads — as a string-typed body under
 // the given content type, in one opt:

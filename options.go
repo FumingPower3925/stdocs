@@ -112,8 +112,13 @@ type DefaultResponse struct {
 	Status int
 	// Body is a zero value whose type is reflected into the response
 	// schema, like the body argument of WithResponse; nil means no
-	// body.
+	// body. Ignored when RawContentType is set.
 	Body any
+	// RawContentType, when set, declares the entry as a raw
+	// string-typed body under this content type instead — the
+	// fallback/default twin of WithRawResponse. Populated via
+	// WithDefaultRawResponse and WithFallbackRawResponse.
+	RawContentType string
 }
 
 // Option is a function that mutates a config. Options are applied by
@@ -215,6 +220,39 @@ func WithDefaultResponse(status int, body any) Option {
 			}
 		}
 		c.DefaultResponses = append(c.DefaultResponses, DefaultResponse{Status: status, Body: body})
+	}
+}
+
+// WithDefaultRawResponse is [WithDefaultResponse] for raw bodies: it
+// documents a string-typed response under the given content type on
+// every operation that does not itself declare the status — an API
+// whose shared error surface is plain text declares it once:
+//
+//	mux := stdocs.New(
+//	    stdocs.WithTitle("My API"),
+//	    stdocs.WithDefaultRawResponse(500, "text/plain; charset=utf-8"),
+//	)
+//
+// Precedence and accumulation follow WithDefaultResponse exactly: a
+// per-route declaration or fallback wins, repeating a status across
+// either default form panics, and status 0 means the OpenAPI
+// "default" response. The filled entry is what [WithRawResponse]
+// declares, except a content type set by WithResponseContentType on
+// the route survives. The content type is required.
+func WithDefaultRawResponse(status int, contentType string) Option {
+	if status != 0 && (status < 100 || status > 599) {
+		panic("stdocs: WithDefaultRawResponse status must be 0 (default) or 100-599, got " + itoa(status))
+	}
+	if contentType == "" {
+		panic("stdocs: WithDefaultRawResponse requires a content type")
+	}
+	return func(c *Config) {
+		for _, dr := range c.DefaultResponses {
+			if dr.Status == status {
+				panic("stdocs: WithDefaultRawResponse called twice for status " + statusKey(status))
+			}
+		}
+		c.DefaultResponses = append(c.DefaultResponses, DefaultResponse{Status: status, RawContentType: contentType})
 	}
 }
 
