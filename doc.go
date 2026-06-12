@@ -165,7 +165,11 @@
 // [WithDefaultResponse] — built for [Opts] bundles, so codebases
 // with several error-shape eras declare one fallback per era
 // (explicit declarations win, then route fallbacks, then mux
-// defaults).
+// defaults). Both forms have raw twins, [WithFallbackRawResponse]
+// and [WithDefaultRawResponse], so a plain-text error era bundles
+// the same way a JSON one does; precedence is unchanged, and a
+// WithResponseContentType already on the route survives a raw
+// fallback's content type.
 //
 // # Visibility
 //
