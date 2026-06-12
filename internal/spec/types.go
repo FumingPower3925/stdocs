@@ -170,4 +170,8 @@ type SpecInput struct {
 	SecuritySchemes []NamedSecurityScheme
 	GlobalSecurity  []SecurityRequirement
 	Webhooks        map[string]Webhook
+	// HasHooks records whether WithOpenAPI hooks are registered —
+	// consumers of the model (tsgen) note that the served document
+	// may differ from what the model describes.
+	HasHooks bool
 }

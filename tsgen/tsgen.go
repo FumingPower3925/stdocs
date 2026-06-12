@@ -8,10 +8,26 @@
 // type alias per component schema, a components interface gluing them
 // together, an operations interface keyed by the document's stable
 // operationIds, and a webhooks interface when webhooks are declared.
-// Field documentation and constraint tags become JSDoc. No runtime
-// code is emitted — no client, no fetch wrapper, no npm package,
+// Each operations entry holds parameters grouped by location (path,
+// query, header, cookie — a group is optional when every member is),
+// a requestBody when one is declared, and responses keyed by status:
+// the body type per status, undefined for body-less entries, string
+// for raw bodies (the JSDoc carries @contentType for non-JSON media
+// types and @header for declared response headers). Field
+// documentation and constraint tags become JSDoc. No runtime code is
+// emitted — no client, no fetch wrapper, no npm package,
 // permanently: types are the part of an SDK nobody can maintain by
 // hand, and the transport is the part every application wants to own.
+//
+// Reading the generated types, two conventions follow the document
+// rather than the wire's habits. A secured route's automatic 401 is
+// body-less and types as undefined; when middleware really writes
+// your error envelope on 401, a mux-level WithDefaultResponse(401,
+// envelope) supplies the body everywhere, automatic 401 included.
+// And a pointer field without omitempty types as optional and
+// nullable ("due_at?: string | null") because the document says
+// nullable-not-required; json.Marshal in fact always emits the key,
+// so required:"true" on the field pins it for consumers.
 //
 // The natural wiring is a small generator program calling an
 // exported mux constructor — the same constructor the golden-file
