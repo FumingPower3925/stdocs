@@ -292,14 +292,15 @@ func (r *Reflector) reflect(t reflect.Type) *Schema {
 		// Go int is 64-bit on every platform this module supports.
 		return &Schema{Type: "integer", Format: "int64", Nullable: nullable}
 	case reflect.Uint8, reflect.Uint16:
-		return &Schema{Type: "integer", Format: "int32", Nullable: nullable}
+		// Unsigned kinds document their real lower bound; an explicit
+		// minimum/exclusiveMinimum tag overrides it.
+		return &Schema{Type: "integer", Format: "int32", Minimum: "0", Nullable: nullable}
 	case reflect.Uint, reflect.Uint32, reflect.Uint64:
 		// uint32's range exceeds int32; uint and uint64 are 64-bit.
 		// OpenAPI has no unsigned format — uint64 values above
-		// math.MaxInt64 exceed the documented int64 range (a minimum
-		// of 0 can be expressed once the constraint vocabulary
-		// exists).
-		return &Schema{Type: "integer", Format: "int64", Nullable: nullable}
+		// math.MaxInt64 exceed the documented int64 range, which
+		// stays a documented caveat.
+		return &Schema{Type: "integer", Format: "int64", Minimum: "0", Nullable: nullable}
 	case reflect.Float32:
 		return &Schema{Type: "number", Format: "float", Nullable: nullable}
 	case reflect.Float64:
@@ -627,11 +628,28 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 		// encoding/json only flattens anonymous fields whose json tag
 		// has no name; `Inner `json:"inner"`` marshals as a nested
 		// object under "inner".
-		embedded: f.Anonymous && tagName == "",
-		requiredCandidate: !slices.Contains(opts, "omitempty") &&
-			!slices.Contains(opts, "omitzero") &&
-			f.Type.Kind() != reflect.Ptr,
+		embedded:          f.Anonymous && tagName == "",
+		requiredCandidate: requiredFor(f, opts, f.Name),
 	}, true
+}
+
+// requiredFor decides a field's required-ness: the encoding/json
+// contract (present unless omitempty/omitzero or a pointer) unless an
+// explicit required tag overrides it — required:"true" forces a
+// field into the required list (the only way to document
+// required-but-nullable), required:"false" keeps it out. The same
+// tag drives parameter required-ness in params structs.
+func requiredFor(f reflect.StructField, opts []string, fieldName string) bool {
+	if v, ok := f.Tag.Lookup("required"); ok {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			panic("stdocs: required tag " + strconv.Quote(v) + " on field " + fieldName + " is not a valid boolean")
+		}
+		return b
+	}
+	return !slices.Contains(opts, "omitempty") &&
+		!slices.Contains(opts, "omitzero") &&
+		f.Type.Kind() != reflect.Ptr
 }
 
 // constraintTags is the vocabulary of schema-constraint struct tags,
@@ -694,16 +712,7 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 		fieldSchema.Enum = parseEnumTag(enum, fieldSchema.Type, fieldName)
 	}
 
-	fieldSchema.Minimum = numericConstraint(tag, "minimum", fieldSchema.Type, fieldName)
-	fieldSchema.Maximum = numericConstraint(tag, "maximum", fieldSchema.Type, fieldName)
-	fieldSchema.ExclusiveMinimum = numericConstraint(tag, "exclusiveMinimum", fieldSchema.Type, fieldName)
-	fieldSchema.ExclusiveMaximum = numericConstraint(tag, "exclusiveMaximum", fieldSchema.Type, fieldName)
-	if fieldSchema.Minimum != "" && fieldSchema.ExclusiveMinimum != "" {
-		panic("stdocs: field " + fieldName + " sets both minimum and exclusiveMinimum; use one")
-	}
-	if fieldSchema.Maximum != "" && fieldSchema.ExclusiveMaximum != "" {
-		panic("stdocs: field " + fieldName + " sets both maximum and exclusiveMaximum; use one")
-	}
+	applyNumericBounds(fieldSchema, tag, fieldName)
 
 	fieldSchema.MinLength = lengthConstraint(tag, "minLength", "string", fieldSchema.Type, fieldName)
 	fieldSchema.MaxLength = lengthConstraint(tag, "maxLength", "string", fieldSchema.Type, fieldName)
@@ -725,6 +734,35 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 			panic("stdocs: uniqueItems tag " + strconv.Quote(unique) + " on field " + fieldName + " is not a valid boolean")
 		}
 		fieldSchema.UniqueItems = b
+	}
+}
+
+// applyNumericBounds transfers the four numeric bound tags onto the
+// schema. Absent tags leave existing values (the unsigned
+// auto-minimum) untouched; an explicit exclusive lower bound
+// displaces the auto-minimum; explicit inclusive+exclusive on the
+// same side panics.
+func applyNumericBounds(fieldSchema *Schema, tag reflect.StructTag, fieldName string) {
+	if v := numericConstraint(tag, "minimum", fieldSchema.Type, fieldName); v != "" {
+		fieldSchema.Minimum = v
+	}
+	if v := numericConstraint(tag, "maximum", fieldSchema.Type, fieldName); v != "" {
+		fieldSchema.Maximum = v
+	}
+	if v := numericConstraint(tag, "exclusiveMinimum", fieldSchema.Type, fieldName); v != "" {
+		fieldSchema.ExclusiveMinimum = v
+		if tag.Get("minimum") == "" {
+			fieldSchema.Minimum = ""
+		}
+	}
+	if v := numericConstraint(tag, "exclusiveMaximum", fieldSchema.Type, fieldName); v != "" {
+		fieldSchema.ExclusiveMaximum = v
+	}
+	if tag.Get("minimum") != "" && fieldSchema.ExclusiveMinimum != "" {
+		panic("stdocs: field " + fieldName + " sets both minimum and exclusiveMinimum; use one")
+	}
+	if fieldSchema.Maximum != "" && fieldSchema.ExclusiveMaximum != "" {
+		panic("stdocs: field " + fieldName + " sets both maximum and exclusiveMaximum; use one")
 	}
 }
 
