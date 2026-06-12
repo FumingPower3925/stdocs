@@ -108,7 +108,12 @@
 // numeric 2020-12 keywords on 3.1/3.2.
 //
 // Required-ness follows the encoding/json contract: every
-// non-pointer field without omitempty/omitzero is required.
+// non-pointer field without omitempty/omitzero is required. An
+// explicit required tag overrides the contract in both directions —
+// required:"true" forces a field into the required list (with a
+// pointer field, that documents required-but-nullable), and
+// required:"false" keeps it out. Maps document as objects whose
+// additionalProperties schema comes from the value type.
 //
 // When reflection cannot infer a field's wire format, the openapi
 // tag is the per-field escape hatch: openapi:"-" excludes the field
@@ -141,7 +146,10 @@
 // [WithResponseExample], [WithResponseContentType]) are
 // order-independent. Status 0 declares the OpenAPI "default"
 // response — the catch-all consumers fall back to for undeclared
-// statuses. [WithDefaultResponse] declares a response once at the
+// statuses; in plain terms, "any status not listed here: expect this
+// shape", conventionally the shared error body. A response with a
+// string body and a non-JSON content type documents raw downloads:
+// WithResponse(200, "") + WithResponseContentType(200, "text/csv"). [WithDefaultResponse] declares a response once at the
 // mux level (typically the shared error envelope) and documents it
 // on every operation that does not declare the status itself.
 // [WithMultipartBody] documents multipart/form-data file uploads
@@ -166,6 +174,22 @@
 // over [WithDisabled] in both directions. Disabled docs serve 404;
 // the spec stays buildable via [Mux.JSON] and [Mux.YAML].
 //
+// Mount registers the docs on the mux itself, so blanket auth
+// middleware wrapped around the mux guards the docs page too —
+// often surprising in dev. Skip the docs prefix in the middleware
+// when the docs should stay open:
+//
+//	func auth(next http.Handler) http.Handler {
+//	    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//	        if strings.HasPrefix(r.URL.Path, "/docs") {
+//	            next.ServeHTTP(w, r) // docs stay public
+//	            return
+//	        }
+//	        // ... verify credentials ...
+//	        next.ServeHTTP(w, r)
+//	    })
+//	}
+//
 // When the mux is mounted under a prefix the application never sees
 // — [net/http.StripPrefix] or a stripping reverse proxy —
 // [WithPathPrefix] prepends the public prefix to every documented
@@ -185,7 +209,16 @@
 //	mux := stdocs.New(stdocs.WithTitle("My API"), scalar.WithUI())
 //
 // The packages are ui/scalar, ui/swaggerui, ui/redoc, and
-// ui/stoplight, plus their *emb twins.
+// ui/stoplight, plus their *emb twins. SRI means subresource
+// integrity: the CDN script tags carry sha384 hashes browsers verify
+// before executing the fetched assets. The embedded twins serve
+// their bundles from the binary — [Mux.Mount] registers their asset
+// route automatically; only when mounting the handler manually via
+// [Mux.Docs] does the asset route need its own registration:
+//
+//	mux.ServeMux.Handle("GET /docs/", mux.Docs())
+//	mux.ServeMux.Handle("GET /docs/_assets/",
+//	    http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
 //
 // # Try-it requests and drift
 //
@@ -226,11 +259,17 @@
 // reject the numeric exclusive-bound form that 3.1/3.2 correctly
 // emit — generate from the 3.0.4 document when exclusiveMinimum or
 // exclusiveMaximum tags are in play ([Mux.Lint] warns about this),
-// and oapi-codegen consumes 3.0 documents only. A document-level
-// default response ([WithDefaultResponse] with status 0) enables
-// ogen's typed convenient-error handling; [DriftWarn] still checks
-// the default entry's body contract, so the combination keeps drift
-// detection meaningful. [WithOpenAPI]
+// and oapi-codegen consumes 3.0 documents only. oapi-codegen also
+// generates a spurious "<nil>" constant from nullable enums (the
+// null member 3.0 legally requires; an upstream bug) — prefer
+// non-pointer enum fields in generator-facing contracts.
+// openapi-typescript and similar TypeScript generators consume
+// either version directly; enums become string-literal unions and
+// SchemaName methods control the generated type names. A
+// document-level default response ([WithDefaultResponse] with
+// status 0) enables ogen's typed convenient-error handling;
+// [DriftWarn] still checks the default entry's body contract, so
+// the combination keeps drift detection meaningful. [WithOpenAPI]
 // registers a hook that may mutate the document before caching, as
 // an escape hatch for anything stdocs does not expose; [Mux.Refresh]
 // forces a rebuild.
@@ -240,7 +279,8 @@
 // stdocs emits the latest patch of each supported minor: [OpenAPI30]
 // (3.0.4, the default), [OpenAPI31] (3.1.2), and [OpenAPI32]
 // (3.2.0). Select one with [WithVersion]. For 3.2, [WithSelfURL]
-// sets the document's canonical URI ($self). All three outputs are
+// sets the document's canonical URI ($self — the URL at which the
+// published document itself lives). All three outputs are
 // validated against external validators in CI.
 //
 // # Scope and non-goals
