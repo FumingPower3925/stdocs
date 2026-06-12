@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.4.2] - 2026-06-12
+
+### Added
+
+- `WithFallbackResponse(status, body)`: route-scoped default
+  responses, built for `Opts` bundles — one fallback per error-shape
+  era. Explicit declarations win, then route fallbacks, then the
+  mux-level `WithDefaultResponse`.
+- `WithRawResponse(status, contentType)`: raw and file responses
+  (CSV, plain text, downloads) in one opt, replacing the inferred
+  `WithResponse(status, "") + WithResponseContentType` idiom (which
+  keeps working).
+- The `openapi` tag accepts a composable `nullable` entry: bare
+  `openapi:"nullable"` stacks with reflection (constraints and doc
+  tags keep composing), decoupling wire-level null from Go pointers;
+  combined with `required:"true"` it expresses required-but-nullable
+  without changing the Go type. Also composes inside type overrides.
+- `DriftSampleBodies()`: opt-in DriftWarn body sampling that compares
+  response bodies' top-level keys against the documented object
+  schema — missing required keys and undocumented extras each warn
+  once per route and status (64 KB cap, development aid).
+
 ## [0.4.1] - 2026-06-12
 
 A bugs-polish-and-deep-testing release: every known defect from the
@@ -319,7 +341,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/FumingPower3925/stdocs/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/FumingPower3925/stdocs/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/FumingPower3925/stdocs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/FumingPower3925/stdocs/compare/v0.2.0...v0.3.0
