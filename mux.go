@@ -404,6 +404,7 @@ func (m *Mux) buildInput() SpecInput {
 		Version:         m.cfg.Version,
 		SecuritySchemes: m.cfg.Security,
 		GlobalSecurity:  m.cfg.GlobalSecurity,
+		HasHooks:        len(m.cfg.Hooks) > 0,
 	}
 	if m.cfg.Version != OpenAPI30 {
 		// 3.0 has no webhooks field; reflecting their payloads anyway
