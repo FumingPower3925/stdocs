@@ -122,7 +122,14 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 	// operation groups under the described tag in UIs (inferred
 	// "Health" must not split from a declared "health").
 	if len(rt.op.Tags) == 0 {
-		if tag := tagFromPath(rt.parsed.Path()); tag != "" {
+		tag := ""
+		if cfg.TagFunc != nil {
+			tag = cfg.TagFunc(rt.parsed.Method, rt.parsed.Path())
+		}
+		if tag == "" {
+			tag = tagFromPath(rt.parsed.Path())
+		}
+		if tag != "" {
 			for _, decl := range cfg.Tags {
 				if strings.EqualFold(decl.Name, tag) {
 					tag = decl.Name

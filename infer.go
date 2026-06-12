@@ -183,11 +183,31 @@ type span struct {
 // segment. "/users/{id}" -> "users"; "/" -> ""; "/v1/users" -> "v1".
 func tagFromPath(path string) string {
 	seg := firstSegment(path)
+	if isVersionSegment(seg) {
+		// /v1/tasks should group by Tasks, not by a useless V1 shared
+		// across every route.
+		rest := strings.TrimPrefix(path, "/"+seg)
+		seg = firstSegment(rest)
+	}
 	if seg == "" {
 		return ""
 	}
 	// Capitalize the first letter for tag-name presentation.
 	return strings.ToUpper(seg[:1]) + seg[1:]
+}
+
+// isVersionSegment reports whether seg is a conventional version
+// path segment: "v" followed by digits (v1, v2, v10).
+func isVersionSegment(seg string) bool {
+	if len(seg) < 2 || (seg[0] != 'v' && seg[0] != 'V') {
+		return false
+	}
+	for _, r := range seg[1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // firstSegment returns the first non-empty path segment in
