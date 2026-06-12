@@ -1,6 +1,7 @@
 package stdocs
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -167,4 +168,81 @@ func TestDriftWarnSnapshotSemantics(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// v0.4.2: body sampling — missing required keys and undocumented
+// extras warn once each; clean handlers, capped bodies, and
+// non-object schemas stay quiet.
+func TestDriftSampleBodies(t *testing.T) {
+	type Task struct {
+		ID   string `json:"id"`
+		Name string `json:"name,omitempty"`
+	}
+	type Envelope struct {
+		Message string `json:"message"`
+	}
+	mux := New(WithTitle("T"), WithDefaultResponse(0, Envelope{}))
+	mux.HandleFunc("GET /missing", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"name":"x"}`)) // id (required) absent
+	}, Summary("M"), WithResponse(200, Task{}))
+	mux.HandleFunc("GET /extra", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"1","surprise":true}`))
+	}, Summary("E"), WithResponse(200, Task{}))
+	mux.HandleFunc("GET /clean", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"1","name":"ok"}`))
+	}, Summary("C"), WithResponse(200, Task{}))
+	mux.HandleFunc("GET /boom", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte(`{"wrong":"shape"}`)) // default entry's shape applies
+	}, Summary("B"), WithResponse(200, Task{}))
+
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf, DriftSampleBodies())
+	for _, p := range []string{"/missing", "/missing", "/extra", "/clean", "/boom"} {
+		driftGet(h, p)
+	}
+	got := strings.Join(warnings(), "\n")
+	if c := strings.Count(got, `missing required field "id"`); c != 1 {
+		t.Errorf("want exactly one missing-required warning for /missing, got %d in:\n%s", c, got)
+	}
+	if !strings.Contains(got, "/extra") || !strings.Contains(got, "surprise") {
+		t.Errorf("undocumented key must warn with the key named:\n%s", got)
+	}
+	if strings.Contains(got, "/clean") {
+		t.Errorf("clean handler must not warn:\n%s", got)
+	}
+	if !strings.Contains(got, `response 502 is missing required field "message"`) {
+		t.Errorf("default-entry shape must apply to undeclared statuses:\n%s", got)
+	}
+
+	// Without the opt: no body warnings at all.
+	logq, quiet := collectWarnings()
+	hq := DriftWarn(mux, logq)
+	driftGet(hq, "/missing")
+	for _, w := range quiet() {
+		if strings.Contains(w, "required field") {
+			t.Errorf("sampling must be opt-in: %s", w)
+		}
+	}
+
+	// Oversized bodies are skipped, not mis-parsed.
+	big := New(WithTitle("T"))
+	big.HandleFunc("GET /big", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"`))
+		w.Write(bytes.Repeat([]byte("x"), 70<<10))
+		w.Write([]byte(`"}`))
+	}, Summary("Big"), WithResponse(200, Task{}))
+	logb, bigWarnings := collectWarnings()
+	hb := DriftWarn(big, logb, DriftSampleBodies())
+	driftGet(hb, "/big")
+	for _, w := range bigWarnings() {
+		if strings.Contains(w, "required field") {
+			t.Errorf("overflowing bodies must be skipped: %s", w)
+		}
+	}
 }

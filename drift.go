@@ -2,12 +2,17 @@ package stdocs
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
+
+	"github.com/FumingPower3925/stdocs/internal/schema"
 )
 
 // DriftWarn wraps the mux in a development aid that compares what
@@ -44,13 +49,39 @@ import (
 // ignored. The documented-status set is the served document's:
 // mux-level default responses and the automatic 401 count as
 // documented.
-func DriftWarn(m *Mux, logf func(format string, args ...any)) http.Handler {
+func DriftWarn(m *Mux, logf func(format string, args ...any), opts ...DriftOption) http.Handler {
 	if logf == nil {
 		logf = log.Printf
 	}
 	d := &driftWarner{mux: m, logf: logf, seen: make(map[string]bool)}
+	for _, o := range opts {
+		if o != nil {
+			o(d)
+		}
+	}
 	d.refresh()
 	return d
+}
+
+// DriftOption configures DriftWarn.
+type DriftOption func(*driftWarner)
+
+// DriftSampleBodies additionally compares response bodies against the
+// documented schema — top-level keys only, for responses documented
+// with a JSON object schema: a missing documented-required key and
+// the appearance of undocumented keys each warn once per route and
+// status. Values, nesting, and arrays are not checked. Sampling
+// copies up to 64 KB of each tracked response, which is why it is a
+// separate opt; like DriftWarn itself, it is a development aid.
+func DriftSampleBodies() DriftOption {
+	return func(d *driftWarner) { d.sampleBodies = true }
+}
+
+// driftShape is the documented top-level object shape for one
+// response entry.
+type driftShape struct {
+	props    map[string]bool
+	required []string
 }
 
 // driftRoute is the immutable per-route snapshot the request path
@@ -62,12 +93,14 @@ type driftRoute struct {
 	hasDefault  bool
 	jsonByKey   map[string]bool // key -> declared with a JSON body
 	defaultJSON bool            // the "default" entry declares a JSON body
+	shapeByKey  map[string]driftShape
 }
 
 // driftWarner is the http.Handler returned by DriftWarn.
 type driftWarner struct {
-	mux  *Mux
-	logf func(format string, args ...any)
+	mux          *Mux
+	logf         func(format string, args ...any)
+	sampleBodies bool
 
 	mu      sync.Mutex
 	seen    map[string]bool
@@ -105,6 +138,14 @@ func (d *driftWarner) refresh() {
 				dr.hasDefault = true
 				dr.defaultJSON = declaredJSON
 			}
+			if d.sampleBodies && declaredJSON && resp.BodyValue != nil {
+				if shape, ok := objectShape(resp.BodyValue); ok {
+					if dr.shapeByKey == nil {
+						dr.shapeByKey = make(map[string]driftShape)
+					}
+					dr.shapeByKey[key] = shape
+				}
+			}
 		}
 		routes[rt.pattern] = dr
 	}
@@ -141,7 +182,7 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		d.mux.ServeHTTP(w, r)
 		return
 	}
-	rec := &driftRecorder{ResponseWriter: w}
+	rec := &driftRecorder{ResponseWriter: w, captureBody: d.sampleBodies && len(dr.shapeByKey) > 0}
 	d.mux.ServeHTTP(rec, r)
 
 	if rec.hijacked {
@@ -177,8 +218,77 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if ct != "" && !strings.Contains(ct, "json") {
 			d.warn(pattern+"\x00"+key+"\x00ct",
 				"stdocs drift: %s wrote Content-Type %q for status %d, which the document declares with a JSON body", pattern, ct, status)
+			return
+		}
+		d.checkBodyShape(dr, pattern, key, status, rec)
+	}
+}
+
+// checkBodyShape compares a sampled response body's top-level keys
+// against the documented object shape, when sampling is on and a
+// shape was recorded for the status (or the default entry).
+func (d *driftWarner) checkBodyShape(dr driftRoute, pattern, key string, status int, rec *driftRecorder) {
+	if !d.sampleBodies || rec.bodyOverflow {
+		return
+	}
+	shape, ok := dr.shapeByKey[key]
+	if !ok {
+		if dr.statuses[key] {
+			// Declared specifically but without an object shape
+			// (body-less, raw, or non-object): nothing to compare.
+			return
+		}
+		// The status falls under the default entry — compare against
+		// its shape when it has one.
+		if shape, ok = dr.shapeByKey["default"]; !ok {
+			return
 		}
 	}
+	var body map[string]any
+	if json.Unmarshal(rec.body.Bytes(), &body) != nil {
+		return // not a JSON object; the schema check has nothing to say
+	}
+	for _, req := range shape.required {
+		if _, present := body[req]; !present {
+			d.warn(pattern+"\x00"+key+"\x00breq\x00"+req,
+				"stdocs drift: %s response %d is missing required field %q declared by its documented schema", pattern, status, req)
+		}
+	}
+	var extras []string
+	for k := range body {
+		if !shape.props[k] {
+			extras = append(extras, k)
+		}
+	}
+	if len(extras) > 0 {
+		sort.Strings(extras)
+		if len(extras) > 3 {
+			extras = extras[:3]
+		}
+		d.warn(pattern+"\x00"+key+"\x00bextra",
+			"stdocs drift: %s response %d carries fields not in its documented schema (e.g. %s)", pattern, status, strings.Join(extras, ", "))
+	}
+}
+
+// objectShape reflects a response body value and resolves it to its
+// top-level object shape, when it has one.
+func objectShape(bodyValue any) (driftShape, bool) {
+	root, comps := schema.ReflectSchema(bodyValue)
+	s := root
+	if s != nil && s.Ref != "" {
+		name := strings.TrimPrefix(s.Ref, "#/components/schemas/")
+		s = comps[name]
+	}
+	if s == nil || s.Type != "object" || len(s.Properties) == 0 {
+		return driftShape{}, false
+	}
+	shape := driftShape{props: make(map[string]bool, len(s.Properties))}
+	for name := range s.Properties {
+		shape.props[name] = true
+	}
+	shape.required = append(shape.required, s.Required...)
+	sort.Strings(shape.required)
+	return shape, true
 }
 
 // warn logs once per key.
@@ -201,7 +311,14 @@ type driftRecorder struct {
 	http.ResponseWriter
 	status   int
 	hijacked bool
+
+	captureBody  bool
+	body         bytes.Buffer
+	bodyOverflow bool
 }
+
+// driftBodyCap bounds how much response body sampling will buffer.
+const driftBodyCap = 64 << 10
 
 func (r *driftRecorder) WriteHeader(status int) {
 	// 1xx informational responses (e.g. 103 Early Hints) are not the
@@ -215,6 +332,14 @@ func (r *driftRecorder) WriteHeader(status int) {
 func (r *driftRecorder) Write(b []byte) (int, error) {
 	if r.status == 0 {
 		r.status = http.StatusOK
+	}
+	if r.captureBody && !r.bodyOverflow {
+		if r.body.Len()+len(b) > driftBodyCap {
+			r.bodyOverflow = true
+			r.body.Reset()
+		} else {
+			r.body.Write(b)
+		}
 	}
 	return r.ResponseWriter.Write(b)
 }
