@@ -1545,3 +1545,38 @@ func TestMountEagerAndAssets(t *testing.T) {
 		t.Errorf("assets route not auto-registered: %d served=%v", rr.Code, served)
 	}
 }
+
+// v0.4.1: webhook operations never inherit document security; an
+// explicit Webhook.Security still emits.
+func TestWebhookSecurityIsolation(t *testing.T) {
+	type Event struct {
+		ID string `json:"id"`
+	}
+	mux := New(
+		WithTitle("T"),
+		WithVersion(OpenAPI31),
+		WithBearerAuth("bearerAuth", "JWT"),
+		WithGlobalSecurity("bearerAuth"),
+		WithWebhooks(map[string]Webhook{
+			"thing.created": {Method: "POST", RequestBody: &RequestBody{BodyValue: Event{}}},
+			"thing.signed": {Method: "POST",
+				Security: []SecurityRequirement{{"bearerAuth": []string{}}}},
+		}),
+	)
+	mux.HandleFunc("GET /things", noop, Summary("List"))
+	doc := buildDocMap(t, mux)
+	hooks := doc["webhooks"].(map[string]any)
+	created := hooks["thing.created"].(map[string]any)["post"].(map[string]any)
+	sec, present := created["security"]
+	if !present {
+		t.Fatalf("webhook must carry an explicit security override, got %v", created)
+	}
+	if arr := sec.([]any); len(arr) != 0 {
+		t.Errorf("webhook without explicit security must emit security: [], got %v", arr)
+	}
+	signed := hooks["thing.signed"].(map[string]any)["post"].(map[string]any)
+	sarr := signed["security"].([]any)
+	if len(sarr) != 1 {
+		t.Errorf("explicit webhook security must emit: %v", signed["security"])
+	}
+}
