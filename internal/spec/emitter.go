@@ -27,6 +27,9 @@ import (
 type emitter struct {
 	openapi     string
 	buildSchema func(*schema.Schema) map[string]any
+	// globalSecurity mirrors the document-level requirement so
+	// webhook emission can explicitly override it.
+	globalSecurity []SecurityRequirement
 }
 
 // buildExternalDocs renders an externalDocumentation object, or nil.
@@ -104,6 +107,7 @@ func (e *emitter) buildRoot(in SpecInput) map[string]any {
 	}
 	doc["paths"] = e.buildPaths(in.Paths)
 	doc["components"] = e.buildComponentsWithSecurity(in.Components, in.SecuritySchemes)
+	e.globalSecurity = in.GlobalSecurity
 	if len(in.GlobalSecurity) > 0 {
 		doc["security"] = buildSecurity(in.GlobalSecurity)
 	}
@@ -485,6 +489,14 @@ func (e *emitter) buildWebhooks(hooks map[string]Webhook) map[string]any {
 			op["responses"] = map[string]any{
 				"200": map[string]any{"description": "OK"},
 			}
+		}
+		// See Webhook.Security: explicit requirement, or an explicit
+		// empty array so a document-level requirement never leaks
+		// onto webhook operations.
+		if len(hook.Security) > 0 {
+			op["security"] = buildSecurity(hook.Security)
+		} else if len(e.globalSecurity) > 0 {
+			op["security"] = []any{}
 		}
 		out[name] = map[string]any{method: op}
 	}
