@@ -42,10 +42,10 @@ import (
 // call; routes registered later are picked up automatically on the
 // next request. A mux-level "default" response counts as documenting
 // any status — but its body contract still applies: a JSON-documented
-// default served with a non-JSON Content-Type is drift. Place
-// DriftWarn outermost — around recovery and auth middleware — so the
-// responses they write are checked too; whatever writes outside the
-// wrapper is invisible to it.
+// default served with a non-JSON Content-Type is drift. DriftWarn
+// observes what the mux's handlers write; it wraps the mux directly,
+// so responses written by surrounding middleware (a recovery
+// handler's 500, an auth layer's 401) are invisible to it.
 //
 // DriftWarn is a development aid, not validation: it checks
 // responses only, by design — request bodies and parameters are
