@@ -27,6 +27,9 @@ type Warning struct {
 	//	auto-descriptions     "Generated from Go type" text present
 	//	dangling-id-suffix    suffixed operationId without a base
 	//	vendor-extensions     x-stdocs-* present without CleanOutput
+	//
+	// Runtime drift findings follow the same discipline in
+	// [DriftFinding].Code.
 	Code string
 	// Where locates the finding: an operation ("GET /tasks"), a
 	// component ("component Task"), or "document".
