@@ -145,7 +145,7 @@ go run ./cmd/demo
 
 ## Scope and non-goals
 
-stdocs documents stdlib `ServeMux` applications — it does not integrate with other routers, does not validate requests at runtime, and uses no code generation, comment annotations, or dependencies, permanently and by design. The document describes intent; keeping handlers honest is the application's job. The full boundary statement, including when a different tool fits better, is in the [package documentation](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Scope_and_non_goals).
+stdocs documents stdlib `ServeMux` applications — it does not integrate with other routers, does not validate requests at runtime, and uses no code generation, comment annotations, or dependencies to understand your Go code, permanently and by design. What it emits — the document, the docs UI, the `tsgen` TypeScript declarations — sits on the other side of that line, and none of it will ever include a runtime client or an npm package. The document describes intent; keeping handlers honest is the application's job. The full boundary statement, including when a different tool fits better, is in the [package documentation](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Scope_and_non_goals).
 
 ## Contributing
 

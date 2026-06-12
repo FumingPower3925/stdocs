@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Schema is a version-agnostic JSON Schema (Draft 2020-12 / OpenAPI 3.1 flavour)
@@ -1141,11 +1142,31 @@ func dedupRequired(keys []string, props map[string]*Schema) []string {
 }
 
 // parseJSONTag splits a struct tag's json value into the field name and
-// the comma-separated options (e.g. "omitempty").
+// the comma-separated options (e.g. "omitempty"). Invalid names are
+// dropped exactly as encoding/json drops them — the field falls back
+// to its Go name on the wire, so the schema must describe the same.
 func parseJSONTag(tag string) (name string, opts []string) {
 	if tag == "" {
 		return "", nil
 	}
 	parts := strings.Split(tag, ",")
-	return parts[0], parts[1:]
+	name = parts[0]
+	if name != "" && !isValidTagName(name) {
+		name = ""
+	}
+	return name, parts[1:]
+}
+
+// isValidTagName mirrors encoding/json's isValidTag: letters, digits,
+// and its fixed punctuation set; anything else (control characters,
+// emoji) invalidates the name.
+func isValidTagName(s string) bool {
+	for _, c := range s {
+		switch {
+		case strings.ContainsRune("!#$%&()*+-./:;<=>?@[]^_{|}~ ", c):
+		case !unicode.IsLetter(c) && !unicode.IsDigit(c):
+			return false
+		}
+	}
+	return true
 }

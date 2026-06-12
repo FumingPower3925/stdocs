@@ -145,7 +145,7 @@ go run ./cmd/demo
 
 ## Alcance y non-goals
 
-stdocs documenta aplicaciones de `ServeMux` de la biblioteca estándar — no se integra con otros routers, no valida requests en tiempo de ejecución y no usa generación de código, anotaciones en comentarios ni dependencias, permanentemente y por diseño. El documento describe la intención; mantener los handlers honestos es trabajo de la aplicación. La declaración completa de límites, incluido cuándo encaja mejor otra herramienta, está en la [documentación del paquete](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Scope_and_non_goals).
+stdocs documenta aplicaciones de `ServeMux` de la biblioteca estándar — no se integra con otros routers, no valida requests en tiempo de ejecución y no usa generación de código, anotaciones en comentarios ni dependencias para entender tu código Go, permanentemente y por diseño. Lo que emite — el documento, la UI de docs, las declaraciones TypeScript de `tsgen` — está al otro lado de esa línea, y nada de ello incluirá jamás un cliente runtime ni un paquete npm. El documento describe la intención; mantener los handlers honestos es trabajo de la aplicación. La declaración completa de límites, incluido cuándo encaja mejor otra herramienta, está en la [documentación del paquete](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Scope_and_non_goals).
 
 ## Contribuir
 

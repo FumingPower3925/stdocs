@@ -13,24 +13,36 @@
 // permanently: types are the part of an SDK nobody can maintain by
 // hand, and the transport is the part every application wants to own.
 //
-// The natural wiring is a tiny generator next to the mux constructor
-// the golden-file workflow already uses:
+// The natural wiring is a small generator program calling an
+// exported mux constructor — the same constructor the golden-file
+// workflow uses; a server's package main cannot be imported, so the
+// constructor lives in a library package:
 //
-//	//go:generate go run ./cmd/gentypes
+//	// cmd/gentypes/main.go
 //	func main() {
-//	    src, err := tsgen.Generate(buildMux())
+//	    src, err := tsgen.Generate(api.NewMux())
 //	    if err != nil {
 //	        log.Fatal(err)
 //	    }
-//	    os.WriteFile("api.ts", src, 0o644)
+//	    if err := os.WriteFile("api.ts", src, 0o644); err != nil {
+//	        log.Fatal(err)
+//	    }
 //	}
+//
+// driven by a directive in a module-root file (go generate resolves
+// the command relative to the file holding the directive):
+//
+//	//go:generate go run ./cmd/gentypes
 //
 // Output is deterministic — sorted declarations, stable names — so
 // api.ts works as a committed artifact exactly like the spec bytes:
 // regenerating on an stdocs upgrade is a contract change, review the
 // diff. Generation reads the document model, not the served JSON, so
-// edits made by WithOpenAPI hooks are invisible here; the escape
-// hatch operates downstream of what these types describe.
+// edits made by WithOpenAPI hooks are invisible here, and a mux
+// configured with WithSpec serves its hand-written document while
+// Generate still describes the registered routes — both escape
+// hatches operate downstream of what these types describe. Webhooks
+// appear for 3.1 and 3.2 muxes only, matching the served document.
 //
 // Supported TypeScript: current releases under default compiler
 // settings plus --strict (the emitted file is checked against the
@@ -42,6 +54,7 @@ import (
 	"fmt"
 
 	"github.com/FumingPower3925/stdocs"
+	"github.com/FumingPower3925/stdocs/internal/spec"
 	"github.com/FumingPower3925/stdocs/internal/tsbridge"
 )
 
@@ -54,9 +67,17 @@ func Generate(m *stdocs.Mux) ([]byte, error) {
 	if m == nil {
 		return nil, fmt.Errorf("tsgen: nil mux")
 	}
-	in, err := tsbridge.SpecInput(m)
+	var nameErr error
+	out, err := tsbridge.Generate(m, func(in spec.SpecInput) []byte {
+		// Emission runs under the build lock: the model holds live
+		// operation pointers that concurrent rebuilds mutate.
+		if nameErr = checkNames(in); nameErr != nil {
+			return nil
+		}
+		return emit(in)
+	})
 	if err != nil {
 		return nil, err
 	}
-	return emit(in), nil
+	return out, nameErr
 }

@@ -6,6 +6,8 @@ import (
 	"flag"
 	"net/http"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/FumingPower3925/stdocs"
@@ -122,6 +124,7 @@ func corpusMux() *stdocs.Mux {
 	mux.HandleFunc("GET /empty", noop,
 		stdocs.Summary("Closed empty object"),
 		stdocs.WithResponse(200, CorpusEmpty{}))
+	mux.HandleFunc("/ping", noop, stdocs.Summary("Method-less ping"))
 	return mux
 }
 
@@ -195,5 +198,97 @@ func TestLateRoutes(t *testing.T) {
 	}
 	if bytes.Equal(before, after) || !bytes.Contains(after, []byte("get_late")) {
 		t.Errorf("late routes must appear on the next generation")
+	}
+}
+
+// v0.6.0 verification: emission runs under the build lock — the
+// model holds live operation pointers that rebuilds mutate.
+func TestConcurrentGenerate(t *testing.T) {
+	mux := corpusMux()
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 25 {
+				if _, err := Generate(mux); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range 25 {
+			mux.Refresh()
+			mux.JSON()
+		}
+	}()
+	wg.Wait()
+}
+
+// A component named like the glue interfaces would declaration-merge
+// into a type no wire value satisfies; tsc accepts the merge
+// silently, so generation refuses it with the remedy instead.
+func TestReservedComponentNames(t *testing.T) {
+	for _, body := range []any{makeComponents(), makeClass()} {
+		mux := stdocs.New(stdocs.WithTitle("T"))
+		mux.HandleFunc("POST /x", noop, stdocs.Summary("X"), stdocs.WithBody(body))
+		_, err := Generate(mux)
+		if err == nil || !strings.Contains(err.Error(), "SchemaName") {
+			t.Errorf("%T: err = %v, want the reserved-name error with the remedy", body, err)
+		}
+		if _, jerr := mux.JSON(); jerr != nil {
+			t.Errorf("the OpenAPI document itself stays valid: %v", jerr)
+		}
+	}
+}
+
+type components struct {
+	X string `json:"x"`
+}
+
+type class struct {
+	Y string `json:"y"`
+}
+
+func makeComponents() any { return components{} }
+func makeClass() any      { return class{} }
+
+// The TypeScript is a view of the served document: a 3.0 mux cannot
+// carry webhooks, so neither does its generated module.
+func TestWebhooks30Parity(t *testing.T) {
+	build := func(v stdocs.SpecVersion) *stdocs.Mux {
+		mux := stdocs.New(stdocs.WithTitle("T"), stdocs.WithVersion(v),
+			stdocs.WithWebhooks(map[string]stdocs.Webhook{
+				"task-event": {Method: "POST",
+					RequestBody: &stdocs.RequestBody{Required: true, BodyValue: CorpusEvent{}},
+					Responses:   map[string]*stdocs.Response{"200": {Description: "Ack"}}},
+			}))
+		mux.HandleFunc("GET /x", noop, stdocs.Summary("X"))
+		return mux
+	}
+	src30, err := Generate(build(stdocs.OpenAPI30))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(src30, []byte("webhooks")) || bytes.Contains(src30, []byte("CorpusEvent")) {
+		t.Errorf("a 3.0 module must not advertise webhooks the document omits")
+	}
+	doc30, err := build(stdocs.OpenAPI30).JSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(doc30, []byte("CorpusEvent")) {
+		t.Errorf("the 3.0 document must not carry orphan webhook payload components")
+	}
+	src31, err := Generate(build(stdocs.OpenAPI31))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(src31, []byte("webhooks")) || !bytes.Contains(src31, []byte("CorpusEvent")) {
+		t.Errorf("a 3.1 module carries its webhooks")
 	}
 }
