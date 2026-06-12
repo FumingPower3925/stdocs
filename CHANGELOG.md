@@ -19,8 +19,11 @@ study, fixed and pinned.
 
 - Embedded UIs no longer render a silent blank page when mounted the
   documented way: `Mount` registers the `*emb` packages' asset route
-  automatically through the new `Config.Assets` field (manual
-  `Docs()` mounting keeps the explicit `AssetHandler` registration).
+  automatically through the new `Config.Assets` field, tolerating a
+  pre-existing manual registration — upgrading code that followed the
+  old two-line example keeps working, and the manual line can simply
+  be deleted. Manual `Docs()` mounting keeps the explicit
+  `AssetHandler` registration.
 - Routes registered after a build now appear on the next read — the
   spec cache tracks a registration generation, so `JSON`, `YAML`,
   the served endpoints, `Lint`, and `DriftWarn` stop serving stale
