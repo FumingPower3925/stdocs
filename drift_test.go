@@ -591,3 +591,73 @@ func TestDriftSampleBodiesReadFrom(t *testing.T) {
 		t.Errorf("bodies written via ReadFrom must be sampled: %q", got)
 	}
 }
+
+func TestDriftCanonicalRedirectIgnored(t *testing.T) {
+	type OrderList struct {
+		Total int `json:"total"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /sub/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"total":0}`))
+	}, Summary("S"), WithResponse(200, OrderList{}))
+	mux.HandleFunc("GET /self", func(w http.ResponseWriter, r *http.Request) {
+		// A handler's own redirect to an unrelated location is still
+		// the handler speaking — that one must warn.
+		http.Redirect(w, r, "/elsewhere", http.StatusTemporaryRedirect)
+	}, Summary("R"))
+
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf)
+	driftGet(h, "/sub")     // subtree trailing-slash redirect
+	driftGet(h, "//sub//x") // path-cleaning redirect
+	driftGet(h, "/self")
+	got := warnings()
+	if len(got) != 1 || !strings.Contains(got[0], "GET /self") {
+		t.Errorf("only the handler's own redirect may warn: %q", got)
+	}
+}
+
+func TestDriftJSONContentTypeCaseInsensitive(t *testing.T) {
+	type Task struct {
+		ID string `json:"id"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /up", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "Application/JSON")
+		w.Write([]byte(`{"id":"1"}`))
+	}, Summary("U"), WithResponse(200, Task{}))
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf)
+	driftGet(h, "/up")
+	if got := warnings(); len(got) != 0 {
+		t.Errorf("media types are case-insensitive: %q", got)
+	}
+}
+
+func TestDriftRowDedupDistinctFromTopLevel(t *testing.T) {
+	type CollideRow struct {
+		Fee int `json:"fee" required:"true"`
+	}
+	type CollideBody struct {
+		Weird  int          `json:"orders[].fee" required:"true"`
+		Orders []CollideRow `json:"orders" required:"true"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /collide", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"orders":[{}]}`)) // top-level key AND row field missing
+	}, Summary("C"), WithResponse(200, CollideBody{}))
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf, DriftSampleBodies())
+	driftGet(h, "/collide")
+	count := 0
+	for _, w := range warnings() {
+		if strings.Contains(w, "orders[].fee") {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("a property named like a row path must not swallow the row finding: %q", warnings())
+	}
+}

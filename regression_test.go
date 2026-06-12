@@ -2274,3 +2274,22 @@ func TestComposedViewTypes(t *testing.T) {
 		t.Errorf("embedded-core view must not drift: %q", got)
 	}
 }
+
+// v0.5.0 verification: a poison mux-level default body cannot hide
+// behind a zero-route first build — the late route that makes it
+// reachable validates it.
+func TestLateRouteValidatesDefaultBodies(t *testing.T) {
+	type Poison struct {
+		N int `minimum:"abc"`
+	}
+	mux := New(WithTitle("T"), WithDefaultResponse(500, Poison{}))
+	if _, err := mux.JSON(); err != nil {
+		t.Fatalf("zero-route build: %v", err) // nothing reflects the body yet
+	}
+	defer func() {
+		if recover() == nil {
+			t.Errorf("late route must fail fast on the poison default body")
+		}
+	}()
+	mux.HandleFunc("GET /late", noop, Summary("L"))
+}

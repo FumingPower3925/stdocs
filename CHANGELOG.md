@@ -36,9 +36,9 @@ have.
   `WithResponseContentType` on the route survives a raw fallback.
 - A documented pattern for list-row subsets: share the canonical
   model's common fields through an embedded core (reflection
-  flattens embedding exactly as `encoding/json` does). There is
-  deliberately no doc-only subset helper — a document trimmed below
-  what the handler writes is what `DriftWarn` exists to catch.
+  flattens embedding the way `encoding/json` promotes fields). There
+  is deliberately no doc-only subset helper — a document trimmed
+  below what the handler writes is what `DriftWarn` exists to catch.
 
 ### Changed
 

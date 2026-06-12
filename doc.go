@@ -129,9 +129,10 @@
 // Composing view types: when a list endpoint returns a subset of a
 // canonical model (an OrderSummary next to Order), share the common
 // fields through an embedded core instead of re-declaring them —
-// reflection flattens embedded structs exactly as encoding/json
-// does, so the documented shape and the served JSON stay in
-// agreement by construction:
+// reflection flattens embedded structs the way encoding/json
+// promotes their fields, so the documented shape and the served
+// JSON stay in agreement (keep cores collision-free: same-named
+// fields across sibling embeds are where the two can diverge):
 //
 //	type OrderCore struct {
 //	    ID     string `json:"id" required:"true"`
