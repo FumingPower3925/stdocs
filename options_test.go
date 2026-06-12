@@ -159,7 +159,7 @@ func TestTagFromPath(t *testing.T) {
 		{"/users", "Users"},
 		{"/users/{id}", "Users"},
 		{"GET /users/{id}", "Users"},
-		{"/v1/users", "V1"},
+		{"/v1/users", "Users"}, // version segments are skipped
 		{"/", ""},
 		{"", ""},
 		{"/{x}", "X"}, // first segment is a wildcard named "x"; we use the name as the tag

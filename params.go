@@ -22,10 +22,8 @@ import (
 // registration time; a mismatch (ParamDefault("x") on an integer
 // parameter) panics.
 //
-// The modifier set covers the common refinements; for the full
-// constraint vocabulary (exclusive bounds, array facets, format
-// overrides), declare the parameter as a [WithParams] struct field
-// instead.
+// The modifier set mirrors the constraint-tag vocabulary; the same
+// declarations are also available as a [WithParams] struct.
 type ParamOpt func(p *Param)
 
 // ParamRequired marks the parameter required. Path parameters are
@@ -107,6 +105,78 @@ func ParamPattern(pattern string) ParamOpt {
 	return func(p *Param) {
 		requireStringParam(p, "ParamPattern")
 		p.Schema.Pattern = pattern
+	}
+}
+
+// ParamFormat overrides the parameter's format hint (e.g. "uuid",
+// "date-time", "email").
+func ParamFormat(format string) ParamOpt {
+	return func(p *Param) { p.Schema.Format = format }
+}
+
+// ParamExclusiveMinimum documents the parameter's exclusive lower
+// bound. Numeric parameters only; mutually exclusive with
+// ParamMinimum.
+func ParamExclusiveMinimum(n float64) ParamOpt {
+	return func(p *Param) {
+		requireNumericParam(p, "ParamExclusiveMinimum")
+		if p.Schema.Minimum != "" {
+			panic("stdocs: parameter " + strconv.Quote(p.Name) + " sets both ParamMinimum and ParamExclusiveMinimum; use one")
+		}
+		p.Schema.ExclusiveMinimum = finiteNumber(n, p, "ParamExclusiveMinimum")
+	}
+}
+
+// ParamExclusiveMaximum documents the parameter's exclusive upper
+// bound. Numeric parameters only; mutually exclusive with
+// ParamMaximum.
+func ParamExclusiveMaximum(n float64) ParamOpt {
+	return func(p *Param) {
+		requireNumericParam(p, "ParamExclusiveMaximum")
+		if p.Schema.Maximum != "" {
+			panic("stdocs: parameter " + strconv.Quote(p.Name) + " sets both ParamMaximum and ParamExclusiveMaximum; use one")
+		}
+		p.Schema.ExclusiveMaximum = finiteNumber(n, p, "ParamExclusiveMaximum")
+	}
+}
+
+// ParamMinItems documents the array parameter's minimum length.
+func ParamMinItems(n uint64) ParamOpt {
+	return func(p *Param) {
+		requireArrayParam(p, "ParamMinItems")
+		p.Schema.MinItems = &n
+	}
+}
+
+// ParamMaxItems documents the array parameter's maximum length.
+func ParamMaxItems(n uint64) ParamOpt {
+	return func(p *Param) {
+		requireArrayParam(p, "ParamMaxItems")
+		p.Schema.MaxItems = &n
+	}
+}
+
+// ParamUniqueItems requires the array parameter's elements to be
+// unique.
+func ParamUniqueItems() ParamOpt {
+	return func(p *Param) {
+		requireArrayParam(p, "ParamUniqueItems")
+		p.Schema.UniqueItems = true
+	}
+}
+
+// ParamItems sets the element type of an "array" parameter, which
+// otherwise defaults to string items. typ is one of "string",
+// "integer", "number", or "boolean".
+func ParamItems(typ string) ParamOpt {
+	return func(p *Param) {
+		requireArrayParam(p, "ParamItems")
+		switch typ {
+		case "string", "integer", "number", "boolean":
+		default:
+			panic("stdocs: ParamItems type must be \"string\", \"integer\", \"number\", or \"boolean\"; got " + strconv.Quote(typ))
+		}
+		p.Schema.Items = schemaForType(typ)
 	}
 }
 
@@ -193,6 +263,13 @@ func paramValue(v any, p *Param, what string) any {
 func requireNumericParam(p *Param, what string) {
 	if p.Schema.Type != "integer" && p.Schema.Type != "number" {
 		panic("stdocs: " + what + " requires a numeric parameter; " + strconv.Quote(p.Name) + " is " + describeParamType(p))
+	}
+}
+
+// requireArrayParam panics unless the parameter is array typed.
+func requireArrayParam(p *Param, what string) {
+	if p.Schema.Type != "array" {
+		panic("stdocs: " + what + " requires an array parameter; " + strconv.Quote(p.Name) + " is " + describeParamType(p))
 	}
 }
 
