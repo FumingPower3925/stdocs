@@ -519,6 +519,10 @@ type fieldMeta struct {
 	fieldSchema *Schema
 	embedded    bool
 	tagged      bool
+	// excluded marks an openapi:"-" field: it participates in
+	// dominance (it exists on the wire) but never reaches the
+	// document.
+	excluded bool
 	// requiredCandidate is true if the field could be required
 	// (no omitempty/omitzero and not a pointer). The dedup pass
 	// decides what actually makes it into s.Required.
@@ -534,7 +538,7 @@ func (r *Reflector) buildStructSchema(t reflect.Type, name string, nullable bool
 	var required []string
 	for _, n := range order {
 		winner, ok := dominantField(byName[n].cands)
-		if !ok {
+		if !ok || winner.excluded {
 			continue
 		}
 		s.Properties[n] = winner.fieldSchema
@@ -592,14 +596,17 @@ func (r *Reflector) walkLevel(level []reflect.Type, depth int, visited map[refle
 				continue
 			}
 			if meta.embedded {
-				if et, flattens := r.embeddedType(f, meta); flattens {
+				if et, flattens := embeddedType(f); flattens {
+					// The next level sees the type once even when this
+					// parent is duplicated — encoding/json loses embed
+					// multiplicity at the queueing step (the duplicated
+					// parent is scanned a single time), so a field below
+					// a shared join point survives while the parent's
+					// own leaves annihilate.
 					next = append(next, et)
-					if duplicated {
-						next = append(next, et)
-					}
 					continue
 				}
-				// An embedded non-object (a named scalar, an
+				// An embedded non-struct (a named scalar, an
 				// interface) is a regular field named by its type,
 				// exactly as encoding/json marshals it.
 				meta.name = f.Name
@@ -622,21 +629,18 @@ func (r *Reflector) walkLevel(level []reflect.Type, depth int, visited map[refle
 }
 
 // embeddedType resolves a flattened embed to the struct type whose
-// fields join the walk one level deeper; flattens is false when the
-// embed is not an inlineable object.
-func (r *Reflector) embeddedType(f reflect.StructField, meta fieldMeta) (reflect.Type, bool) {
-	inner := meta.fieldSchema
-	if inner.Ref != "" {
-		if resolved := r.resolveRef(inner.Ref); resolved != nil {
-			inner = resolved
-		}
-	}
-	if !inner.isInlineable() {
-		return nil, false
-	}
+// fields join the walk one level deeper. The test is encoding/json's
+// own: an untagged anonymous field flattens exactly when its
+// (dereferenced) kind is struct — regardless of how many JSON-visible
+// fields it has, whether it is mid-build, or whether it carries
+// marshaler methods that did not promote.
+func embeddedType(f reflect.StructField) (reflect.Type, bool) {
 	et := f.Type
 	for et.Kind() == reflect.Ptr {
 		et = et.Elem()
+	}
+	if et.Kind() != reflect.Struct {
+		return nil, false
 	}
 	return et, true
 }
@@ -667,9 +671,10 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	tag := f.Tag.Get("json")
 	tagName, opts := parseJSONTag(tag)
 	if !f.IsExported() {
-		return r.unexportedEmbed(f, tagName)
+		return r.unexportedEmbed(f, tagName, opts)
 	}
-	if tagName == "-" {
+	if tag == "-" {
+		// Only the bare tag skips; json:"-," names the key "-".
 		return fieldMeta{}, false
 	}
 	name := tagName
@@ -693,15 +698,29 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	// "type=...[,format=...]" replaces the reflected schema entirely.
 	// It is resolved before reflection so an overridden struct-typed
 	// field does not register a phantom component.
+	flattens := f.Anonymous && tagName == "" && ft.Kind() == reflect.Struct
 	var fieldSchema *Schema
 	overridden := false
 	switch override := f.Tag.Get("openapi"); override {
 	case "":
 		fieldSchema = r.reflect(f.Type)
 	case "-":
-		return fieldMeta{}, false
+		if flattens {
+			// Excluding a flattened embedding hides its whole subtree.
+			return fieldMeta{}, false
+		}
+		// The field still exists on the wire, so it stays a dominance
+		// candidate — a same-name collision json drops must not
+		// resurface its rival in the document — and is filtered out
+		// after dominance settles.
+		return fieldMeta{
+			name:     name,
+			tagged:   tagName != "",
+			embedded: f.Anonymous && tagName == "",
+			excluded: true,
+		}, true
 	default:
-		if f.Anonymous && tagName == "" {
+		if flattens {
 			// encoding/json flattens this embedding; an override
 			// would document a property that never exists on the wire.
 			panic("stdocs: openapi tag on embedded field " + f.Name +
@@ -756,19 +775,30 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	}, true
 }
 
-// unexportedEmbed handles the one unexported case encoding/json
-// promotes: an anonymous struct — pointer or not, it dereferences
-// before the struct-kind check — without a json name. Everything
-// else unexported is skipped.
-func (r *Reflector) unexportedEmbed(f reflect.StructField, tagName string) (fieldMeta, bool) {
+// unexportedEmbed handles the unexported cases encoding/json keeps:
+// an anonymous struct — pointer or not, it dereferences before the
+// struct-kind check — flattens when it has no json name and becomes
+// a regular leaf field when a tag names it. Everything else
+// unexported is skipped.
+func (r *Reflector) unexportedEmbed(f reflect.StructField, tagName string, opts []string) (fieldMeta, bool) {
 	et := f.Type
 	if et.Kind() == reflect.Ptr {
 		et = et.Elem()
 	}
-	if f.Anonymous && et.Kind() == reflect.Struct && tagName == "" {
-		return fieldMeta{fieldSchema: r.buildStructSchema(et, "", false), embedded: true}, true
+	if !f.Anonymous || et.Kind() != reflect.Struct {
+		return fieldMeta{}, false
 	}
-	return fieldMeta{}, false
+	if tagName == "" {
+		return fieldMeta{embedded: true}, true
+	}
+	inner := r.buildStructSchema(et, "", false)
+	inner.Nullable = f.Type.Kind() == reflect.Ptr
+	return fieldMeta{
+		name:              tagName,
+		fieldSchema:       inner,
+		tagged:            true,
+		requiredCandidate: requiredFor(f, opts, f.Name),
+	}, true
 }
 
 // requiredFor decides a field's required-ness: the encoding/json
@@ -1091,13 +1121,6 @@ func parseScalar(value, schemaType, tagName, fieldName string) any {
 	return value
 }
 
-// isInlineable reports whether a schema can have its properties
-// merged into a parent (i.e. it is an object with at least one
-// property) — the test for whether an embedded field flattens.
-func (s *Schema) isInlineable() bool {
-	return s != nil && s.Type == "object" && len(s.Properties) > 0
-}
-
 // dedupRequired removes duplicates and orphans from a list of
 // required keys. A key is an orphan if it is not present in the
 // properties map. The first occurrence of each key wins.
@@ -1115,16 +1138,6 @@ func dedupRequired(keys []string, props map[string]*Schema) []string {
 		out = append(out, k)
 	}
 	return out
-}
-
-// resolveRef returns the named component schema for a $ref pointer that
-// points into our own components map. Returns nil if not found.
-func (r *Reflector) resolveRef(ref string) *Schema {
-	const prefix = "#/components/schemas/"
-	if !strings.HasPrefix(ref, prefix) {
-		return nil
-	}
-	return r.out[ref[len(prefix):]]
 }
 
 // parseJSONTag splits a struct tag's json value into the field name and
