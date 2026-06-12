@@ -28,8 +28,9 @@ Nothing yet.
   without changing the Go type. Also composes inside type overrides.
 - `DriftSampleBodies()`: opt-in DriftWarn body sampling that compares
   response bodies' top-level keys against the documented object
-  schema — missing required keys and undocumented extras each warn
-  once per route and status (64 KB cap, development aid).
+  schema — each missing required key warns once per route, status,
+  and field; undocumented extras once per route and status (64 KB
+  cap, development aid).
 
 ## [0.4.1] - 2026-06-12
 

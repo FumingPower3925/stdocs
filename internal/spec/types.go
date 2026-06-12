@@ -75,6 +75,15 @@ type Response struct {
 	// example is set. It is not serialized into the spec; the
 	// emitter reads it from a parallel field.
 	Example any
+	// BodyDeclared records that the user explicitly declared this
+	// entry's body (WithResponse, even with nil; WithRawResponse) —
+	// distinguishing it from entries materialized by decorators,
+	// which fallback/default bodies may still fill. Not serialized.
+	BodyDeclared bool
+	// RawBody records a WithRawResponse declaration so a later
+	// WithResponse can undo the raw schema and content type (the two
+	// opts replace each other in either order). Not serialized.
+	RawBody bool
 	// BodyValue is the original Go value passed to WithResponse. It is
 	// used internally to re-derive component schemas at spec-build
 	// time. It is not serialized into the spec.
