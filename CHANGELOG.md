@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.5.1] - 2026-06-12
+
+### Fixed
+
+- Embedded-field flattening now follows `encoding/json`'s dominance
+  rules exactly: a shallower field hides deeper ones, a lone tagged
+  field beats untagged same-depth rivals, any other same-depth name
+  collision drops the field entirely (including diamond embedding),
+  unexported pointer embeds promote their exported fields, and a
+  shadowed embed's required-ness no longer leaks onto the winning
+  field. Documents change only where they disagreed with what
+  `json.Marshal` actually serves — schemas with colliding embeds stop
+  claiming fields that never reach the wire, so golden files over
+  such shapes will show a diff worth reading.
+- The DriftWarn reference told users to place the wrapper around
+  their middleware, which its signature makes impossible; it now
+  states the real limitation — responses written by surrounding
+  middleware are invisible to it.
+
 ## [0.5.0] - 2026-06-12
 
 DriftWarn graduates from log lines to a CI-gateable contract checker,
@@ -401,7 +420,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/FumingPower3925/stdocs/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/FumingPower3925/stdocs/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/FumingPower3925/stdocs/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/FumingPower3925/stdocs/compare/v0.4.0...v0.4.1
