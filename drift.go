@@ -213,9 +213,16 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		declaredJSON = dr.defaultJSON
 	}
 	if !declared {
+		// Method-less patterns match any verb, so the observed method
+		// is real information there; on "POST /x" registrations it
+		// would just repeat the pattern.
+		via := ""
+		if !strings.Contains(pattern, " ") {
+			via = " (observed via " + r.Method + ")"
+		}
 		d.warn(pattern+"\x00"+key,
-			"stdocs drift: %s (observed via %s) returned %d, which the document does not declare",
-			pattern, r.Method, status)
+			"stdocs drift: %s%s returned %d, which the document does not declare",
+			pattern, via, status)
 		return
 	}
 	if declaredJSON {
