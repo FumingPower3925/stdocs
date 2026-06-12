@@ -16,7 +16,7 @@ mux.Mount() // UI de docs a /docs/, spec a /docs/openapi.json
 log.Fatal(http.ListenAndServe(":8080", mux))
 ```
 
-Això és tot. `stdocs` recorre les teves rutes registrades, genera un spec OpenAPI a partir dels teus tipus Go i serveix una UI de documentació a `/docs/`.
+Això és tot. `stdocs` recorre les teves rutes registrades, genera un spec OpenAPI a partir dels teus tipus Go i serveix una UI de documentació a `/docs/`. Véns de swaggo/swag, FastAPI o un framework de handlers tipats? [MIGRATING.md](MIGRATING.md) tradueix els teus costums a stdocs.
 
 ![Les quatre UI completes — Scalar, Swagger UI, Redoc i Stoplight Elements — mostrant el mateix spec generat](.github/uis.png)
 
@@ -51,7 +51,7 @@ El mateix document generat, mostrat per cadascuna de les quatre UI incloses — 
 go get github.com/FumingPower3925/stdocs
 ```
 
-Requereix Go 1.25 o posterior. stdocs segueix la mateixa política de suport que el projecte Go — les dues releases més recents, actualment 1.25 i 1.26 — i la CI executa la suite completa de tests a cada patch release de totes dues. Els patrons de ruta que stdocs documenta (`"GET /users/{id}"`) són la sintaxi mètode+ruta que `net/http.ServeMux` va incorporar a Go 1.22.
+Requereix Go 1.25 o posterior. La referència completa també és disponible offline un cop el mòdul és al teu `go.mod`: `go doc github.com/FumingPower3925/stdocs`. stdocs segueix la mateixa política de suport que el projecte Go — les dues releases més recents, actualment 1.25 i 1.26 — i la CI executa la suite completa de tests a cada patch release de totes dues. Els patrons de ruta que stdocs documenta (`"GET /users/{id}"`) són la sintaxi mètode+ruta que `net/http.ServeMux` va incorporar a Go 1.22.
 
 ## Ús
 
@@ -93,7 +93,7 @@ mux.HandleFunc("POST /tasks", createTask,
 mux.Mount(os.Getenv("ENV") != "prod")
 ```
 
-Una documentació mal declarada — un tipus de paràmetre amb un typo, un `minLength` en un `int`, un `example` que no es pot parsejar — provoca un panic en registrar o en construir el document, en lloc de publicar un contracte erroni.
+Una documentació mal declarada — un tipus de paràmetre amb un typo, un `minLength` en un `int`, un `example` que no es pot parsejar — provoca un panic o es nega a construir el document, en lloc de publicar un contracte erroni.
 
 ## UIs
 
