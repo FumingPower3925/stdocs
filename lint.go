@@ -116,7 +116,7 @@ func (m *Mux) Lint() []Warning {
 			out = append(out, Warning{Code: "exclusive-bounds", Where: "component " + name, Message: "field " + field + " uses an exclusive bound; current Go client generators (ogen, oapi-codegen) reject the numeric 3.1/3.2 form — consumers generating clients should use the 3.0.4 document"})
 		}
 		for _, field := range report.nullableFacets[name] {
-			out = append(out, Warning{Code: "nullable-facet-generators", Where: "component " + name, Message: "field " + field + " combines nullability with a default, uniqueItems, or byte format; current Go generators reject those combinations in the 3.1/3.2 anyOf form — consumers generating clients should use the 3.0.4 document"})
+			out = append(out, Warning{Code: "nullable-facet-generators", Where: "component " + name, Message: "field " + field + " combines nullability with a default, uniqueItems, or byte format; ogen releases before v1.17.0 reject those combinations in the 3.1/3.2 anyOf form (oapi-codegen consumes 3.0 only) — consumers on older generators should use the 3.0.4 document"})
 		}
 	}
 

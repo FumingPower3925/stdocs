@@ -310,7 +310,8 @@
 // non-nullable enum fields (no pointer and no openapi:"nullable")
 // in generator-facing contracts. On 3.1/3.2, nullability combined
 // with a default, uniqueItems, or byte format produces anyOf forms
-// current Go generators reject ([Mux.Lint] warns:
+// that ogen releases before v1.17.0 reject — and oapi-codegen,
+// consuming 3.0 only, never sees ([Mux.Lint] warns:
 // nullable-facet-generators); the 3.0.4 document handles them all.
 // An explicit Webhook.Security requirement trips the same ogen
 // webhook-codegen bug that motivated the security: [] default —
