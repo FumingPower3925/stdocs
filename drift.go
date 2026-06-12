@@ -91,8 +91,9 @@ type driftShape struct {
 type driftRoute struct {
 	statuses    map[string]bool // documented response keys
 	hasDefault  bool
-	jsonByKey   map[string]bool // key -> declared with a JSON body
-	defaultJSON bool            // the "default" entry declares a JSON body
+	jsonByKey   map[string]bool   // key -> declared with a JSON body
+	defaultJSON bool              // the "default" entry declares a JSON body
+	ctByKey     map[string]string // key -> declared non-JSON media type (base)
 	shapeByKey  map[string]driftShape
 }
 
@@ -128,12 +129,16 @@ func (d *driftWarner) refresh() {
 		dr := driftRoute{
 			statuses:  make(map[string]bool, len(rt.op.Responses)),
 			jsonByKey: make(map[string]bool, len(rt.op.Responses)),
+			ctByKey:   make(map[string]string, len(rt.op.Responses)),
 		}
 		for key, resp := range rt.op.Responses {
 			dr.statuses[key] = true
 			declaredJSON := resp != nil && (resp.BodyValue != nil || resp.Schema != nil) &&
 				(resp.ContentType == "" || strings.Contains(resp.ContentType, "json"))
 			dr.jsonByKey[key] = declaredJSON
+			if resp != nil && resp.ContentType != "" && !strings.Contains(resp.ContentType, "json") {
+				dr.ctByKey[key] = mediaTypeBase(resp.ContentType)
+			}
 			if key == "default" {
 				dr.hasDefault = true
 				dr.defaultJSON = declaredJSON
@@ -221,7 +226,25 @@ func (d *driftWarner) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		d.checkBodyShape(dr, pattern, key, status, rec)
+		return
 	}
+	// Declared non-JSON contracts are contracts too: a route
+	// documented as text/csv serving text/plain (or JSON) is drift.
+	if declared := dr.ctByKey[key]; declared != "" {
+		if served := mediaTypeBase(rec.Header().Get("Content-Type")); served != "" && served != declared {
+			d.warn(pattern+"\x00"+key+"\x00ct",
+				"stdocs drift: %s wrote Content-Type %q for status %d, which the document declares as %s", pattern, served, status, declared)
+		}
+	}
+}
+
+// mediaTypeBase strips parameters from a media type ("text/csv;
+// charset=utf-8" -> "text/csv").
+func mediaTypeBase(ct string) string {
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	return strings.TrimSpace(strings.ToLower(ct))
 }
 
 // checkBodyShape compares a sampled response body's top-level keys
