@@ -79,6 +79,17 @@ export interface components {
 
 export interface operations {
 	/**
+	 * Method-less ping
+	 * /ping
+	 */
+	any_ping: {
+		responses: {
+			200: undefined;
+			500: CorpusError;
+			503: string;
+		};
+	};
+	/**
 	 * Delete a task
 	 * DELETE /tasks/{id}
 	 * @deprecated

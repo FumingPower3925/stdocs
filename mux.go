@@ -404,7 +404,11 @@ func (m *Mux) buildInput() SpecInput {
 		Version:         m.cfg.Version,
 		SecuritySchemes: m.cfg.Security,
 		GlobalSecurity:  m.cfg.GlobalSecurity,
-		Webhooks:        m.reflectWebhooks(ref),
+	}
+	if m.cfg.Version != OpenAPI30 {
+		// 3.0 has no webhooks field; reflecting their payloads anyway
+		// would leave orphan components in the emitted document.
+		in.Webhooks = m.reflectWebhooks(ref)
 	}
 	in.Components = ref.Components()
 	return in
@@ -412,11 +416,14 @@ func (m *Mux) buildInput() SpecInput {
 
 // The tsgen subpackage consumes the model through this handoff
 // instead of a public accessor, so non-users pay zero API surface.
+// consume runs under the build lock: the model carries the
+// registry's live operation pointers, which finalize and reflection
+// mutate in place on every rebuild.
 func init() {
-	tsbridge.SpecInput = func(mux any) (spec.SpecInput, error) {
+	tsbridge.Generate = func(mux any, consume func(spec.SpecInput) []byte) ([]byte, error) {
 		m, ok := mux.(*Mux)
 		if !ok {
-			return spec.SpecInput{}, fmt.Errorf("stdocs: tsgen needs a *stdocs.Mux, got %T", mux)
+			return nil, fmt.Errorf("stdocs: tsgen needs a *stdocs.Mux, got %T", mux)
 		}
 		m.specMu.Lock()
 		defer m.specMu.Unlock()
@@ -424,9 +431,9 @@ func init() {
 		// fail-fast surface: tag panics and security-validation
 		// errors fire here exactly as they do for Mux.JSON.
 		if _, err := m.cachedJSON(); err != nil {
-			return spec.SpecInput{}, err
+			return nil, err
 		}
-		return m.buildInput(), nil
+		return consume(m.buildInput()), nil
 	}
 }
 

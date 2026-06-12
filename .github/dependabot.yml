@@ -10,13 +10,13 @@
 #     the Go toolchain itself.
 #   - github-actions: weekly updates to the actions/* versions
 #     used in .github/workflows/ci.yml.
-#   - npm: weekly updates to the UI bundle versions. The
-#     /package.json at the repo root is a *dev-only* manifest
-#     used by Dependabot to track upstream versions. The Go
-#     source in ui/*/*.go is the source of truth for the version
-#     that ships. Every UI package has a parity test comparing its
-#     pinned version constant against package.json, so a Dependabot
-#     npm PR fails CI until a human:
+#   - npm: weekly updates to the UI bundle versions and the
+#     typescript pin. The /package.json at the repo root is a
+#     *dev-only* manifest used by Dependabot to track upstream
+#     versions. The Go source in ui/*/*.go is the source of truth
+#     for the bundle version that ships. Every UI package has a
+#     parity test comparing its pinned version constant against
+#     package.json, so a Dependabot npm PR fails CI until a human:
 #       1. Updates the version constant in the relevant ui/*/*.go
 #       2. Re-fetches the bundle and updates the embedded copy
 #          (*emb sub-packages; see the //go:generate directives)
@@ -24,6 +24,8 @@
 #          attributes (CDN sub-packages)
 #       4. Updates the corresponding *_pinning_test.go expected
 #          values
+#     The typescript entry needs no Go-side step: CI re-checks the
+#     tsgen corpus against the bumped compiler on the PR itself.
 #
 # OpenAPI spec versions: Dependabot cannot track the OAI spec
 # releases directly. The OpenAPI Initiative publishes new
