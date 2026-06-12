@@ -126,6 +126,30 @@
 // wire-level null from Go pointers (with required:"true", that is
 // required-but-nullable without changing the Go type).
 //
+// Composing view types: when a list endpoint returns a subset of a
+// canonical model (an OrderSummary next to Order), share the common
+// fields through an embedded core instead of re-declaring them —
+// reflection flattens embedded structs exactly as encoding/json
+// does, so the documented shape and the served JSON stay in
+// agreement by construction:
+//
+//	type OrderCore struct {
+//	    ID     string `json:"id" required:"true"`
+//	    Status string `json:"status" enum:"open,paid,refunded"`
+//	}
+//	type Order struct {
+//	    OrderCore
+//	    Items []Item `json:"items"`
+//	}
+//	type OrderSummary struct{ OrderCore }
+//
+// The embedded core appears as its own component schema; that is
+// expected, not a leak. There is deliberately no doc-only subset
+// helper: encoding/json has no way to drop a promoted field at
+// serialization time, so a document trimmed below what the handler
+// writes would be precisely the divergence [DriftWarn] exists to
+// catch.
+//
 // # Parameters
 //
 // Path parameters come from the pattern's wildcards automatically.
