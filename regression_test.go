@@ -1905,3 +1905,61 @@ func TestVerificationBatchC(t *testing.T) {
 		t.Errorf("unregistered webhook scheme must fail the build, got %v", err)
 	}
 }
+
+// v0.4.2: route-scoped fallbacks and first-class raw responses.
+func TestFallbackAndRawResponses(t *testing.T) {
+	type LegacyError struct {
+		Error string `json:"error"`
+	}
+	type Envelope struct {
+		Message string `json:"message"`
+	}
+	legacy := Opts(WithFallbackResponse(500, LegacyError{}))
+	mux := New(WithTitle("T"), WithDefaultResponse(500, Envelope{}))
+	mux.HandleFunc("GET /old", noop, Summary("Old"), legacy)
+	mux.HandleFunc("GET /new", noop, Summary("New"))
+	mux.HandleFunc("GET /explicit", noop, Summary("E"), legacy, WithResponse(500, Envelope{}))
+	mux.HandleFunc("GET /export", noop, Summary("X"),
+		WithRawResponse(200, "text/csv"),
+		WithResponseDescription(200, "CSV export"),
+	)
+	doc := buildDocMap(t, mux)
+	ref := func(p string) string {
+		r := doc["paths"].(map[string]any)[p].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["500"].(map[string]any)
+		return r["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)["$ref"].(string)
+	}
+	if ref("/old") != "#/components/schemas/LegacyError" {
+		t.Errorf("/old 500 = %s; route fallback must beat the mux default", ref("/old"))
+	}
+	if ref("/new") != "#/components/schemas/Envelope" {
+		t.Errorf("/new 500 = %s; mux default applies without a fallback", ref("/new"))
+	}
+	if ref("/explicit") != "#/components/schemas/Envelope" {
+		t.Errorf("/explicit 500 = %s; explicit WithResponse beats the fallback", ref("/explicit"))
+	}
+	exp := doc["paths"].(map[string]any)["/export"].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)["200"].(map[string]any)
+	content := exp["content"].(map[string]any)
+	if _, ok := content["text/csv"]; !ok {
+		t.Fatalf("raw response content = %v", mapKeysOf(content))
+	}
+	if content["text/csv"].(map[string]any)["schema"].(map[string]any)["type"] != "string" {
+		t.Errorf("raw response schema must be string-typed")
+	}
+	if exp["description"] != "CSV export" {
+		t.Errorf("raw responses compose with decorators: %v", exp["description"])
+	}
+	// Rebuild stability.
+	b1, _ := mux.JSON()
+	mux.Refresh()
+	b2, _ := mux.JSON()
+	if !bytes.Equal(b1, b2) {
+		t.Errorf("fallbacks must be rebuild-stable")
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Errorf("bad fallback status should panic")
+		}
+	}()
+	WithFallbackResponse(42, nil)
+}
