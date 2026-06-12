@@ -271,6 +271,27 @@ func validateSecurity(doc map[string]any) error {
 			}
 		}
 	}
+	checkOp := func(where string, om map[string]any) error {
+		sec, ok := om["security"]
+		if !ok {
+			return nil
+		}
+		entries, _ := sec.([]any)
+		for _, entry := range entries {
+			em, _ := entry.(map[string]any)
+			for name := range em {
+				if missing(name) {
+					return fmt.Errorf("stdocs: security scheme %q referenced by %s is not registered in components.securitySchemes", name, where)
+				}
+			}
+		}
+		return nil
+	}
+	// Webhook operations: Webhook.Security must reference registered
+	// schemes like any route requirement.
+	if err := validateOpsSecurity(doc, "webhooks", checkOp); err != nil {
+		return err
+	}
 	paths, _ := doc["paths"].(map[string]any)
 	for path, pi := range paths {
 		pim, _ := pi.(map[string]any)
@@ -279,18 +300,27 @@ func validateSecurity(doc map[string]any) error {
 				continue
 			}
 			om, _ := op.(map[string]any)
-			sec, ok := om["security"]
-			if !ok {
-				continue
+			if err := checkOp(strings.ToUpper(method)+" "+path, om); err != nil {
+				return err
 			}
-			arr, _ := sec.([]any)
-			for _, entry := range arr {
-				em, _ := entry.(map[string]any)
-				for name := range em {
-					if missing(name) {
-						return fmt.Errorf("stdocs: security scheme %q referenced in %s %s is not registered in components.securitySchemes", name, strings.ToUpper(method), path)
-					}
-				}
+		}
+	}
+	return nil
+}
+
+// validateOpsSecurity walks a webhooks-shaped top-level map (name ->
+// method -> operation) applying check to every operation.
+func validateOpsSecurity(doc map[string]any, key string, check func(string, map[string]any) error) error {
+	entries, ok := doc[key].(map[string]any)
+	if !ok {
+		return nil
+	}
+	for name, entry := range entries {
+		em, _ := entry.(map[string]any)
+		for method, op := range em {
+			om, _ := op.(map[string]any)
+			if err := check(key+" "+name+" ("+method+")", om); err != nil {
+				return err
 			}
 		}
 	}

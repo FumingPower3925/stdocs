@@ -180,13 +180,26 @@ type span struct {
 }
 
 // tagFromPath returns a default tag for a route based on the first path
-// segment. "/users/{id}" -> "users"; "/" -> ""; "/v1/users" -> "v1".
+// segment. "/users/{id}" -> "users"; "/" -> ""; "/v1/users" -> "Users" (version segments are skipped).
 func tagFromPath(path string) string {
 	seg := firstSegment(path)
 	if isVersionSegment(seg) {
 		// /v1/tasks should group by Tasks, not by a useless V1 shared
-		// across every route.
-		rest := strings.TrimPrefix(path, "/"+seg)
+		// across every route. The strip is positional (firstSegment
+		// lower-cases, so /V1 would survive a literal TrimPrefix),
+		// and only the first version segment is skipped.
+		rest := strings.TrimPrefix(path, "/")
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			rest = rest[i:]
+		} else {
+			rest = ""
+		}
+		// A wildcard right after the version prefix (/v1/{id}) would
+		// make a junk tag out of the parameter name; better no tag.
+		trimmed := strings.TrimPrefix(rest, "/")
+		if strings.HasPrefix(trimmed, "{") {
+			return ""
+		}
 		seg = firstSegment(rest)
 	}
 	if seg == "" {

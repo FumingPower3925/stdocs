@@ -16,7 +16,7 @@ committed or regenerated.
 | --- | --- |
 | `@Summary Get a user` | `stdocs.Summary("Get a user")` — or nothing: the handler's function name infers one |
 | `@Description ...` | `stdocs.Description("...")` |
-| `@Tags users` | `stdocs.Tags("users")` — or nothing: the first path segment infers one |
+| `@Tags users` | `stdocs.Tags("users")` — or nothing: the first non-version path segment infers one (mux-wide style: `WithTagFunc`) |
 | `@ID get-user` | `stdocs.OperationID("get-user")` (mux-wide style: `WithOperationIDFunc`) |
 | `@Param id path string true "User ID"` | nothing — path params come from the `{id}` pattern wildcard |
 | `@Param limit query int false "Page size" minimum(1) maximum(100) default(20)` | `stdocs.QueryParam("limit", "integer", "Page size", stdocs.ParamMinimum(1), stdocs.ParamMaximum(100), stdocs.ParamDefault(20))` — or a `WithParams` struct with `minimum:"1" maximum:"100" default:"20"` tags |
