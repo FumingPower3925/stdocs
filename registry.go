@@ -220,11 +220,7 @@ func applyResponseDefaults(rt *route, cfg *Config) {
 	// beat both (the key already exists). First fallback per status
 	// wins. Re-running is a no-op, keeping rebuilds stable.
 	for _, fb := range rt.fallbacks {
-		key := statusKey(fb.Status)
-		if _, ok := rt.op.Responses[key]; ok {
-			continue
-		}
-		ensureResponse(rt.op, key).BodyValue = fb.Body
+		fillUndeclaredBody(rt.op, fb)
 	}
 
 	// Mux-level default responses: documented on every operation that
@@ -233,11 +229,7 @@ func applyResponseDefaults(rt *route, cfg *Config) {
 	// WithDefaultResponse(200, body) entry can supply the success
 	// body on routes that declare nothing.
 	for _, dr := range cfg.DefaultResponses {
-		key := statusKey(dr.Status)
-		if _, ok := rt.op.Responses[key]; ok {
-			continue
-		}
-		ensureResponse(rt.op, key).BodyValue = dr.Body
+		fillUndeclaredBody(rt.op, dr)
 	}
 
 	// Auto-200: a route that declared no responses still documents
@@ -261,6 +253,20 @@ func applyResponseDefaults(rt *route, cfg *Config) {
 			ensureResponse(rt.op, "401")
 		}
 	}
+}
+
+// fillUndeclaredBody applies a fallback/default body to its status
+// unless the route declared one: an explicit WithResponse (even with
+// a nil body) or WithRawResponse wins, but an entry merely
+// materialized by a decorator (WithResponseDescription and friends)
+// still takes the fallback body. Idempotent across rebuilds.
+func fillUndeclaredBody(op *Operation, dr DefaultResponse) {
+	resp := ensureResponse(op, statusKey(dr.Status))
+	if resp.BodyDeclared {
+		return
+	}
+	resp.BodyValue = dr.Body
+	resp.BodyDeclared = true
 }
 
 // applyMethodWarnings records x-stdocs-warning extensions for methods
