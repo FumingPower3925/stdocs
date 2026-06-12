@@ -228,7 +228,9 @@
 // exclusiveMaximum tags are in play ([Mux.Lint] warns about this),
 // and oapi-codegen consumes 3.0 documents only. A document-level
 // default response ([WithDefaultResponse] with status 0) enables
-// ogen's typed convenient-error handling. [WithOpenAPI]
+// ogen's typed convenient-error handling; [DriftWarn] still checks
+// the default entry's body contract, so the combination keeps drift
+// detection meaningful. [WithOpenAPI]
 // registers a hook that may mutate the document before caching, as
 // an escape hatch for anything stdocs does not expose; [Mux.Refresh]
 // forces a rebuild.
