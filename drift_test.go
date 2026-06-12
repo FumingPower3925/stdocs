@@ -553,21 +553,59 @@ func TestDriftDefaultEntryContentType(t *testing.T) {
 	}
 }
 
-func TestDriftSampleBodiesNullBody(t *testing.T) {
+func TestDriftSampleBodiesKindMismatch(t *testing.T) {
 	type Task struct {
 		ID string `json:"id" required:"true"`
 	}
 	mux := New(WithTitle("T"))
-	mux.HandleFunc("GET /null", func(w http.ResponseWriter, r *http.Request) {
+	serve := func(body string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(body))
+		}
+	}
+	mux.HandleFunc("GET /null", serve(`null`), Summary("N"), WithResponse(200, Task{}))
+	mux.HandleFunc("GET /arr", serve(`[{"id":"a"}]`), Summary("A"), WithResponse(200, Task{}))
+	mux.HandleFunc("GET /obj", serve(`{"id":"a"}`), Summary("O"), WithResponse(200, []Task{}))
+	mux.HandleFunc("GET /scalar", serve(`42`), Summary("S"), WithResponse(200, Task{}))
+	mux.HandleFunc("GET /garbage", serve(`{not json`), Summary("G"), WithResponse(200, Task{}))
+	mux.HandleFunc("GET /empty", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`null`))
-	}, Summary("N"), WithResponse(200, Task{}))
+		w.WriteHeader(200)
+	}, Summary("E"), WithResponse(200, Task{}))
 
+	var mu sync.Mutex
+	var found []DriftFinding
 	logf, warnings := collectWarnings()
-	h := DriftWarn(mux, logf, DriftSampleBodies())
-	driftGet(h, "/null")
-	if got := warnings(); len(got) != 0 {
-		t.Errorf("a literal null body declares nothing about fields: %q", got)
+	h := DriftWarn(mux, logf, DriftSampleBodies(), DriftNotify(func(f DriftFinding) {
+		mu.Lock()
+		defer mu.Unlock()
+		found = append(found, f)
+	}))
+	for _, p := range []string{"/null", "/null", "/arr", "/obj", "/scalar", "/garbage", "/empty"} {
+		driftGet(h, p)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	got := map[string]string{} // route -> served kind named in the message
+	for _, f := range found {
+		if f.Code != "body-kind-mismatch" {
+			t.Errorf("unexpected code: %+v", f)
+		}
+		got[f.Route] = f.Message
+	}
+	if len(found) != 4 {
+		t.Fatalf("findings = %+v, want 4 kind mismatches (null/array/object/scalar)", found)
+	}
+	for route, kind := range map[string]string{
+		"GET /null": "null", "GET /arr": "array", "GET /obj": "object", "GET /scalar": "number",
+	} {
+		if !strings.Contains(got[route], "JSON "+kind) {
+			t.Errorf("%s message = %q, want the served kind %q named", route, got[route], kind)
+		}
+	}
+	if len(warnings()) != 4 {
+		t.Errorf("invalid JSON and empty bodies must stay quiet: %q", warnings())
 	}
 }
 
