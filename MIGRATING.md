@@ -105,6 +105,11 @@ catches status and content-type divergence in development, and the
 golden-file test (reference: "Using the spec downstream") makes any
 spec change reviewable in PRs.
 
+**Upgrading from v0.4.0 with an embedded UI.** `Mount` now registers
+the `_assets` route itself; the manual
+`mux.Handle("GET /docs/_assets/", ...)` line from the old example is
+redundant and can be deleted (Mount tolerates it either way).
+
 **Docs behind auth middleware.** `Mount` registers the docs on the
 mux itself, so blanket auth middleware guards the docs page too. Skip
 the docs prefix in the middleware when the docs should stay open —

@@ -21,8 +21,14 @@
 //
 //	mux := stdocs.New(stdocs.WithTitle("My API"), scalaremb.WithUI())
 //	mux.HandleFunc("GET /x", h)
-//	mux.Mount()
-//	mux.Handle("GET /docs/_assets/", http.StripPrefix(
+//	mux.Mount() // registers the docs AND the embedded asset route
+//
+// Mount registers the asset route automatically (and tolerates a
+// pre-existing manual registration). Only a manually mounted docs
+// handler needs its own asset registration:
+//
+//	mux.ServeMux.Handle("GET /docs/", mux.Docs())
+//	mux.ServeMux.Handle("GET /docs/_assets/", http.StripPrefix(
 //	    "/docs/_assets/", scalaremb.AssetHandler()))
 //
 // The asset handler adds about 3.6 MB to your binary and is only
