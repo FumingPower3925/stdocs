@@ -3,6 +3,7 @@ package stdocs
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -523,5 +524,70 @@ func TestDriftSampleBodiesRowVolumeBounded(t *testing.T) {
 	driftGet(h, "/rows")
 	if got := warnings(); len(got) != 2 { // one missing-required, one extras digest
 		t.Errorf("warnings = %d (%q), want 2 regardless of 200 rows", len(got), got)
+	}
+}
+
+func TestDriftDefaultEntryContentType(t *testing.T) {
+	mux := New(WithTitle("T"))
+	// The default entry declares raw CSV; statuses covered only by it
+	// inherit that media-type contract.
+	mux.HandleFunc("GET /feed", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("oops"))
+	}, Summary("F"), WithRawResponse(0, "text/csv"))
+	mux.HandleFunc("GET /feed-ok", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("a,b\n"))
+	}, Summary("G"), WithRawResponse(0, "text/csv"))
+
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf)
+	driftGet(h, "/feed")
+	driftGet(h, "/feed")
+	driftGet(h, "/feed-ok")
+	got := warnings()
+	if len(got) != 1 || !strings.Contains(got[0], "text/plain") || !strings.Contains(got[0], "text/csv") {
+		t.Errorf("default-entry CSV served as plain must warn exactly once: %q", got)
+	}
+}
+
+func TestDriftSampleBodiesNullBody(t *testing.T) {
+	type Task struct {
+		ID string `json:"id" required:"true"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /null", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`null`))
+	}, Summary("N"), WithResponse(200, Task{}))
+
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf, DriftSampleBodies())
+	driftGet(h, "/null")
+	if got := warnings(); len(got) != 0 {
+		t.Errorf("a literal null body declares nothing about fields: %q", got)
+	}
+}
+
+func TestDriftSampleBodiesReadFrom(t *testing.T) {
+	type Task struct {
+		ID string `json:"id" required:"true"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /streamed", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// io.Copy prefers the recorder's ReadFrom — the sendfile path
+		// that used to skip the capture buffer.
+		io.Copy(w, strings.NewReader(`{"name":"x"}`))
+	}, Summary("S"), WithResponse(200, Task{}))
+
+	logf, warnings := collectWarnings()
+	h := DriftWarn(mux, logf, DriftSampleBodies())
+	driftGet(h, "/streamed")
+	got := strings.Join(warnings(), "\n")
+	if !strings.Contains(got, `missing required field "id"`) || !strings.Contains(got, "name") {
+		t.Errorf("bodies written via ReadFrom must be sampled: %q", got)
 	}
 }
