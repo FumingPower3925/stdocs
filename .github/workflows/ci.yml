@@ -252,6 +252,44 @@ jobs:
             duplicated-entry-in-enum: off
           EOF
           npx -y @stoplight/spectral-cli@6.15.0 lint --ruleset /tmp/.spectral.yaml --fail-severity=error /tmp/spec-3.0.4.json
+      - name: Consumability — type-check the generated TypeScript
+        run: |
+          # The committed golden is generation-equal by test; here the
+          # pinned compiler proves it is valid strict TypeScript and
+          # that real payloads assign to the generated types.
+          mkdir -p /tmp/tscheck
+          cp tsgen/testdata/corpus.ts /tmp/tscheck/corpus.ts
+          cat > /tmp/tscheck/harness.ts <<'EOF'
+          import type { CorpusTask, components, operations, webhooks } from "./corpus";
+
+          const task: CorpusTask = {
+            id: "t1",
+            title: "Fix the gate",
+            status: "pending",
+            level: 2,
+            priority: 3,
+            ratio: 0.5,
+            due_at: null,
+            note: null,
+            count: "12",
+            labels: { a: 1 },
+            tags: ["one"],
+            links: [{ kind: "k" }, null],
+            parent: null,
+          };
+          const created: operations["post_tasks"]["responses"][201] = task;
+          const page: operations["get_tasks"]["responses"][200] = { items: [task, created] };
+          const query: NonNullable<operations["get_tasks"]["parameters"]["query"]> = { cursor: "c", limit: 10 };
+          const path: operations["get_tasks_by_id"]["parameters"]["path"] = { id: "t1" };
+          const gone: operations["delete_tasks_by_id"]["responses"][204] = undefined;
+          const csv: operations["get_export"]["responses"][200] = "a,b\n1,2\n";
+          const event: webhooks["task-event"]["requestBody"] = { kind: "created" };
+          const err: components["CorpusError"] = { code: 1, message: "m" };
+          export { created, page, query, path, gone, csv, event, err };
+          EOF
+          TS_PIN="$(node -e "console.log(require('./package.json').devDependencies.typescript)")"
+          npx -y -p "typescript@${TS_PIN}" tsc --strict --noEmit /tmp/tscheck/harness.ts
+          echo "generated TypeScript type-checks under tsc ${TS_PIN} --strict"
       - name: Validate 3.2 against the official OpenAPI 3.2 JSON Schema
         run: |
           pip install --quiet 'jsonschema[format]~=4.23' 'requests~=2.32'
