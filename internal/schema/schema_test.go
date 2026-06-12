@@ -1387,3 +1387,60 @@ func TestUnsignedMinimumAndRequiredTag(t *testing.T) {
 	}
 	ReflectSchema(Bad{})
 }
+
+// v0.4.2: the composable openapi:"nullable" entry.
+func TestOpenAPINullableEntry(t *testing.T) {
+	type Custom struct {
+		X string `json:"x"`
+	}
+	type T struct {
+		Note string `json:"note" openapi:"nullable" minLength:"1" doc:"May be null"`
+		At   Custom `json:"at" openapi:"type=string,format=date-time,nullable"`
+		Both *[]int `json:"both" openapi:"nullable"` // pointer + entry: still just nullable
+		Req  string `json:"req" openapi:"nullable" required:"true"`
+	}
+	_, out := schema30(t, T{})
+	comp := out["T"]
+	note := comp.Properties["note"]
+	if !note.Nullable || note.Type != "string" || *note.MinLength != 1 || note.Description != "May be null" {
+		t.Errorf("bare nullable must stack with reflection and tags: %+v", note)
+	}
+	at := comp.Properties["at"]
+	if !at.Nullable || at.Type != "string" || at.Format != "date-time" {
+		t.Errorf("override + nullable: %+v", at)
+	}
+	if !comp.Properties["both"].Nullable {
+		t.Errorf("pointer + nullable entry stays nullable")
+	}
+	req := map[string]bool{}
+	for _, n := range comp.Required {
+		req[n] = true
+	}
+	if !req["req"] || !comp.Properties["req"].Nullable {
+		t.Errorf("required-but-nullable without pointers: required=%v nullable=%v", req["req"], comp.Properties["req"].Nullable)
+	}
+
+	for _, f := range []func(){
+		func() {
+			type Bad struct {
+				X string `json:"x" openapi:"nullable,nullable"`
+			}
+			ReflectSchema(Bad{})
+		},
+		func() {
+			type P struct {
+				X string `query:"x" openapi:"nullable"`
+			}
+			ParamFields(P{})
+		},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic")
+				}
+			}()
+			f()
+		}()
+	}
+}

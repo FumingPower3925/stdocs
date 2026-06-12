@@ -595,14 +595,29 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 		return fieldMeta{}, false
 	default:
 		if f.Anonymous && tagName == "" {
-			// encoding/json flattens this embedding; a type override
+			// encoding/json flattens this embedding; an override
 			// would document a property that never exists on the wire.
-			panic("stdocs: openapi type override on embedded field " + f.Name +
-				" cannot describe a flattened embedding; name the field with a json tag or move the override to its fields")
+			panic("stdocs: openapi tag on embedded field " + f.Name +
+				" cannot describe a flattened embedding; name the field with a json tag or move the tag to its fields")
 		}
-		fieldSchema = overrideSchema(override, f.Name)
-		fieldSchema.Nullable = f.Type.Kind() == reflect.Ptr
-		overridden = true
+		nullable, rest := splitNullableEntry(override, f.Name)
+		if rest == "" {
+			// Bare openapi:"nullable" stacks with reflection: the
+			// reflected schema (constraints and doc tags still
+			// compose) just gains wire-level nullability — the way to
+			// document a non-pointer field that may be null, or
+			// combined with required:"true", required-but-nullable
+			// without pointers.
+			fieldSchema = r.reflect(f.Type)
+			if fieldSchema == nil {
+				return fieldMeta{}, false
+			}
+			fieldSchema.Nullable = true
+		} else {
+			fieldSchema = overrideSchema(rest, f.Name)
+			fieldSchema.Nullable = nullable || f.Type.Kind() == reflect.Ptr
+			overridden = true
+		}
 	}
 	if fieldSchema == nil {
 		return fieldMeta{}, false
@@ -801,6 +816,24 @@ func lengthConstraint(tag reflect.StructTag, name, wantType, schemaType, fieldNa
 		panic("stdocs: " + name + " tag " + strconv.Quote(v) + " on field " + fieldName + " is not a valid non-negative integer")
 	}
 	return &n
+}
+
+// splitNullableEntry extracts the value-less "nullable" entry from an
+// openapi tag, returning whether it was present and the remaining
+// key=value entries. A lone "nullable" yields rest == "".
+func splitNullableEntry(override, fieldName string) (nullable bool, rest string) {
+	var kept []string
+	for _, entry := range strings.Split(override, ",") {
+		if strings.TrimSpace(entry) == "nullable" {
+			if nullable {
+				panic("stdocs: openapi tag on field " + fieldName + " repeats nullable")
+			}
+			nullable = true
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	return nullable, strings.Join(kept, ",")
 }
 
 // overrideSchema parses an openapi:"type=...[,format=...]" field
