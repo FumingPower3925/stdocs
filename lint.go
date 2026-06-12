@@ -60,8 +60,10 @@ func (w Warning) String() string { return w.Where + ": " + w.Message + " [" + w.
 // Lint never affects emission and the findings list may grow in
 // future versions; treat it as advice, not a contract. Building the
 // document is a side effect, so the same fail-fast panics as
-// [Mux.JSON] apply, and like JSON, Lint reads the cached build —
-// routes registered after a build need [Mux.Refresh] first.
+// [Mux.JSON] apply. Like JSON, Lint rebuilds automatically when
+// routes were registered since the last build; [Mux.Refresh] only
+// matters for out-of-band changes (e.g. state captured by a
+// WithOpenAPI hook).
 //
 // A CI guard is one assertion:
 //
@@ -163,7 +165,11 @@ func (m *Mux) lintRoutes() []Warning {
 			out = append(out, Warning{Code: "pattern-approximation", Where: where, Message: msg})
 		}
 		// A dangling _N id with no base reads as an inexplicable
-		// rename to consumers.
+		// rename to consumers. Auto-derived ids are skipped — a path
+		// like /reports/2024 legitimately derives get_reports_2024.
+		if rt.op.OperationID == defaultOperationID(rt.parsed) {
+			continue
+		}
 		if base, suffixed := splitIDSuffix(rt.op.OperationID); suffixed && !ids[base] {
 			out = append(out, Warning{Code: "dangling-id-suffix", Where: where,
 				Message: "operationId " + rt.op.OperationID + " carries a collision suffix but no " + base + " exists in the document; set OperationID explicitly"})

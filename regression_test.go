@@ -1867,3 +1867,41 @@ func TestEmbAssetUpgradeCompatibility(t *testing.T) {
 		t.Errorf("Mount-only: %d", rr2.Code)
 	}
 }
+
+// v0.4.1 verification batch: uppercase version prefixes, wildcards
+// after version segments, webhook security validation, and the
+// dangling-id provenance fix.
+func TestVerificationBatchC(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /V1/upper", noop, Summary("U"))
+	mux.HandleFunc("GET /v1/{id}", noop, Summary("W"))
+	mux.HandleFunc("GET /reports/2024", noop, Summary("R"), WithResponse(400, nil))
+	doc := buildDocMap(t, mux)
+	upper := doc["paths"].(map[string]any)["/V1/upper"].(map[string]any)["get"].(map[string]any)
+	if tags, _ := upper["tags"].([]any); len(tags) != 1 || tags[0] != "Upper" {
+		t.Errorf("/V1/upper tags = %v, want [Upper]", upper["tags"])
+	}
+	wild := doc["paths"].(map[string]any)["/v1/{id}"].(map[string]any)["get"].(map[string]any)
+	if _, tagged := wild["tags"]; tagged {
+		t.Errorf("a wildcard after the version prefix must not become a tag: %v", wild["tags"])
+	}
+	for _, w := range mux.Lint() {
+		if w.Code == "dangling-id-suffix" {
+			t.Errorf("auto-derived get_reports_2024 must not flag: %v", w)
+		}
+	}
+
+	// Webhook security references must be validated like any other.
+	bad := New(
+		WithTitle("T"),
+		WithVersion(OpenAPI31),
+		WithBearerAuth("bearerAuth", "JWT"),
+		WithWebhooks(map[string]Webhook{
+			"x": {Method: "POST", Security: []SecurityRequirement{{"missing": nil}}},
+		}),
+	)
+	bad.HandleFunc("GET /a", noop, Summary("A"))
+	if _, err := bad.JSON(); err == nil || !strings.Contains(err.Error(), "webhook") {
+		t.Errorf("unregistered webhook scheme must fail the build, got %v", err)
+	}
+}

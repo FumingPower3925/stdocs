@@ -28,6 +28,11 @@ study, fixed and pinned.
   spec cache tracks a registration generation, so `JSON`, `YAML`,
   the served endpoints, `Lint`, and `DriftWarn` stop serving stale
   documents and the "register everything first" caveats are gone.
+  Registration is synchronized with serving (matching the embedded
+  `ServeMux`'s own guarantees), late registrations after the first
+  build validate their schemas eagerly at `HandleFunc`, and the
+  published operation ids depend only on the current route set —
+  never on when intermediate builds happened.
 - `Mount` builds the document eagerly: fail-fast tag panics fire at
   startup instead of inside the first docs request.
 - `DriftWarn` is snapshot-based: no more race against

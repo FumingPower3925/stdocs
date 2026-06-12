@@ -34,7 +34,11 @@ type (
 	// name -> required scopes (empty for non-OAuth schemes).
 	SecurityRequirement = spec.SecurityRequirement
 	// Webhook describes one OpenAPI 3.1/3.2 webhook. Fields: Method,
-	// Summary, Description, OperationID, RequestBody, Responses.
+	// Summary, Description, OperationID, RequestBody, Responses, and
+	// Security. Without an explicit Security requirement the emitter
+	// writes security: [] on the webhook operation, so webhooks never
+	// inherit the document-level requirement (generated clients would
+	// otherwise reference schemes their webhook plumbing lacks).
 	// Describe payloads by setting BodyValue on the request body or
 	// responses; schemas are reflected at document-build time.
 	Webhook = spec.Webhook
