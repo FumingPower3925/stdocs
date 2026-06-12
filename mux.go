@@ -15,6 +15,7 @@ import (
 	"github.com/FumingPower3925/stdocs/internal/schema"
 	"github.com/FumingPower3925/stdocs/internal/spec"
 	"github.com/FumingPower3925/stdocs/internal/spec/yaml"
+	"github.com/FumingPower3925/stdocs/internal/tsbridge"
 )
 
 // newConfiguredReflector builds a schema reflector honoring the
@@ -349,6 +350,21 @@ func validateOpsSecurity(doc map[string]any, key string, check func(string, map[
 // packages get distinct components (User, User_2) with matching $ref
 // strings at every use site.
 func (m *Mux) buildDoc() map[string]any {
+	in := m.buildInput()
+	switch m.cfg.Version {
+	case OpenAPI31:
+		return spec.BuildRoot31(in)
+	case OpenAPI32:
+		return spec.BuildRoot32(in, m.cfg.SelfURL)
+	default:
+		return spec.BuildRoot30(in)
+	}
+}
+
+// buildInput assembles the version-agnostic document model that the
+// per-version emitters and the tsgen subpackage consume. Callers hold
+// the build lock.
+func (m *Mux) buildInput() SpecInput {
 	// Visibility is decided before anything else: routes excluded by
 	// Hidden/Internal never reach the reflector (their schemas cannot
 	// leak into components), never get finalize defaults, and never
@@ -391,13 +407,26 @@ func (m *Mux) buildDoc() map[string]any {
 		Webhooks:        m.reflectWebhooks(ref),
 	}
 	in.Components = ref.Components()
-	switch m.cfg.Version {
-	case OpenAPI31:
-		return spec.BuildRoot31(in)
-	case OpenAPI32:
-		return spec.BuildRoot32(in, m.cfg.SelfURL)
-	default:
-		return spec.BuildRoot30(in)
+	return in
+}
+
+// The tsgen subpackage consumes the model through this handoff
+// instead of a public accessor, so non-users pay zero API surface.
+func init() {
+	tsbridge.SpecInput = func(mux any) (spec.SpecInput, error) {
+		m, ok := mux.(*Mux)
+		if !ok {
+			return spec.SpecInput{}, fmt.Errorf("stdocs: tsgen needs a *stdocs.Mux, got %T", mux)
+		}
+		m.specMu.Lock()
+		defer m.specMu.Unlock()
+		// The JSON build runs first so generation shares its
+		// fail-fast surface: tag panics and security-validation
+		// errors fire here exactly as they do for Mux.JSON.
+		if _, err := m.cachedJSON(); err != nil {
+			return spec.SpecInput{}, err
+		}
+		return m.buildInput(), nil
 	}
 }
 
