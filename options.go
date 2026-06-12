@@ -95,6 +95,9 @@ type Config struct {
 	// OperationIDFunc overrides the automatic operationId derivation.
 	// Set via WithOperationIDFunc.
 	OperationIDFunc func(method, path string) string
+	// TagFunc overrides the automatic tag inference. Set via
+	// WithTagFunc.
+	TagFunc func(method, path string) string
 	// Assets, when non-nil, serves the docs UI's static assets. The
 	// embedded UI sub-packages set it from their WithUI option so
 	// Mount can register the <prefix>/_assets/ route automatically.
@@ -331,6 +334,21 @@ func WithTagExternalDocs(tag, url, description string) Option {
 func WithOperationIDFunc(f func(method, path string) string) Option {
 	return func(c *Config) {
 		c.OperationIDFunc = f
+	}
+}
+
+// WithTagFunc overrides the automatic tag inference (first non-version
+// path segment) with f, called with the route's HTTP method
+// (upper-case, "" for method-less patterns) and path. An explicit
+// Tags route opt still wins; an empty result falls back to the
+// default inference.
+//
+//	stdocs.WithTagFunc(func(method, path string) string {
+//	    return strings.Split(path, "/")[2] // /api/{group}/...
+//	})
+func WithTagFunc(f func(method, path string) string) Option {
+	return func(c *Config) {
+		c.TagFunc = f
 	}
 }
 
