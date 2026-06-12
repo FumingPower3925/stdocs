@@ -113,7 +113,8 @@ func corpusMux() *stdocs.Mux {
 		stdocs.WithResponse(204, nil))
 	mux.HandleFunc("GET /export", noop,
 		stdocs.Summary("Export CSV"),
-		stdocs.WithRawResponse(200, "text/csv"))
+		stdocs.WithRawResponse(200, "text/csv"),
+		stdocs.WithResponseHeader(200, "Content-Disposition", "string", "Suggested download filename"))
 	mux.HandleFunc("POST /import", noop,
 		stdocs.Summary("Import an archive"),
 		stdocs.WithMultipartBody(

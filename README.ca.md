@@ -127,6 +127,7 @@ La referència completa viu a [pkg.go.dev](https://pkg.go.dev/github.com/FumingP
 - [Mounting and toggling](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Mounting_and_toggling) — `Mount`/`Docs`, activació per entorn i prefixos de ruta darrere d'un proxy.
 - [Try-it requests and drift](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Try_it_requests_and_drift) — detecció amb `FromDocs` i l'ajuda de desenvolupament `DriftWarn`.
 - [Using the spec downstream](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Using_the_spec_downstream) — tests de golden file, diffs a les PR i generació de clients.
+- [TypeScript types](https://pkg.go.dev/github.com/FumingPower3925/stdocs/tsgen) — `tsgen.Generate`, la recepta go:generate i el flux de l'`api.ts` commitejat.
 - [OpenAPI versions](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-OpenAPI_versions) — `WithVersion`, el `$self` de 3.2 i l'escape hatch `WithOpenAPI`.
 - [DocsHandler](https://pkg.go.dev/github.com/FumingPower3925/stdocs#DocsHandler) — serveix un spec escrit a mà darrere de qualsevol de les UI incloses.
 
