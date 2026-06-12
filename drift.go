@@ -89,7 +89,8 @@ func (d *driftWarner) refresh() {
 	if _, err := d.mux.cachedJSON(); err != nil {
 		d.logf("stdocs drift: document build failed, warnings may be incomplete: %v", err)
 	}
-	routes := make(map[string]driftRoute, len(d.mux.reg.routes))
+	_, gen := d.mux.reg.snapshot()
+	routes := make(map[string]driftRoute, 16)
 	for _, rt := range d.mux.visibleRoutes() {
 		dr := driftRoute{
 			statuses:  make(map[string]bool, len(rt.op.Responses)),
@@ -107,16 +108,16 @@ func (d *driftWarner) refresh() {
 		}
 		routes[rt.pattern] = dr
 	}
+	d.mu.Lock()
 	d.routes = routes
-	d.snapGen = d.mux.reg.gen
+	d.snapGen = gen
+	d.mu.Unlock()
 }
 
 // snapshot returns the current route map, rebuilding it when routes
 // were registered since the last build.
 func (d *driftWarner) snapshot() map[string]driftRoute {
-	d.mux.specMu.Lock()
-	gen := d.mux.reg.gen
-	d.mux.specMu.Unlock()
+	_, gen := d.mux.reg.snapshot()
 	d.mu.Lock()
 	stale := gen != d.snapGen
 	routes := d.routes
