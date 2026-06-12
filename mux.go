@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/FumingPower3925/stdocs/internal/pattern"
 	"github.com/FumingPower3925/stdocs/internal/schema"
@@ -76,7 +77,14 @@ type Mux struct {
 	// builtGen is the registry generation the cached spec was built
 	// from; see registry.gen.
 	builtGen uint64
-	specMu   sync.Mutex
+	// buildRoutes is the route snapshot the in-progress/last build
+	// operates on; set under specMu by cachedJSON.
+	buildRoutes []*route
+	// everBuilt flips once the first document build succeeds; later
+	// registrations then validate their schemas eagerly so fail-fast
+	// panics stay at registration instead of the next request.
+	everBuilt atomic.Bool
+	specMu    sync.Mutex
 
 	// mounted guards Mount against double registration.
 	mounted bool
@@ -116,7 +124,9 @@ func (m *Mux) HandleFunc(p string, h func(http.ResponseWriter, *http.Request), o
 	if h != nil {
 		funcName = funcNameOf(h)
 	}
-	m.reg.add(p, funcName, parsed, m.cfg.Version, opts)
+	rt := newRoute(p, funcName, parsed, m.cfg.Version, opts)
+	m.validateLateRoute(rt)
+	m.reg.publish(rt)
 }
 
 // Handle registers h for the given pattern. The handler's underlying
@@ -132,7 +142,29 @@ func (m *Mux) Handle(p string, h http.Handler, opts ...RouteOpt) {
 	if m.underDocsPrefix(parsed.Path()) {
 		return
 	}
-	m.reg.add(p, "", parsed, m.cfg.Version, opts)
+	rt := newRoute(p, "", parsed, m.cfg.Version, opts)
+	m.validateLateRoute(rt)
+	m.reg.publish(rt)
+}
+
+// validateLateRoute reflects a route's schemas immediately when the
+// document has already been built once: the route's fail-fast tag
+// panics belong at this registration call, not inside whichever
+// request triggers the next rebuild. Before the first build, Mount's
+// eager build is the startup-time fail point.
+func (m *Mux) validateLateRoute(rt *route) {
+	if !m.everBuilt.Load() {
+		return
+	}
+	ref := newConfiguredReflector(m.cfg)
+	if rb := rt.op.RequestBody; rb != nil && rb.BodyValue != nil {
+		ref.Reflect(rb.BodyValue)
+	}
+	for _, key := range sortedKeys(rt.op.Responses) {
+		if resp := rt.op.Responses[key]; resp != nil && resp.BodyValue != nil {
+			ref.Reflect(resp.BodyValue)
+		}
+	}
 }
 
 // underDocsPrefix reports whether path is the docs prefix itself or
@@ -157,7 +189,7 @@ func (m *Mux) JSON() ([]byte, error) {
 func (m *Mux) YAML() ([]byte, error) {
 	m.specMu.Lock()
 	defer m.specMu.Unlock()
-	if m.specYAML != nil && m.builtGen == m.reg.gen {
+	if _, gen := m.reg.snapshot(); m.specYAML != nil && m.builtGen == gen {
 		return m.specYAML, nil
 	}
 	jsonBytes, err := m.cachedJSON()
@@ -176,11 +208,13 @@ func (m *Mux) YAML() ([]byte, error) {
 // first call and rebuilding when routes were registered since the
 // last build. The caller must hold m.specMu.
 func (m *Mux) cachedJSON() ([]byte, error) {
-	if m.specJSON != nil && m.builtGen == m.reg.gen {
+	routes, gen := m.reg.snapshot()
+	if m.specJSON != nil && m.builtGen == gen {
 		return m.specJSON, nil
 	}
 	m.specJSON = nil
 	m.specYAML = nil
+	m.buildRoutes = routes
 	doc := m.buildDoc()
 	if m.cfg.CleanOutput {
 		stripVendorKeys(doc)
@@ -200,7 +234,11 @@ func (m *Mux) cachedJSON() ([]byte, error) {
 		return nil, err
 	}
 	m.specJSON = b
-	m.builtGen = m.reg.gen
+	// gen was captured before the build: a registration landing
+	// mid-build leaves builtGen behind, so the next read rebuilds
+	// instead of permanently serving a document missing the route.
+	m.builtGen = gen
+	m.everBuilt.Store(true)
 	return b, nil
 }
 
@@ -341,8 +379,12 @@ func (m *Mux) visibleRoutes() []*route {
 func (m *Mux) routeVisibility() (visible, shadowed []*route) {
 	type opKey struct{ method, path string }
 	survivor := make(map[opKey]*route)
-	candidates := make([]*route, 0, len(m.reg.routes))
-	for _, rt := range m.reg.routes {
+	routes := m.buildRoutes
+	if routes == nil {
+		routes, _ = m.reg.snapshot()
+	}
+	candidates := make([]*route, 0, len(routes))
+	for _, rt := range routes {
 		if rt.op.Hidden {
 			continue
 		}
@@ -415,6 +457,14 @@ func (m *Mux) Config() *Config {
 	return m.cfg
 }
 
+// tryHandle registers pattern on mux, swallowing only the
+// duplicate-pattern panic so callers can offer a registration the
+// user may legitimately have made themselves already.
+func tryHandle(mux *http.ServeMux, pattern string, h http.Handler) {
+	defer func() { _ = recover() }()
+	mux.Handle(pattern, h)
+}
+
 // Mount registers the docs handler on the mux itself, at the
 // configured DocsPrefix (default "/docs"). It registers exact patterns
 // for the docs page and the two spec endpoints — plus a subtree
@@ -430,7 +480,9 @@ func (m *Mux) Config() *Config {
 //	mux.Mount(os.Getenv("ENV") != "prod")
 //
 // Calling Mount more than once is a no-op after the first call that
-// registered the docs. Call it after registering all routes.
+// registered the docs. Routes registered after Mount still appear in
+// the document on the next read; registering them before moves their
+// fail-fast tag panics to startup, where Mount builds eagerly.
 func (m *Mux) Mount(enabled ...bool) {
 	if len(enabled) > 1 {
 		panic("stdocs: Mount accepts at most one bool argument")
@@ -456,7 +508,10 @@ func (m *Mux) Mount(enabled ...bool) {
 	// WithUI() + Mount() — works without a second registration line
 	// (a missed one used to render a silently blank page).
 	if m.cfg.Assets != nil {
-		m.ServeMux.Handle("GET "+prefix+"/_assets/",
+		// Tolerate an existing manual registration: pre-v0.4.1 code
+		// registered the asset route itself, and upgrading must not
+		// turn that into a duplicate-pattern panic.
+		tryHandle(m.ServeMux, "GET "+prefix+"/_assets/",
 			http.StripPrefix(prefix+"/_assets/", m.cfg.Assets))
 	}
 	m.mounted = true
