@@ -43,6 +43,7 @@ El mismo documento generado, mostrado por cada una de las cuatro UI incluidas �
 - **Valores por defecto inteligentes** — los nombres de funciones se convierten en resúmenes, los segmentos de ruta en tags, los parámetros de ruta y un 200 se documentan solos, las rutas con seguridad documentan su 401 y el envelope de error compartido se declara una sola vez para todo el mux.
 - **Control por entorno** — activa o desactiva los docs según el entorno, oculta rutas individuales y detecta el tráfico de las consolas try-it, todo sin tocar las rutas registradas.
 - **Honesto por defecto** — una documentación mal declarada provoca un panic en lugar de publicar un contrato erróneo, y un middleware de desarrollo opcional avisa cuando los handlers se desvían del documento.
+- **Tipos TypeScript nativos** — el subpaquete `tsgen` emite el contrato como declaraciones TypeScript desde el mismo modelo que el documento: Go puro, sin toolchain de node, solo tipos.
 - **Cero dependencias** — solo la biblioteca estándar de Go en tiempo de ejecución.
 
 ## Instalación

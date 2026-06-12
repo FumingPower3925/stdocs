@@ -43,6 +43,7 @@ El mateix document generat, mostrat per cadascuna de les quatre UI incloses — 
 - **Valors per defecte intel·ligents** — els noms de funcions es converteixen en resums, els segments de ruta en tags, els paràmetres de ruta i un 200 es documenten sols, les rutes amb seguretat documenten el seu 401 i l'envelope d'error compartit es declara una sola vegada per a tot el mux.
 - **Control per entorn** — activa o desactiva els docs segons l'entorn, amaga rutes individuals i detecta el trànsit de les consoles try-it, tot sense tocar les rutes registrades.
 - **Honest per defecte** — una documentació mal declarada provoca un panic en lloc de publicar un contracte erroni, i un middleware de desenvolupament opcional avisa quan els handlers es desvien del document.
+- **Tipus TypeScript natius** — el subpaquet `tsgen` emet el contracte com a declaracions TypeScript des del mateix model que el document: Go pur, sense toolchain de node, només tipus.
 - **Zero dependències** — només la biblioteca estàndard de Go en temps d'execució.
 
 ## Instal·lació

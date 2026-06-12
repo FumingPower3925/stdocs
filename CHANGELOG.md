@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.6.0] - 2026-06-13
+
+The contract reaches the frontend: TypeScript declarations generated
+natively, from the same model as the document.
+
+### Added
+
+- The `tsgen` subpackage: `tsgen.Generate(mux)` returns the API as
+  one self-contained TypeScript module — an exported interface or
+  alias per component schema, a `components` interface gluing them,
+  an `operations` interface keyed by the rebuild-stable operationIds
+  (parameters by location, request bodies, responses per status;
+  body-less entries type as `undefined`, raw bodies as `string`),
+  and `webhooks` when declared. Doc and constraint tags become
+  JSDoc; nullability becomes `| null` — generation reads the
+  version-agnostic model, so the 3.0-vs-3.1 dialect question never
+  arises. Pure Go: no node toolchain at generation time. Types only,
+  permanently — no runtime client, no fetch wrapper, no npm package;
+  the transport belongs to the application. Output is deterministic
+  and meant to be committed like the spec bytes: regenerating on an
+  stdocs upgrade is a contract change, review the diff. CI compiles
+  the generated corpus with the pinned `typescript` release under
+  `--strict`; current TypeScript releases under default compiler
+  settings plus `--strict` are the supported surface.
+
+### Changed
+
+- The scope statement now says what it always meant, with the line
+  drawn precisely: stdocs uses no code generation, annotations, or
+  dependencies *to understand your Go code* — and what it emits
+  (the document, the UI, now TypeScript declarations) sits on the
+  other side of that line. The previous wording read as a promise to
+  never emit generated artifacts; this release would have quietly
+  contradicted it, so the sentence changed in the open instead.
+
 ## [0.5.1] - 2026-06-12
 
 ### Fixed
@@ -436,7 +471,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/FumingPower3925/stdocs/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/FumingPower3925/stdocs/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/FumingPower3925/stdocs/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/FumingPower3925/stdocs/compare/v0.4.1...v0.4.2
