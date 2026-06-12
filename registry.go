@@ -30,6 +30,11 @@ type route struct {
 // after all routes have been added; the spec emitter does the read.
 type registry struct {
 	routes []*route
+	// gen increments on every registration; the mux compares it to
+	// the generation it last built, so a route registered after a
+	// build invalidates the cached document instead of silently
+	// missing from it.
+	gen uint64
 }
 
 // add registers a new route. opts are applied to construct the operation.
@@ -48,6 +53,7 @@ func (r *registry) add(pattern, funcName string, parsed *pattern.Pattern, versio
 		}
 	}
 	r.routes = append(r.routes, rt)
+	r.gen++
 	return rt
 }
 

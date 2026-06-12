@@ -1,6 +1,7 @@
 package stdocs
 
 import (
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -94,6 +95,10 @@ type Config struct {
 	// OperationIDFunc overrides the automatic operationId derivation.
 	// Set via WithOperationIDFunc.
 	OperationIDFunc func(method, path string) string
+	// Assets, when non-nil, serves the docs UI's static assets. The
+	// embedded UI sub-packages set it from their WithUI option so
+	// Mount can register the <prefix>/_assets/ route automatically.
+	Assets http.Handler
 }
 
 // DefaultResponse is a mux-level response declaration applied to
