@@ -53,7 +53,7 @@ func corpusMux(extra ...stdocs.Option) *stdocs.Mux {
 		stdocs.WithResponse(201, Widget{}),
 	)
 	// The harness page iframes the docs (same origin) and copies all
-	// rendered text — including closed-over shadow roots, which
+	// rendered text — including open shadow roots, which
 	// --dump-dom cannot serialize — into the light DOM where the DOM
 	// dump can see it.
 	mux.HandleFunc("GET /smoketest", func(w http.ResponseWriter, r *http.Request) {
@@ -179,8 +179,12 @@ func TestUISmoke(t *testing.T) {
 			// resolve — a 404 here is the silent-blank-page bug.
 			if strings.HasSuffix(ui.name, "emb") {
 				page, err := http.Get(srv.URL + "/docs/")
-				if err != nil || page.StatusCode != 200 {
-					t.Fatalf("docs page: %v %v", page.StatusCode, err)
+				if err != nil {
+					t.Fatalf("docs page: %v", err)
+				}
+				page.Body.Close()
+				if page.StatusCode != 200 {
+					t.Fatalf("docs page status: %d", page.StatusCode)
 				}
 			}
 

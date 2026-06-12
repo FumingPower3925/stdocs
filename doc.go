@@ -67,8 +67,10 @@
 //
 // Undocumented routes still document themselves: the summary is
 // inferred from the handler's function name (getUser → "Get user";
-// closures excluded), the tag from the first path
-// segment (adopting the casing of a matching [WithTag] declaration),
+// closures excluded), the tag from the first non-version path
+// segment (/v1/tasks groups under Tasks; [WithTagFunc] overrides the
+// inference, and a matching [WithTag] declaration's casing is
+// adopted),
 // path parameters from the pattern's wildcards, a 200 response when
 // none is declared, and a document-unique operationId from the
 // method and path (get_users_by_id) that stays stable across
@@ -181,7 +183,7 @@
 //
 //	func auth(next http.Handler) http.Handler {
 //	    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//	        if strings.HasPrefix(r.URL.Path, "/docs") {
+//	        if r.URL.Path == "/docs" || strings.HasPrefix(r.URL.Path, "/docs/") {
 //	            next.ServeHTTP(w, r) // docs stay public
 //	            return
 //	        }
@@ -263,7 +265,10 @@
 // generates a spurious "<nil>" constant from nullable enums (the
 // null member 3.0 legally requires; an upstream bug) — prefer
 // non-pointer enum fields in generator-facing contracts.
-// openapi-typescript and similar TypeScript generators consume
+// An explicit Webhook.Security requirement trips the same ogen
+// webhook-codegen bug that motivated the security: [] default —
+// prefer documenting webhook auth in the description until upstream
+// fixes it. openapi-typescript and similar TypeScript generators consume
 // either version directly; enums become string-literal unions and
 // SchemaName methods control the generated type names. A
 // document-level default response ([WithDefaultResponse] with

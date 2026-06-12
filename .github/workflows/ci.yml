@@ -36,7 +36,9 @@ jobs:
       - name: Test (with race)
         run: go test -race -count=1 -timeout 120s ./...
       - name: Fuzz (short)
-        run: go test -fuzz=^FuzzParsePattern$ -fuzztime=10s ./internal/pattern/
+        run: |
+          go test -fuzz=^FuzzParsePattern$ -fuzztime=10s ./internal/pattern/
+          go test -fuzz=^FuzzReflectSchema$ -fuzztime=10s -parallel 1 ./internal/schema/
       - name: Vet
         run: go vet ./...
 
@@ -246,7 +248,7 @@ jobs:
             typed-enum: off
             duplicated-entry-in-enum: off
           EOF
-          npx -y @stoplight/spectral-cli@6 lint --ruleset /tmp/.spectral.yaml --fail-severity=error /tmp/spec-3.0.4.json
+          npx -y @stoplight/spectral-cli@6.15.0 lint --ruleset /tmp/.spectral.yaml --fail-severity=error /tmp/spec-3.0.4.json
       - name: Validate 3.2 against the official OpenAPI 3.2 JSON Schema
         run: |
           pip install --quiet 'jsonschema[format]~=4.23' 'requests~=2.32'
