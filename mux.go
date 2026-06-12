@@ -170,6 +170,14 @@ func (m *Mux) validateLateRoute(rt *route) {
 			ref.Reflect(fb.Body)
 		}
 	}
+	// Mux-level default bodies normally fail at the eager build, but a
+	// mux built with zero routes never reflected them; this route is
+	// what makes them reachable, so it validates them too.
+	for _, dr := range m.cfg.DefaultResponses {
+		if dr.Body != nil {
+			ref.Reflect(dr.Body)
+		}
+	}
 }
 
 // underDocsPrefix reports whether path is the docs prefix itself or
