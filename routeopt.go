@@ -219,9 +219,28 @@ func Optional() RouteOpt {
 // any description, headers, or example attached via the other
 // response opts.
 func WithResponse(status int, body any) RouteOpt {
+	validateStatus("WithResponse", status)
 	return func(r *route) {
 		resp := ensureResponse(r.op, statusKey(status))
 		resp.BodyValue = body
+		resp.BodyDeclared = true
+		// The last body declaration wins in full: undo an earlier
+		// WithRawResponse on the same status, so the two opts replace
+		// each other in either order (mirroring WithBody vs
+		// WithMultipartBody).
+		if resp.RawBody {
+			resp.Schema = nil
+			resp.ContentType = ""
+			resp.RawBody = false
+		}
+	}
+}
+
+// validateStatus panics for response statuses outside 0 (the OpenAPI
+// "default" entry) and 100-599 — validators reject other keys.
+func validateStatus(what string, status int) {
+	if status != 0 && (status < 100 || status > 599) {
+		panic("stdocs: " + what + " status must be 0 (default) or 100-599, got " + itoa(status))
 	}
 }
 
@@ -256,6 +275,7 @@ func ensureResponse(op *Operation, key string) *Response {
 // It is the response-side counterpart of WithBodyContentType. Pass
 // status 0 for the "default" response.
 func WithResponseContentType(status int, contentType string) RouteOpt {
+	validateStatus("WithResponseContentType", status)
 	return func(r *route) {
 		ensureResponse(r.op, statusKey(status)).ContentType = contentType
 	}
@@ -298,6 +318,7 @@ func WithFallbackResponse(status int, body any) RouteOpt {
 // WithResponseDescription/WithResponseHeader. The content type is
 // required.
 func WithRawResponse(status int, contentType string) RouteOpt {
+	validateStatus("WithRawResponse", status)
 	if contentType == "" {
 		panic("stdocs: WithRawResponse requires a content type")
 	}
@@ -306,6 +327,8 @@ func WithRawResponse(status int, contentType string) RouteOpt {
 		resp.BodyValue = nil
 		resp.Schema = &schema.Schema{Type: "string"}
 		resp.ContentType = contentType
+		resp.BodyDeclared = true
+		resp.RawBody = true
 	}
 }
 
@@ -389,6 +412,7 @@ func WithExample(value any) RouteOpt {
 //	stdocs.WithResponse(200, User{}),
 //	stdocs.WithResponseExample(200, User{ID: "u-1", Name: "Alice"}),
 func WithResponseExample(status int, value any) RouteOpt {
+	validateStatus("WithResponseExample", status)
 	return func(r *route) {
 		encoded, err := encodeExample(value)
 		if err != nil {
@@ -405,6 +429,7 @@ func WithResponseExample(status int, value any) RouteOpt {
 //	stdocs.WithResponse(200, User{}),
 //	stdocs.WithResponseDescription(200, "The user, or 404 if not found"),
 func WithResponseDescription(status int, description string) RouteOpt {
+	validateStatus("WithResponseDescription", status)
 	return func(r *route) {
 		ensureResponse(r.op, statusKey(status)).Description = description
 	}
@@ -418,6 +443,7 @@ func WithResponseDescription(status int, description string) RouteOpt {
 //	stdocs.WithResponse(200, User{}),
 //	stdocs.WithResponseHeader(200, "X-RateLimit-Remaining", "integer", "Remaining quota"),
 func WithResponseHeader(status int, name, typ, description string) RouteOpt {
+	validateStatus("WithResponseHeader", status)
 	return func(r *route) {
 		resp := ensureResponse(r.op, statusKey(status))
 		if resp.Headers == nil {

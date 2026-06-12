@@ -1963,3 +1963,148 @@ func TestFallbackAndRawResponses(t *testing.T) {
 	}()
 	WithFallbackResponse(42, nil)
 }
+
+// v0.4.2 verification: fallback bodies fill decorator-created
+// entries, explicit nil bodies win, raw/WithResponse replace each
+// other in either order, and statuses validate everywhere.
+func TestResponseDeclarationSemantics(t *testing.T) {
+	type Envelope struct {
+		Message string `json:"message"`
+	}
+	type OK struct {
+		ID string `json:"id"`
+	}
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /decorated", noop, Summary("D"),
+		WithFallbackResponse(500, Envelope{}),
+		WithResponseDescription(500, "Server error"), // creates the entry; fallback must still fill the body
+	)
+	mux.HandleFunc("GET /nilwins", noop, Summary("N"),
+		WithResponse(500, nil), // explicit body-less declaration wins
+		WithFallbackResponse(500, Envelope{}),
+	)
+	mux.HandleFunc("GET /rawthenresp", noop, Summary("R1"),
+		WithRawResponse(200, "text/csv"),
+		WithResponse(200, OK{}),
+	)
+	mux.HandleFunc("GET /respthenraw", noop, Summary("R2"),
+		WithResponse(200, OK{}),
+		WithRawResponse(200, "text/csv"),
+	)
+	doc := buildDocMap(t, mux)
+	resp := func(p, status string) map[string]any {
+		return doc["paths"].(map[string]any)[p].(map[string]any)["get"].(map[string]any)["responses"].(map[string]any)[status].(map[string]any)
+	}
+	dec := resp("/decorated", "500")
+	if dec["description"] != "Server error" {
+		t.Errorf("decorator description lost: %v", dec["description"])
+	}
+	if _, ok := dec["content"]; !ok {
+		t.Errorf("fallback body must fill a decorator-created entry: %v", dec)
+	}
+	if _, ok := resp("/nilwins", "500")["content"]; ok {
+		t.Errorf("an explicit nil body must beat the fallback")
+	}
+	r1 := resp("/rawthenresp", "200")["content"].(map[string]any)
+	if _, ok := r1["application/json"]; !ok {
+		t.Errorf("raw-then-WithResponse: JSON must fully win, got %v", mapKeysOf(r1))
+	}
+	r2 := resp("/respthenraw", "200")["content"].(map[string]any)
+	if _, ok := r2["text/csv"]; !ok {
+		t.Errorf("WithResponse-then-raw: raw must fully win, got %v", mapKeysOf(r2))
+	}
+
+	for _, f := range []func(){
+		func() { WithRawResponse(99, "text/csv") },
+		func() { WithResponse(42, nil) },
+		func() { WithResponseDescription(1000, "x") },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected status panic")
+				}
+			}()
+			f()
+		}()
+	}
+
+	// Late-registered fallback bodies fail fast at registration.
+	late := New(WithTitle("T"))
+	late.HandleFunc("GET /seed", noop, Summary("S"))
+	late.Mount()
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Errorf("late fallback with a bad tag should panic at HandleFunc")
+			}
+		}()
+		type Bad struct {
+			N string `json:"n" minimum:"1"`
+		}
+		late.HandleFunc("GET /late", noop, Summary("L"), WithFallbackResponse(500, Bad{}))
+	}()
+}
+
+// v0.4.2 verification: nullable Lint advisory and tag strictness.
+func TestNullableSeams(t *testing.T) {
+	type Risky struct {
+		Tags []string `json:"tags" openapi:"nullable" uniqueItems:"true"`
+		Note string   `json:"note,omitempty" openapi:"nullable" default:"hi"`
+	}
+	mux := New(WithTitle("T"), WithVersion(OpenAPI31))
+	mux.HandleFunc("POST /r", noop, Summary("R"), WithBody(Risky{}), WithResponse(400, nil))
+	hits := 0
+	for _, w := range mux.Lint() {
+		if w.Code == "nullable-facet-generators" {
+			hits++
+		}
+	}
+	if hits != 2 {
+		t.Errorf("want 2 nullable-facet advisories, got %d", hits)
+	}
+	// 3.0 documents do not warn.
+	mux30 := New(WithTitle("T"))
+	mux30.HandleFunc("POST /r", noop, Summary("R"), WithBody(Risky{}), WithResponse(400, nil))
+	for _, w := range mux30.Lint() {
+		if w.Code == "nullable-facet-generators" {
+			t.Errorf("3.0 must not warn: %v", w)
+		}
+	}
+
+	for _, f := range []func(){
+		func() {
+			type T struct {
+				X string `json:"x" openapi:"nullable,"`
+			}
+			mustReflect(T{})
+		},
+		func() {
+			type T struct {
+				X string `json:"x" openapi:"nullable=true"`
+			}
+			mustReflect(T{})
+		},
+		func() {
+			type T struct {
+				Ch chan int `json:"ch" openapi:"nullable"`
+			}
+			mustReflect(T{})
+		},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic")
+				}
+			}()
+			f()
+		}()
+	}
+}
+
+func mustReflect(v any) {
+	m := New(WithTitle("T"))
+	m.HandleFunc("POST /x", noop, WithBody(v))
+	m.JSON()
+}

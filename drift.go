@@ -68,9 +68,9 @@ type DriftOption func(*driftWarner)
 
 // DriftSampleBodies additionally compares response bodies against the
 // documented schema — top-level keys only, for responses documented
-// with a JSON object schema: a missing documented-required key and
-// the appearance of undocumented keys each warn once per route and
-// status. Values, nesting, and arrays are not checked. Sampling
+// with a JSON object schema: each missing documented-required key
+// warns once per route, status, and field; the appearance of
+// undocumented keys warns once per route and status. Values, nesting, and arrays are not checked. Sampling
 // copies up to 64 KB of each tracked response, which is why it is a
 // separate opt; like DriftWarn itself, it is a development aid.
 func DriftSampleBodies() DriftOption {

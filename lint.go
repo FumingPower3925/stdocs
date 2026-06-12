@@ -20,6 +20,9 @@ type Warning struct {
 	//	name-collision        component renamed with a numeric suffix
 	//	untyped-field         schema field with no type
 	//	exclusive-bounds      3.1/3.2 exclusive bounds vs generators
+	//	nullable-facet-generators
+	//	                      nullable + default/uniqueItems/byte vs
+	//	                      generators on 3.1/3.2
 	//	required-with-default field both required and defaulted
 	//	auto-descriptions     "Generated from Go type" text present
 	//	dangling-id-suffix    suffixed operationId without a base
@@ -109,6 +112,9 @@ func (m *Mux) Lint() []Warning {
 		for _, field := range report.exclusive[name] {
 			out = append(out, Warning{Code: "exclusive-bounds", Where: "component " + name, Message: "field " + field + " uses an exclusive bound; current Go client generators (ogen, oapi-codegen) reject the numeric 3.1/3.2 form — consumers generating clients should use the 3.0.4 document"})
 		}
+		for _, field := range report.nullableFacets[name] {
+			out = append(out, Warning{Code: "nullable-facet-generators", Where: "component " + name, Message: "field " + field + " combines nullability with a default, uniqueItems, or byte format; current Go generators reject those combinations in the 3.1/3.2 anyOf form — consumers generating clients should use the 3.0.4 document"})
+		}
 	}
 
 	if !m.cfg.CleanOutput && autoDescribed {
@@ -188,6 +194,7 @@ func (m *Mux) lintRoutes() []Warning {
 type lintReport struct {
 	untyped          map[string][]string // component -> fields with no schema type
 	exclusive        map[string][]string // component -> fields with exclusive bounds
+	nullableFacets   map[string][]string // component -> nullable fields with generator-hostile facets
 	requiredDefaults map[string][]string // component -> fields both required and defaulted
 	autoDescribed    map[string]bool     // components carrying the generated fallback description
 	renamed          map[string]bool     // components that took a collision suffix
@@ -214,6 +221,7 @@ func (m *Mux) lintComponents() lintReport {
 	report := lintReport{
 		untyped:          make(map[string][]string, len(ref.Components())),
 		exclusive:        make(map[string][]string, len(ref.Components())),
+		nullableFacets:   make(map[string][]string, len(ref.Components())),
 		requiredDefaults: make(map[string][]string, len(ref.Components())),
 		autoDescribed:    make(map[string]bool, len(ref.Components())),
 		renamed:          ref.Renamed(),
@@ -235,6 +243,10 @@ func (m *Mux) lintComponents() lintReport {
 			}
 			if exclusiveMatters && (p.ExclusiveMinimum != "" || p.ExclusiveMaximum != "") {
 				report.exclusive[name] = append(report.exclusive[name], fieldName)
+			}
+			if exclusiveMatters && p.Nullable &&
+				(p.Default != nil || p.UniqueItems || (p.Type == "string" && p.Format == "byte")) {
+				report.nullableFacets[name] = append(report.nullableFacets[name], fieldName)
 			}
 			if p.Default != nil && required[fieldName] {
 				report.requiredDefaults[name] = append(report.requiredDefaults[name], fieldName)
