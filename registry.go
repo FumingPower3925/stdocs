@@ -21,6 +21,10 @@ type route struct {
 	parsed *pattern.Pattern
 	// funcName is the name of the handler function, for inference.
 	funcName string
+	// fallbacks are route-scoped default responses (WithFallbackResponse):
+	// applied at finalize to statuses the route does not declare,
+	// before the mux-level defaults — the narrower scope wins.
+	fallbacks []DefaultResponse
 	// bodyOptional records an Optional() opt so a later WithBody in
 	// the same registration picks it up without materializing a
 	// phantom request body when no body is ever declared.
@@ -209,13 +213,25 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 // mux-level configuration: the shared default responses, the auto-200
 // success case, and the automatic 401 on secured operations.
 func applyResponseDefaults(rt *route, cfg *Config) {
-	// Mux-level default responses: documented on every operation that
-	// does not declare the status itself (a per-route declaration
-	// wins). Runs before the auto-200 so a WithDefaultResponse(200,
-	// body) entry can supply the success body on routes that declare
-	// nothing. Re-running is a no-op (the key exists), keeping
-	// rebuilds stable.
 	declaredNone := len(rt.op.Responses) == 0
+
+	// Route-scoped fallbacks first: the narrower scope beats the
+	// mux-level defaults below; explicit WithResponse declarations
+	// beat both (the key already exists). First fallback per status
+	// wins. Re-running is a no-op, keeping rebuilds stable.
+	for _, fb := range rt.fallbacks {
+		key := statusKey(fb.Status)
+		if _, ok := rt.op.Responses[key]; ok {
+			continue
+		}
+		ensureResponse(rt.op, key).BodyValue = fb.Body
+	}
+
+	// Mux-level default responses: documented on every operation that
+	// does not declare the status itself (a per-route declaration or
+	// fallback wins). Runs before the auto-200 so a
+	// WithDefaultResponse(200, body) entry can supply the success
+	// body on routes that declare nothing.
 	for _, dr := range cfg.DefaultResponses {
 		key := statusKey(dr.Status)
 		if _, ok := rt.op.Responses[key]; ok {
