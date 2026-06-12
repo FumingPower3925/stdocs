@@ -1580,3 +1580,58 @@ func TestWebhookSecurityIsolation(t *testing.T) {
 		t.Errorf("explicit webhook security must emit: %v", signed["security"])
 	}
 }
+
+// v0.4.1: host-scoped patterns are handled honestly — hostless wins,
+// the survivor carries a warning, no dangling id suffixes, Lint
+// reports the shadowed routes exactly once each.
+func TestHostScopedPatterns(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET a.example.com/h", noop, Summary("Host A"))
+	mux.HandleFunc("GET b.example.com/h", noop, Summary("Host B"))
+	doc := buildDocMap(t, mux)
+	paths := doc["paths"].(map[string]any)
+	op := paths["/h"].(map[string]any)["get"].(map[string]any)
+	if op["operationId"] != "get_h" {
+		t.Errorf("operationId = %v, want get_h (no dangling suffix)", op["operationId"])
+	}
+	if w, _ := op["x-stdocs-warning"].(string); !strings.Contains(w, "host") {
+		t.Errorf("survivor must carry the host warning, got %v", op["x-stdocs-warning"])
+	}
+	if tags, _ := op["tags"].([]any); len(tags) != 1 || tags[0] != "H" {
+		t.Errorf("tag must come from the path, not the host: %v", op["tags"])
+	}
+	shadowFindings := 0
+	for _, w := range mux.Lint() {
+		if strings.Contains(w.Message, "shadowed in the document") {
+			shadowFindings++
+			if !strings.Contains(w.Message, "a.example.com") {
+				t.Errorf("shadow finding should name the lost host: %v", w)
+			}
+		}
+	}
+	if shadowFindings != 1 {
+		t.Errorf("want exactly one shadow finding, got %d", shadowFindings)
+	}
+
+	// Hostless registration wins over hosted ones regardless of order.
+	mux2 := New(WithTitle("T"))
+	mux2.HandleFunc("GET c.example.com/g", noop, Summary("Hosted"))
+	mux2.HandleFunc("GET /g", noop, Summary("Generic"))
+	mux2.HandleFunc("GET d.example.com/g", noop, Summary("Hosted too"))
+	doc2 := buildDocMap(t, mux2)
+	gop := doc2["paths"].(map[string]any)["/g"].(map[string]any)["get"].(map[string]any)
+	if gop["summary"] != "Generic" {
+		t.Errorf("hostless registration must win the document slot, got %v", gop["summary"])
+	}
+	if _, warned := gop["x-stdocs-warning"]; warned {
+		t.Errorf("the hostless survivor needs no host warning")
+	}
+
+	// Both hosts still serve traffic.
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://a.example.com/h", nil)
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("host routing must be unaffected: %d", rr.Code)
+	}
+}
