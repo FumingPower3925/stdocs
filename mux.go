@@ -327,7 +327,21 @@ func (m *Mux) buildDoc() map[string]any {
 // this function is a pure filter so concurrent readers (Lint,
 // DriftWarn) can call it without synchronizing writes.
 func (m *Mux) visibleRoutes() []*route {
-	out := make([]*route, 0, len(m.reg.routes))
+	visible, _ := m.routeVisibility()
+	return visible
+}
+
+// routeVisibility splits the registry into the routes the document
+// publishes and the host-shadowed ones it cannot. OpenAPI paths
+// cannot express ServeMux host scoping, so several registrations of
+// the same (method, path) on different hosts collapse to one
+// operation: the hostless registration when one exists (it is the
+// generic contract), else the last hosted one. The shadowed rest
+// still serve traffic — Lint reports them.
+func (m *Mux) routeVisibility() (visible, shadowed []*route) {
+	type opKey struct{ method, path string }
+	survivor := make(map[opKey]*route)
+	candidates := make([]*route, 0, len(m.reg.routes))
 	for _, rt := range m.reg.routes {
 		if rt.op.Hidden {
 			continue
@@ -335,9 +349,21 @@ func (m *Mux) visibleRoutes() []*route {
 		if rt.op.Internal && !m.cfg.ShowInternal {
 			continue
 		}
-		out = append(out, rt)
+		candidates = append(candidates, rt)
+		k := opKey{rt.parsed.Method, rt.parsed.Path()}
+		if cur, taken := survivor[k]; !taken || cur.parsed.Host != "" {
+			survivor[k] = rt
+		}
 	}
-	return out
+	for _, rt := range candidates {
+		k := opKey{rt.parsed.Method, rt.parsed.Path()}
+		if survivor[k] == rt {
+			visible = append(visible, rt)
+		} else {
+			shadowed = append(shadowed, rt)
+		}
+	}
+	return visible, shadowed
 }
 
 // reflectWebhooks returns the configured webhooks with every BodyValue

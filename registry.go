@@ -112,7 +112,7 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 		if s := summaryFromFuncName(rt.funcName); s != "" {
 			rt.op.Summary = s
 		} else if cfg.DefaultSummary != "" {
-			rt.op.Summary = strings.ReplaceAll(cfg.DefaultSummary, "{resource}", firstSegment(rt.pattern))
+			rt.op.Summary = strings.ReplaceAll(cfg.DefaultSummary, "{resource}", firstSegment(rt.parsed.Path()))
 		}
 	}
 
@@ -122,7 +122,7 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 	// operation groups under the described tag in UIs (inferred
 	// "Health" must not split from a declared "health").
 	if len(rt.op.Tags) == 0 {
-		if tag := tagFromPath(rt.pattern); tag != "" {
+		if tag := tagFromPath(rt.parsed.Path()); tag != "" {
 			for _, decl := range cfg.Tags {
 				if strings.EqualFold(decl.Name, tag) {
 					tag = decl.Name
@@ -204,6 +204,9 @@ func applyMethodWarnings(rt *route) {
 		rt.op.Extensions["x-stdocs-warning"] = msg
 	}
 	switch {
+	case rt.parsed.Host != "":
+		warn("pattern is scoped to host " + rt.parsed.Host +
+			"; OpenAPI paths cannot express hosts, so the host is dropped from the documented path")
 	case rt.parsed.Method == "":
 		warn("pattern has no method and matches every HTTP method at runtime; it is documented as GET only")
 	case !operationKeyIsStandard(rt.parsed.Method, rt.version) && rt.version != OpenAPI32:
