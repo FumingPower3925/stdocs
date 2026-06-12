@@ -133,26 +133,38 @@ func FuzzReflectSchema(f *testing.F) {
 		}
 		// json.Number constraint values must always marshal —
 		// unmarshalable literals are exactly the bug class the
-		// validation exists to prevent.
-		for name, comp := range c1 {
-			for field, p := range comp.Properties {
-				for _, n := range []json.Number{p.Minimum, p.Maximum, p.ExclusiveMinimum, p.ExclusiveMaximum} {
-					if n == "" {
-						continue
-					}
-					if _, err := json.Marshal(n); err != nil {
-						t.Fatalf("unmarshalable numeric literal %q on %s.%s: %v", n, name, field, err)
-					}
+		// validation exists to prevent. StructOf types are anonymous
+		// and inline (no components), so walk the root schema tree.
+		var walk func(where string, p *Schema)
+		walk = func(where string, p *Schema) {
+			if p == nil {
+				return
+			}
+			for _, n := range []json.Number{p.Minimum, p.Maximum, p.ExclusiveMinimum, p.ExclusiveMaximum} {
+				if n == "" {
+					continue
 				}
-				for _, v := range []any{p.Default, p.Example} {
-					if v == nil {
-						continue
-					}
-					if _, err := json.Marshal(v); err != nil {
-						t.Fatalf("unmarshalable value %#v on %s.%s: %v", v, name, field, err)
-					}
+				if _, err := json.Marshal(n); err != nil {
+					t.Fatalf("unmarshalable numeric literal %q at %s: %v", n, where, err)
 				}
 			}
+			for _, v := range []any{p.Default, p.Example} {
+				if v == nil {
+					continue
+				}
+				if _, err := json.Marshal(v); err != nil {
+					t.Fatalf("unmarshalable value %#v at %s: %v", v, where, err)
+				}
+			}
+			for fname, fp := range p.Properties {
+				walk(where+"."+fname, fp)
+			}
+			walk(where+"[]", p.Items)
+			walk(where+"{}", p.AdditionalProperties)
+		}
+		walk("root", s1)
+		for name, comp := range c1 {
+			walk(name, comp)
 		}
 		if !reflect.DeepEqual(s1, s2) {
 			t.Fatalf("non-deterministic reflection (root)")

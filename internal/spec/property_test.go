@@ -12,8 +12,21 @@ import (
 // randomSchema builds an arbitrary-but-valid schema tree from a
 // seeded source, exercising every facet the emitters render.
 func randomSchema(r *rand.Rand, depth int) *schema.Schema {
+	if r.Intn(6) == 0 {
+		// $ref use sites: the nullable wrapper paths (allOf on 3.0,
+		// anyOf-null on 3.1/3.2) are version-divergent and must stay
+		// covered.
+		s := &schema.Schema{Ref: "#/components/schemas/X", Nullable: r.Intn(2) == 0}
+		if r.Intn(2) == 0 {
+			s.Description = "d"
+		}
+		return s
+	}
 	kinds := []string{"string", "integer", "number", "boolean", "array", "object"}
 	s := &schema.Schema{Type: kinds[r.Intn(len(kinds))], Nullable: r.Intn(2) == 0}
+	if r.Intn(4) == 0 {
+		s.Format = "custom"
+	}
 	switch s.Type {
 	case "string":
 		if r.Intn(2) == 0 {
@@ -36,8 +49,11 @@ func randomSchema(r *rand.Rand, depth int) *schema.Schema {
 		case 1:
 			s.ExclusiveMinimum = "0"
 		}
-		if r.Intn(2) == 0 {
+		switch r.Intn(3) {
+		case 0:
 			s.Maximum = "100"
+		case 1:
+			s.ExclusiveMaximum = "100"
 		}
 		if r.Intn(2) == 0 {
 			s.Default = int64(3)
@@ -52,6 +68,9 @@ func randomSchema(r *rand.Rand, depth int) *schema.Schema {
 			s.UniqueItems = true
 		}
 	case "object":
+		if r.Intn(4) == 0 {
+			s.AdditionalProperties = &schema.Schema{Type: "string"}
+		}
 		s.Properties = map[string]*schema.Schema{}
 		for i := range r.Intn(3) + 1 {
 			name := string(rune('a' + i))
@@ -120,6 +139,16 @@ func TestEmitterVersionInvariants(t *testing.T) {
 		b32, _ := json.Marshal(buildSchema32(s))
 		if string(b32) != out31 {
 			t.Fatalf("case %d: 3.2 schema output diverged from 3.1", i)
+		}
+
+		// Nullable $refs take the version-correct wrapper.
+		if s.Ref != "" && s.Nullable {
+			if !strings.Contains(out30, `"allOf"`) || strings.Contains(out30, `"anyOf"`) {
+				t.Fatalf("case %d: 3.0 nullable ref must use the allOf wrapper: %s", i, out30)
+			}
+			if !strings.Contains(out31, `"anyOf"`) {
+				t.Fatalf("case %d: 3.1 nullable ref must use the anyOf wrapper: %s", i, out31)
+			}
 		}
 
 		// Determinism.
