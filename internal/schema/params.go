@@ -61,6 +61,11 @@ func ParamFields(v any) []ParamField {
 		case "-":
 			continue
 		default:
+			if hasNullable, rest := splitNullableEntry(override, f.Name); hasNullable {
+				_ = rest
+				panic("stdocs: openapi nullable on params field " + f.Name +
+					" — parameters are optional or required, never null; drop the entry")
+			}
 			fs = overrideSchema(override, f.Name)
 		}
 		if fs == nil {
