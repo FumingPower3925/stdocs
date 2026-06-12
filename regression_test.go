@@ -1839,3 +1839,31 @@ func TestOptionalAloneIsNoOp(t *testing.T) {
 		t.Errorf("Optional alone must not materialize a request body")
 	}
 }
+
+// v0.4.1: the pre-v0.4.1 manual asset registration plus Mount's new
+// auto-registration coexist in both orders (no duplicate-pattern
+// panic on upgrade).
+func TestEmbAssetUpgradeCompatibility(t *testing.T) {
+	assets := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("js")) })
+	// Manual first (the v0.4.0 documented order), then Mount.
+	m1 := New(WithTitle("T"))
+	m1.Config().Assets = assets
+	m1.Handle("GET /docs/_assets/", http.StripPrefix("/docs/_assets/", assets))
+	m1.Mount()
+	rr := httptest.NewRecorder()
+	m1.ServeHTTP(rr, httptest.NewRequest("GET", "/docs/_assets/x.js", nil))
+	if rr.Code != http.StatusOK {
+		t.Errorf("manual-then-Mount: %d", rr.Code)
+	}
+	// Mount first, then a (now-redundant) manual registration panics
+	// in the USER's call — that is ServeMux's own conflict panic and
+	// correctly attributed; only Mount's side must tolerate.
+	m2 := New(WithTitle("T"))
+	m2.Config().Assets = assets
+	m2.Mount()
+	rr2 := httptest.NewRecorder()
+	m2.ServeHTTP(rr2, httptest.NewRequest("GET", "/docs/_assets/x.js", nil))
+	if rr2.Code != http.StatusOK {
+		t.Errorf("Mount-only: %d", rr2.Code)
+	}
+}
