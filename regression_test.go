@@ -3,6 +3,7 @@ package stdocs
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -1745,5 +1746,96 @@ func TestTagInferenceAndParamVocabulary(t *testing.T) {
 			}()
 			f()
 		}()
+	}
+}
+
+// v0.4.1 verification: registration is synchronized with serving —
+// the late-registration feature must not be a data race — and a
+// route registered mid-build is never permanently lost.
+func TestConcurrentRegistrationAndServing(t *testing.T) {
+	type APIError struct {
+		Message string `json:"message"`
+	}
+	mux := New(WithTitle("T"), WithDefaultResponse(500, APIError{}))
+	mux.HandleFunc("GET /seed", noop, Summary("Seed"))
+	mux.Mount()
+	h := DriftWarn(mux, func(string, ...any) {})
+
+	var wg sync.WaitGroup
+	for g := range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 12 {
+				mux.HandleFunc(fmt.Sprintf("GET /late/%d/%d", g, i), noop, Summary("Late"))
+				mux.JSON()
+				mux.YAML()
+				mux.Lint()
+				rr := httptest.NewRecorder()
+				h.ServeHTTP(rr, httptest.NewRequest("GET", "/seed", nil))
+			}
+		}()
+	}
+	wg.Wait()
+	doc := buildDocMap(t, mux)
+	paths := doc["paths"].(map[string]any)
+	for g := range 4 {
+		for i := range 12 {
+			if _, ok := paths[fmt.Sprintf("/late/%d/%d", g, i)]; !ok {
+				t.Fatalf("route /late/%d/%d lost from the final document", g, i)
+			}
+		}
+	}
+}
+
+// Operation ids depend only on the final route set, not on when
+// intermediate builds happened.
+func TestOperationIDBuildHistoryIndependence(t *testing.T) {
+	build := func(interleave bool) string {
+		mux := New(WithTitle("T"))
+		mux.HandleFunc("GET /a", noop, Summary("A"), OperationID("x"))
+		if interleave {
+			mux.JSON()
+		}
+		mux.HandleFunc("GET /b", noop, Summary("B"), OperationID("x"))
+		if interleave {
+			mux.JSON()
+		}
+		mux.HandleFunc("GET /c", noop, Summary("C"), OperationID("x_2"))
+		raw, err := mux.JSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	plain, interleaved := build(false), build(true)
+	if plain != interleaved {
+		t.Errorf("ids depend on build history:\nplain:       %.300s\ninterleaved: %.300s", plain, interleaved)
+	}
+}
+
+// A bad late registration panics at HandleFunc once a build happened.
+func TestLateRegistrationFailsFast(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /ok", noop, Summary("OK"))
+	mux.Mount() // builds eagerly
+	defer func() {
+		if recover() == nil {
+			t.Errorf("late bad registration should panic at HandleFunc")
+		}
+	}()
+	type Bad struct {
+		N int `json:"n" minLength:"3"`
+	}
+	mux.HandleFunc("POST /bad", noop, WithBody(Bad{}))
+}
+
+// Optional without a body declaration materializes nothing.
+func TestOptionalAloneIsNoOp(t *testing.T) {
+	mux := New(WithTitle("T"))
+	mux.HandleFunc("GET /x", noop, Summary("X"), Optional())
+	op := buildDocMap(t, mux)["paths"].(map[string]any)["/x"].(map[string]any)["get"].(map[string]any)
+	if _, ok := op["requestBody"]; ok {
+		t.Errorf("Optional alone must not materialize a request body")
 	}
 }

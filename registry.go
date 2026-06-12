@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/FumingPower3925/stdocs/internal/pattern"
 	"github.com/FumingPower3925/stdocs/internal/schema"
@@ -20,15 +21,28 @@ type route struct {
 	parsed *pattern.Pattern
 	// funcName is the name of the handler function, for inference.
 	funcName string
+	// bodyOptional records an Optional() opt so a later WithBody in
+	// the same registration picks it up without materializing a
+	// phantom request body when no body is ever declared.
+	bodyOptional bool
+	// baseID is the operation id before document-wide disambiguation
+	// — explicit, derived via OperationIDFunc, or the default
+	// derivation. Each build re-derives op.OperationID from it, so
+	// the published ids depend only on the current route set, never
+	// on when intermediate builds happened.
+	baseID string
 	// op is the operation under construction. RouteOpts mutate this.
 	op *Operation
 	// version is inherited from the parent mux config.
 	version SpecVersion
 }
 
-// registry is the collection of routes. It is safe to read concurrently
-// after all routes have been added; the spec emitter does the read.
+// registry is the collection of routes. Registration takes the
+// registry's own lock — readers obtain a consistent view through
+// snapshot — so routes may be registered concurrently with serving,
+// matching the embedded ServeMux's own guarantees.
 type registry struct {
+	mu     sync.Mutex
 	routes []*route
 	// gen increments on every registration; the mux compares it to
 	// the generation it last built, so a route registered after a
@@ -37,9 +51,19 @@ type registry struct {
 	gen uint64
 }
 
-// add registers a new route. opts are applied to construct the operation.
-// version is the OpenAPI version inherited from the parent mux.
-func (r *registry) add(pattern, funcName string, parsed *pattern.Pattern, version SpecVersion, opts []RouteOpt) *route {
+// snapshot returns the current route list (a copy of the slice — the
+// routes themselves are shared and only mutated under the build
+// lock) and the registration generation it corresponds to.
+func (r *registry) snapshot() ([]*route, uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]*route(nil), r.routes...), r.gen
+}
+
+// newRoute constructs a route with its opts applied — not yet
+// published, so the caller may validate it without racing concurrent
+// builds that would otherwise finalize it mid-inspection.
+func newRoute(pattern, funcName string, parsed *pattern.Pattern, version SpecVersion, opts []RouteOpt) *route {
 	rt := &route{
 		pattern:  pattern,
 		parsed:   parsed,
@@ -52,9 +76,24 @@ func (r *registry) add(pattern, funcName string, parsed *pattern.Pattern, versio
 			o(rt)
 		}
 	}
+	return rt
+}
+
+// add constructs and publishes in one step — the registration path
+// in Mux uses newRoute + validate + publish instead, so late
+// fail-fast checks run before the route becomes visible to builds.
+func (r *registry) add(pattern, funcName string, parsed *pattern.Pattern, version SpecVersion, opts []RouteOpt) *route { //nolint:unparam // test helper mirrors newRoute
+	rt := newRoute(pattern, funcName, parsed, version, opts)
+	r.publish(rt)
+	return rt
+}
+
+// publish makes the route visible to builds.
+func (r *registry) publish(rt *route) {
+	r.mu.Lock()
 	r.routes = append(r.routes, rt)
 	r.gen++
-	return rt
+	r.mu.Unlock()
 }
 
 // finalize applies the per-route defaults that require knowing the
@@ -74,6 +113,10 @@ func (r *registry) finalize(cfg *Config) {
 
 // applyRouteDefaults fills the operation fields the user left unset.
 func applyRouteDefaults(rt *route, cfg *Config) {
+	if rt.bodyOptional && rt.op.RequestBody != nil {
+		rt.op.RequestBody.Required = false
+	}
+
 	applyResponseDefaults(rt, cfg)
 
 	// Duplicate parameters: OpenAPI requires (name, in) uniqueness per
@@ -140,14 +183,24 @@ func applyRouteDefaults(rt *route, cfg *Config) {
 		}
 	}
 
-	// Default operationId: the user's derivation function when
-	// configured (an empty result falls back), else method+path.
-	if rt.op.OperationID == "" && cfg.OperationIDFunc != nil {
-		rt.op.OperationID = cfg.OperationIDFunc(rt.parsed.Method, rt.parsed.Path())
+	// Operation id: remember the pre-disambiguation base (explicit
+	// opt, the user's derivation function, or the default) once, and
+	// reset to it on every build — disambiguation then works from the
+	// full current route set regardless of build history.
+	if rt.baseID == "" {
+		switch {
+		case rt.op.OperationID != "":
+			rt.baseID = rt.op.OperationID
+		case cfg.OperationIDFunc != nil:
+			if id := cfg.OperationIDFunc(rt.parsed.Method, rt.parsed.Path()); id != "" {
+				rt.baseID = id
+			}
+		}
+		if rt.baseID == "" {
+			rt.baseID = defaultOperationID(rt.parsed)
+		}
 	}
-	if rt.op.OperationID == "" {
-		rt.op.OperationID = defaultOperationID(rt.parsed)
-	}
+	rt.op.OperationID = rt.baseID
 }
 
 // applyResponseDefaults fills the response entries the user left to
