@@ -1289,7 +1289,7 @@ func TestLint(t *testing.T) {
 	type APIError struct {
 		Message string `json:"message"`
 	}
-	mux := New(WithTitle("T"))
+	mux := New(WithTitle("T"), WithCleanOutput(false))
 	mux.HandleFunc("GET /bare", func(w http.ResponseWriter, r *http.Request) {}) // no error response, no summary
 	mux.HandleFunc("POST /h", noop, WithBody(Holder{}),                          // untyped field
 		Summary("Hold"), WithResponse(0, APIError{})) // has default: no error warning
@@ -1380,7 +1380,7 @@ func TestLintVerificationFindings(t *testing.T) {
 	type E struct {
 		Message string `json:"message"`
 	}
-	wmux := New(WithTitle("T"), WithDefaultResponse(500, E{}))
+	wmux := New(WithTitle("T"), WithCleanOutput(false), WithDefaultResponse(500, E{}))
 	wmux.HandleFunc("/anymethod", noop, Summary("Any"))
 	advisory := false
 	for _, w := range wmux.Lint() {
@@ -1586,7 +1586,7 @@ func TestWebhookSecurityIsolation(t *testing.T) {
 // the survivor carries a warning, no dangling id suffixes, Lint
 // reports the shadowed routes exactly once each.
 func TestHostScopedPatterns(t *testing.T) {
-	mux := New(WithTitle("T"))
+	mux := New(WithTitle("T"), WithCleanOutput(false))
 	mux.HandleFunc("GET a.example.com/h", noop, Summary("Host A"))
 	mux.HandleFunc("GET b.example.com/h", noop, Summary("Host B"))
 	doc := buildDocMap(t, mux)
@@ -1615,7 +1615,7 @@ func TestHostScopedPatterns(t *testing.T) {
 	}
 
 	// Hostless registration wins over hosted ones regardless of order.
-	mux2 := New(WithTitle("T"))
+	mux2 := New(WithTitle("T"), WithCleanOutput(false))
 	mux2.HandleFunc("GET c.example.com/g", noop, Summary("Hosted"))
 	mux2.HandleFunc("GET /g", noop, Summary("Generic"))
 	mux2.HandleFunc("GET d.example.com/g", noop, Summary("Hosted too"))
@@ -1643,7 +1643,7 @@ func TestLintCodesAndNewAdvisories(t *testing.T) {
 	type Contradiction struct {
 		Country string `json:"country" default:"ES"` // required (no omitempty) + defaulted
 	}
-	mux := New(WithTitle("T"))
+	mux := New(WithTitle("T"), WithCleanOutput(false))
 	mux.HandleFunc("POST /c", noop, Summary("C"), WithBody(Contradiction{}),
 		WithResponse(400, nil), OperationID("explicit_7"))
 	byCode := map[string]int{}
@@ -2301,13 +2301,13 @@ func TestLintNoRequestBody(t *testing.T) {
 		ID string `json:"id"`
 	}
 	mux := New(WithTitle("T"), WithCleanOutput(true), WithDefaultResponse(500, Body{}))
-	mux.HandleFunc("POST /forgot", noop, Summary("F"))                 // POST, no body -> warn
-	mux.HandleFunc("PATCH /also", noop, Summary("A"))                  // PATCH, no body -> warn
-	mux.HandleFunc("POST /ok", noop, Summary("O"), WithBody(Body{}))   // bodied -> quiet
-	mux.HandleFunc("PUT /multi", noop, Summary("M"),                   // multipart counts as a body
+	mux.HandleFunc("POST /forgot", noop, Summary("F"))               // POST, no body -> warn
+	mux.HandleFunc("PATCH /also", noop, Summary("A"))                // PATCH, no body -> warn
+	mux.HandleFunc("POST /ok", noop, Summary("O"), WithBody(Body{})) // bodied -> quiet
+	mux.HandleFunc("PUT /multi", noop, Summary("M"),                 // multipart counts as a body
 		WithMultipartBody(FilePart("f", "file")))
-	mux.HandleFunc("GET /read", noop, Summary("R"))                    // read method -> quiet
-	mux.HandleFunc("DELETE /del", noop, Summary("D"))                  // delete, no body -> quiet
+	mux.HandleFunc("GET /read", noop, Summary("R"))   // read method -> quiet
+	mux.HandleFunc("DELETE /del", noop, Summary("D")) // delete, no body -> quiet
 	got := map[string]bool{}
 	for _, w := range mux.Lint() {
 		if w.Code == "no-request-body" {

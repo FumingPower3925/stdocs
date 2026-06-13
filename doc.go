@@ -298,11 +298,13 @@
 // spec endpoints. Output is deterministic — sorted keys, stable
 // operationIds and component names across rebuilds — so the spec
 // works as a committed artifact: golden-file tests, contract diffing
-// in PRs, linting, and client generation. For documents published as
-// contracts, [WithCleanOutput] strips the stdocs annotation
-// extensions and auto-generated descriptions, and [Mux.Lint] reports
-// advisory consumability findings (operations without error
-// responses, untyped fields, collision-suffixed names). Determinism
+// in PRs, linting, and client generation. The document is clean by
+// default — no stdocs annotation extensions or auto-generated
+// descriptions to leak package layout into a published contract;
+// [WithCleanOutput](false) keeps them when debugging which Go types
+// produced which schemas. [Mux.Lint] reports advisory consumability
+// findings (operations without error responses, untyped fields,
+// collision-suffixed names). Determinism
 // holds within a release; upgrading stdocs itself may legitimately
 // change the emitted bytes, so regenerate golden files when bumping
 // the dependency and review the diff like any contract change.
