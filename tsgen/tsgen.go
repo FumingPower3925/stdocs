@@ -53,7 +53,10 @@
 // Output is deterministic — sorted declarations, stable names — so
 // api.ts works as a committed artifact exactly like the spec bytes:
 // regenerating on an stdocs upgrade is a contract change, review the
-// diff. Generation reads the document model, not the served JSON, so
+// diff. Distribute the file as you would any committed types
+// artifact — vendor it in a monorepo, or publish it as your own
+// types package for separate frontend consumers; tsgen stops at the
+// bytes. Generation reads the document model, not the served JSON, so
 // edits made by WithOpenAPI hooks are invisible here, and a mux
 // configured with WithSpec serves its hand-written document while
 // Generate still describes the registered routes — both escape
