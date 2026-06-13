@@ -69,8 +69,21 @@ func WithUI() stdocs.Option {
 	return func(c *stdocs.Config) {
 		c.UIDoc = html
 		c.Assets = AssetHandler()
+		c.UICSP = cspPolicy
 	}
 }
+
+// cspPolicy is the Content-Security-Policy served with the embedded
+// Swagger UI docs page. Every asset is same-origin ('self'); style-src
+// keeps 'unsafe-inline' for Swagger UI's runtime style injection, while
+// script-src has no 'unsafe-inline': the inline SwaggerUIBundle init
+// script is pinned by sha256 hash, recomputed from the served page by
+// the parity test so it cannot drift. Browser-verified by the uismoke
+// CSP test; override with stdocs.WithCSP.
+const cspPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
+	"frame-ancestors 'self'; img-src 'self' data:; font-src 'self' data:; " +
+	"connect-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"script-src 'self' 'sha256-A2pv4aNbzbAB9h1aXMLcWSgRQk1bEP9SOF3HQeOW1ls='"
 
 // AssetHandler returns an http.Handler that serves the embedded
 // Swagger UI bundle at the root. File responses carry an immutable

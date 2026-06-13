@@ -48,8 +48,22 @@ const redocSRIHash = "sha384-xiEssMQFSpSfLbzRZCGfxxIM5QDb2DTrU6vyoZdp2sV1L6pmOMy
 func WithUI() stdocs.Option {
 	return func(c *stdocs.Config) {
 		c.UIDoc = redocHTML
+		c.UICSP = cspPolicy
 	}
 }
+
+// cspPolicy is the Content-Security-Policy served with the Redoc docs
+// page. The bundle loads from jsdelivr; style-src keeps 'unsafe-inline'
+// for Redoc's runtime style injection, while script-src has no
+// 'unsafe-inline'. Redoc renders in a Web Worker, so worker-src blob:
+// is allowed. The external Redoc logo (cdn.redoc.ly) is not allowed, so
+// the page makes no third-party connections. Browser-verified by the
+// uismoke CSP test; override with stdocs.WithCSP.
+const cspPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
+	"frame-ancestors 'self'; img-src 'self' data:; font-src 'self' data:; " +
+	"connect-src 'self'; worker-src blob:; " +
+	"style-src https://cdn.jsdelivr.net 'unsafe-inline'; " +
+	"script-src https://cdn.jsdelivr.net"
 
 var redocHTML = fmt.Sprintf(`<!doctype html>
 <html>

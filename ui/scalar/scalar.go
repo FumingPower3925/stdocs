@@ -48,8 +48,22 @@ const scalarSRIHash = "sha384-cIupCoQjF73k8Pd8cAp5J3dicczn0FqXBbC8Iyjd8UTSj8vqW+
 func WithUI() stdocs.Option {
 	return func(c *stdocs.Config) {
 		c.UIDoc = scalarHTML
+		c.UICSP = cspPolicy
 	}
 }
+
+// cspPolicy is the Content-Security-Policy served with the Scalar docs
+// page. The bundle loads from jsdelivr; style-src keeps 'unsafe-inline'
+// because Scalar injects styles at runtime, but script-src has no
+// 'unsafe-inline'. External fonts (fonts.scalar.com) and the Scalar
+// registry API (api.scalar.com) are deliberately not allowed, so the
+// page makes no third-party connections and Scalar falls back to system
+// fonts. Browser-verified by the uismoke CSP test; override with
+// stdocs.WithCSP.
+const cspPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
+	"frame-ancestors 'self'; img-src 'self' data:; font-src 'self' data:; " +
+	"connect-src 'self'; style-src https://cdn.jsdelivr.net 'unsafe-inline'; " +
+	"script-src https://cdn.jsdelivr.net"
 
 // scalarHTML is the docs page served when the scalar sub-package is in
 // use. The Scalar reference web component is loaded from cdn.jsdelivr.net

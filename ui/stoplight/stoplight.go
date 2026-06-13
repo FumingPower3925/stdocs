@@ -56,8 +56,20 @@ const (
 func WithUI() stdocs.Option {
 	return func(c *stdocs.Config) {
 		c.UIDoc = stoplightHTML
+		c.UICSP = cspPolicy
 	}
 }
+
+// cspPolicy is the Content-Security-Policy served with the Stoplight
+// Elements docs page. The web-components bundle and stylesheet load
+// from jsdelivr; style-src keeps 'unsafe-inline' for the runtime style
+// injection, while script-src has no 'unsafe-inline'. The page makes no
+// third-party connections. Browser-verified by the uismoke CSP test;
+// override with stdocs.WithCSP.
+const cspPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
+	"frame-ancestors 'self'; img-src 'self' data:; font-src 'self' data:; " +
+	"connect-src 'self'; style-src https://cdn.jsdelivr.net 'unsafe-inline'; " +
+	"script-src https://cdn.jsdelivr.net"
 
 var stoplightHTML = fmt.Sprintf(`<!doctype html>
 <html>
