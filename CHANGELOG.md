@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.6.2] - 2026-06-13
+
+### Fixed
+
+- A declared `default` that violates its own constraints — a value
+  outside its `enum`, past a numeric bound, or failing a `minLength`/
+  `maxLength`/`pattern` — now panics at build time instead of emitting
+  a self-contradictory document. (The promise that invalid input
+  fails fast rather than publishing a wrong contract had a hole: a
+  `default` outside its `enum` shipped both.)
+
+### Changed
+
+- The README scope note now states the line vs typed-handler
+  frameworks: stdocs documents handlers but does not validate or
+  enforce the contract at runtime.
+
+### Removed
+
+- `package-lock.json` — a 468 KB lockfile in the root of a
+  zero-dependency library; the dev-only npm manifest Dependabot
+  tracks needs only `package.json`.
+
 ## [0.6.1] - 2026-06-13
 
 Pre-public polish: wider Go support, a cleaner default document, and
@@ -519,7 +542,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/FumingPower3925/stdocs/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/FumingPower3925/stdocs/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/FumingPower3925/stdocs/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/FumingPower3925/stdocs/compare/v0.5.0...v0.5.1
