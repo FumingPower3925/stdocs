@@ -10,6 +10,7 @@ import (
 	"encoding"
 	"encoding/json"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -903,6 +904,94 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 			panic("stdocs: uniqueItems tag " + strconv.Quote(unique) + " on field " + fieldName + " is not a valid boolean")
 		}
 		fieldSchema.UniqueItems = b
+	}
+
+	// A declared default is a claimed-valid value; if it violates the
+	// field's own constraints the document contradicts itself. Catch
+	// it at build time like the other constraint mistakes.
+	validateDefault(fieldSchema, fieldName)
+}
+
+// validateDefault panics when a field's default value does not
+// satisfy its own enum, numeric-bound, length, or pattern
+// constraints. Default and the enum members share one parsed type
+// (parseScalar), so the comparison is exact.
+func validateDefault(s *Schema, fieldName string) {
+	if s.Default == nil {
+		return
+	}
+	if len(s.Enum) > 0 {
+		for _, e := range s.Enum {
+			if s.Default == e {
+				return
+			}
+		}
+		panic("stdocs: default " + fmtScalar(s.Default) + " on field " + fieldName + " is not one of the enum values")
+	}
+	switch d := s.Default.(type) {
+	case int64:
+		checkNumericDefault(float64(d), s, fieldName)
+	case float64:
+		checkNumericDefault(d, s, fieldName)
+	case string:
+		n := uint64(len([]rune(d)))
+		if s.MinLength != nil && n < *s.MinLength {
+			panic("stdocs: default " + strconv.Quote(d) + " on field " + fieldName + " is shorter than minLength")
+		}
+		if s.MaxLength != nil && n > *s.MaxLength {
+			panic("stdocs: default " + strconv.Quote(d) + " on field " + fieldName + " is longer than maxLength")
+		}
+		// Patterns are ECMA-262; only enforce ones Go's RE2 can
+		// compile, so a valid-but-unsupported pattern never
+		// false-panics on its default.
+		if s.Pattern != "" {
+			if re, err := regexp.Compile(s.Pattern); err == nil && !re.MatchString(d) {
+				panic("stdocs: default " + strconv.Quote(d) + " on field " + fieldName + " does not match the pattern")
+			}
+		}
+	}
+}
+
+// checkNumericDefault panics when a numeric default falls outside its
+// declared bounds.
+func checkNumericDefault(d float64, s *Schema, fieldName string) {
+	below := func(bound json.Number, excl bool) bool {
+		f, err := bound.Float64()
+		if err != nil {
+			return false
+		}
+		return d < f || (excl && d == f)
+	}
+	above := func(bound json.Number, excl bool) bool {
+		f, err := bound.Float64()
+		if err != nil {
+			return false
+		}
+		return d > f || (excl && d == f)
+	}
+	switch {
+	case s.Minimum != "" && below(s.Minimum, false),
+		s.ExclusiveMinimum != "" && below(s.ExclusiveMinimum, true):
+		panic("stdocs: default " + fmtScalar(d) + " on field " + fieldName + " is below the minimum")
+	case s.Maximum != "" && above(s.Maximum, false),
+		s.ExclusiveMaximum != "" && above(s.ExclusiveMaximum, true):
+		panic("stdocs: default " + fmtScalar(d) + " on field " + fieldName + " is above the maximum")
+	}
+}
+
+// fmtScalar renders a parsed scalar for an error message.
+func fmtScalar(v any) string {
+	switch x := v.(type) {
+	case string:
+		return strconv.Quote(x)
+	case int64:
+		return strconv.FormatInt(x, 10)
+	case float64:
+		return strconv.FormatFloat(x, 'g', -1, 64)
+	case bool:
+		return strconv.FormatBool(x)
+	default:
+		return "value"
 	}
 }
 
