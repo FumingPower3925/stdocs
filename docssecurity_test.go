@@ -116,6 +116,25 @@ func TestWithCSPOverride(t *testing.T) {
 	}
 }
 
+// TestDefaultUINotice checks the built-in page ships the dismissable
+// notice that points users at the richer UIs.
+func TestDefaultUINotice(t *testing.T) {
+	body := fetchDocs(t, "/docs/").Body.String()
+	for _, want := range []string{
+		`id="stdocs-note" hidden`,      // starts hidden; JS reveals it when not dismissed
+		`id="stdocs-note-x"`,           // the dismiss button
+		"stdocs-docs-notice-dismissed", // the localStorage key
+		"minimal built-in docs UI",
+		"WithUI()",
+		"Scalar",
+		`href="https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Docs_UIs"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("default docs page missing %q", want)
+		}
+	}
+}
+
 // TestDefaultDocsCSP recomputes the inline script/style hashes from the
 // actually-served built-in page and asserts each appears in the default
 // CSP, so the policy cannot silently drift from the HTML it secures.
