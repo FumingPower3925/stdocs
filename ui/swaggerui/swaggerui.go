@@ -57,8 +57,23 @@ const (
 func WithUI() stdocs.Option {
 	return func(c *stdocs.Config) {
 		c.UIDoc = swaggerHTML
+		c.UICSP = cspPolicy
 	}
 }
+
+// cspPolicy is the Content-Security-Policy served with the Swagger UI
+// docs page. The bundle and stylesheet load from jsdelivr; style-src
+// keeps 'unsafe-inline' for Swagger UI's runtime style injection.
+// script-src has no 'unsafe-inline': the inline init script that calls
+// SwaggerUIBundle is pinned by sha256 hash instead. The hash is
+// recomputed from the served page by the parity test, so it cannot
+// drift. Browser-verified by the uismoke CSP test; override with
+// stdocs.WithCSP.
+const cspPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
+	"frame-ancestors 'self'; img-src 'self' data:; font-src 'self' data:; " +
+	"connect-src 'self'; style-src https://cdn.jsdelivr.net 'unsafe-inline'; " +
+	"script-src https://cdn.jsdelivr.net " +
+	"'sha256-A2pv4aNbzbAB9h1aXMLcWSgRQk1bEP9SOF3HQeOW1ls='"
 
 var swaggerHTML = fmt.Sprintf(`<!doctype html>
 <html>
