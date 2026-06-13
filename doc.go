@@ -5,9 +5,8 @@
 // backed by a generated OpenAPI 3.0, 3.1, or 3.2 document.
 //
 // The pattern syntax it documents ("GET /users/{id}") is the
-// method+path routing introduced in Go 1.22. The module supports the
-// two most recent Go releases, matching the Go project's release
-// policy. There are no dependencies beyond the standard library and
+// method+path routing introduced in Go 1.22; the module itself
+// requires Go 1.24 or later. There are no dependencies beyond the standard library and
 // no code generation: the patterns you already write are the source
 // of truth.
 //

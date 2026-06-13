@@ -1,3 +1,3 @@
 module github.com/FumingPower3925/stdocs
 
-go 1.25.0
+go 1.24.0
