@@ -559,6 +559,13 @@ func WithParam(name, in, typ, description string, opts ...ParamOpt) RouteOpt {
 			o(&p)
 		}
 	}
+	// The struct-tag params path validates defaults through
+	// applyFieldTags; the functional-option path builds the schema
+	// here, so run the same check so a ParamDefault outside its own
+	// enum or past its own bound fails fast too.
+	if p.Schema != nil {
+		schema.ValidateDefault(p.Schema, name)
+	}
 	return func(r *route) {
 		r.op.Parameters = append(r.op.Parameters, p)
 	}
