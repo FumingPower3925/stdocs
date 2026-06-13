@@ -110,6 +110,14 @@ the `_assets` route itself; the manual
 `mux.Handle("GET /docs/_assets/", ...)` line from the old example is
 redundant and can be deleted (Mount tolerates it either way).
 
+**Upgrading to v0.6.1 — clean output is now the default.** The
+generated document no longer carries the `Generated from Go type ...`
+descriptions or the `x-stdocs-*` annotation extensions. If you commit
+the spec as a golden file, expect a one-time diff dropping those; if
+you relied on the annotations (e.g. reading `x-stdocs-type` to see
+which Go types were untypeable), add `WithCleanOutput(false)` to keep
+them.
+
 **Upgrading DriftWarn to v0.5.0.** Drift logs get more accurate, so
 expect them to change on upgrade: body sampling now looks one level
 into list rows (`orders[].fee_cents`) and into array bodies, statuses
