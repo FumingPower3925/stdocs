@@ -42,12 +42,11 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-  # stdocs follows the Go project's release support policy: the two
-  # most recent Go releases. The supported floor is the go directive
-  # in go.mod; this job computes every stable patch release >= that
-  # floor from go.dev and fans the full suite out over all of them,
-  # so every version we advertise compatibility with is actually
-  # tested — including patches released after this file was written.
+  # The supported floor is the go directive in go.mod. This job
+  # computes every stable patch release >= that floor from go.dev and
+  # fans the full suite out over all of them, so every version we
+  # advertise compatibility with is actually tested — including
+  # patches released after this file was written.
   versions:
     name: Supported Go versions
     runs-on: ubuntu-latest
@@ -361,6 +360,13 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
+      # The YAML round-trip module is a separate go module, so the
+      # root invocation above does not reach it; lint it on its own.
+      - name: golangci-lint (round-trip module)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: internal/spec/yaml/roundtrip_test
 
   coverage:
     name: Coverage

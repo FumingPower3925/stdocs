@@ -150,7 +150,7 @@ stdocs documents stdlib `ServeMux` applications — it does not integrate with o
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Translations are community-maintained; see the "Translations" section there to add or update one.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
 go test -race -count=1 ./...
