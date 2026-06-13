@@ -127,6 +127,9 @@ func renderDOM(t *testing.T, bin, url string) string {
 		"--headless=new", "--disable-gpu", "--no-sandbox",
 		"--window-size=1440,2400",
 		"--virtual-time-budget=35000", "--timeout=45000",
+		// Surface CSP violations on stderr so TestUICSP can read them
+		// out of the combined output alongside the DOM dump.
+		"--enable-logging=stderr", "--v=1",
 		"--dump-dom", url,
 	)
 	out, err := cmd.CombinedOutput()
@@ -134,6 +137,40 @@ func renderDOM(t *testing.T, bin, url string) string {
 		t.Fatalf("chrome failed: %v", err)
 	}
 	return string(out)
+}
+
+// cspFailures returns CSP-violation log lines that signal a real policy
+// break: an inline script or a required script/style/worker being
+// refused. Violations for the UIs' intentional third-party phone-home
+// (Scalar's fonts and registry API, Redoc's external logo) are expected
+// and tolerated — the policy blocks those on purpose.
+func cspFailures(dom string) []string {
+	tolerated := []string{"fonts.scalar.com", "api.scalar.com", "cdn.redoc.ly"}
+	var bad []string
+	for _, ln := range strings.Split(dom, "\n") {
+		violation := strings.Contains(ln, "violates the following Content Security Policy") ||
+			strings.Contains(ln, "Refused to execute inline script") ||
+			strings.Contains(ln, "Refused to load")
+		if !violation {
+			continue
+		}
+		// A refused connect under connect-src 'self' is always an
+		// external call we mean to block.
+		if strings.Contains(ln, "Refused to connect") || strings.Contains(ln, "Connecting to") {
+			continue
+		}
+		ok := false
+		for _, h := range tolerated {
+			if strings.Contains(ln, h) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			bad = append(bad, strings.TrimSpace(ln))
+		}
+	}
+	return bad
 }
 
 func TestUISmoke(t *testing.T) {
@@ -208,6 +245,10 @@ func TestUISmoke(t *testing.T) {
 			if !allFound(dom) {
 				t.Fatalf("%s did not render its markers %v; DOM %d bytes: %.600s",
 					ui.name, ui.markers, len(dom), dom)
+			}
+			if bad := cspFailures(dom); len(bad) > 0 {
+				t.Errorf("%s: %d disallowed CSP violation(s) under its enforced policy; first: %s",
+					ui.name, len(bad), bad[0])
 			}
 		})
 	}
