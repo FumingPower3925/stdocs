@@ -14,6 +14,7 @@ type Warning struct {
 	//	build-failed          the document could not be built
 	//	no-error-response     operation declares no 4xx/5xx/default
 	//	no-summary            operation has no summary
+	//	no-request-body       POST/PUT/PATCH with no documented body
 	//	pattern-approximation the registration cannot be represented
 	//	                      exactly (method-less or host-scoped)
 	//	shadowed-route        registration absent from the document
@@ -169,6 +170,18 @@ func (m *Mux) lintRoutes() []Warning {
 		}
 		if rt.op.Summary == "" {
 			out = append(out, Warning{Code: "no-summary", Where: where, Message: "has no summary; docs portals and generated clients surface it"})
+		}
+		// A write method with no documented request body is usually a
+		// forgotten WithBody — the operation reads as taking nothing,
+		// which no other check catches.
+		switch rt.op.Method {
+		case "POST", "PUT", "PATCH":
+			// A multipart body sets a Schema rather than a BodyValue,
+			// so it counts as documented.
+			if rt.op.RequestBody == nil || (rt.op.RequestBody.BodyValue == nil && rt.op.RequestBody.Schema == nil) {
+				out = append(out, Warning{Code: "no-request-body", Where: where,
+					Message: "is a " + rt.op.Method + " with no documented request body; add WithBody (or WithMultipartBody) — a forgotten body documents the route as taking nothing"})
+			}
 		}
 		if msg, ok := rt.op.Extensions["x-stdocs-warning"].(string); ok {
 			out = append(out, Warning{Code: "pattern-approximation", Where: where, Message: msg})

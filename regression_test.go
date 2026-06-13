@@ -2293,3 +2293,34 @@ func TestLateRouteValidatesDefaultBodies(t *testing.T) {
 	}()
 	mux.HandleFunc("GET /late", noop, Summary("L"))
 }
+
+// v0.6.1: write methods with no documented request body get the
+// no-request-body advisory; bodied writes and read methods stay quiet.
+func TestLintNoRequestBody(t *testing.T) {
+	type Body struct {
+		ID string `json:"id"`
+	}
+	mux := New(WithTitle("T"), WithCleanOutput(true), WithDefaultResponse(500, Body{}))
+	mux.HandleFunc("POST /forgot", noop, Summary("F"))                 // POST, no body -> warn
+	mux.HandleFunc("PATCH /also", noop, Summary("A"))                  // PATCH, no body -> warn
+	mux.HandleFunc("POST /ok", noop, Summary("O"), WithBody(Body{}))   // bodied -> quiet
+	mux.HandleFunc("PUT /multi", noop, Summary("M"),                   // multipart counts as a body
+		WithMultipartBody(FilePart("f", "file")))
+	mux.HandleFunc("GET /read", noop, Summary("R"))                    // read method -> quiet
+	mux.HandleFunc("DELETE /del", noop, Summary("D"))                  // delete, no body -> quiet
+	got := map[string]bool{}
+	for _, w := range mux.Lint() {
+		if w.Code == "no-request-body" {
+			got[w.Where] = true
+		}
+	}
+	want := map[string]bool{"POST /forgot": true, "PATCH /also": true}
+	if len(got) != len(want) {
+		t.Fatalf("no-request-body fired on %v, want exactly %v", got, want)
+	}
+	for w := range want {
+		if !got[w] {
+			t.Errorf("expected no-request-body on %s", w)
+		}
+	}
+}
