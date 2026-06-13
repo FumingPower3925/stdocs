@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.6.1] - 2026-06-13
+
+Pre-public polish: wider Go support, a cleaner default document, and
+honesty-claim repairs.
+
+### Changed
+
+- The minimum Go version is now **1.24** (was 1.25). The code needs
+  nothing newer than the `omitzero` json tag; the CI version matrix
+  derives from the `go.mod` floor, so it covers every stable 1.24+
+  patch automatically.
+- **Clean output is now the default.** The published document no
+  longer carries the `Generated from Go type ...` fallback
+  descriptions or the `x-stdocs-*` annotation extensions, which leak
+  Go package layout into a contract consumed by client generators
+  and portals. `WithCleanOutput(false)` keeps the annotations for
+  debugging which Go types produced which schemas.
+
+### Added
+
+- `no-request-body` Lint advisory: a POST/PUT/PATCH operation with no
+  documented request body (a forgotten `WithBody`) now gets a finding
+  instead of silently documenting the route as taking nothing.
+- `SECURITY.md` with a private vulnerability disclosure policy.
+
+### Fixed
+
+- A bad route pattern panicked with a doubled prefix
+  (`stdocs: stdocs: ...`) because `HandleFunc`/`Handle` re-wrapped an
+  already-prefixed error.
+
 ## [0.6.0] - 2026-06-13
 
 The contract reaches the frontend: TypeScript declarations generated
@@ -486,7 +517,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/FumingPower3925/stdocs/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/FumingPower3925/stdocs/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/FumingPower3925/stdocs/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/FumingPower3925/stdocs/compare/v0.4.2...v0.5.0
