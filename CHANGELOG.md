@@ -22,10 +22,12 @@ honesty-claim repairs.
   patch automatically.
 - **Clean output is now the default.** The published document no
   longer carries the `Generated from Go type ...` fallback
-  descriptions or the `x-stdocs-*` annotation extensions, which leak
-  Go package layout into a contract consumed by client generators
-  and portals. `WithCleanOutput(false)` keeps the annotations for
-  debugging which Go types produced which schemas.
+  descriptions or the `x-stdocs-type`/`x-stdocs-warning` annotation
+  extensions, which leak Go package layout into a contract consumed
+  by client generators and portals. (`x-stdocs-additionalOperations`
+  is still emitted — on 3.0/3.1 it is the only representation of
+  custom-method routes.) `WithCleanOutput(false)` keeps the
+  annotations for debugging which Go types produced which schemas.
 
 ### Added
 
