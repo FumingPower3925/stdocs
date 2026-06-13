@@ -54,6 +54,9 @@ func newDocsCore(cfg *Config, jsonFn, yamlFn func() ([]byte, error)) (*docsCore,
 }
 
 func (d *docsCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if d.cfg.DocsSecurityHeaders {
+		setDocsBaselineHeaders(w.Header())
+	}
 	rest := strings.TrimPrefix(r.URL.Path, d.cfg.DocsPrefix)
 	switch rest {
 	case "":
@@ -68,6 +71,9 @@ func (d *docsCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// behind path-rewriting proxies.
 		http.Redirect(w, r, path.Base(d.cfg.DocsPrefix)+"/", http.StatusMovedPermanently)
 	case "/":
+		if d.cfg.DocsSecurityHeaders && d.cfg.UICSP != "" {
+			w.Header().Set("Content-Security-Policy", d.cfg.UICSP)
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(d.page)
 	case "/openapi.json":

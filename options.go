@@ -46,6 +46,18 @@ type Config struct {
 	// {{.SpecURL}} placeholders; the page is rendered once, when the
 	// docs handler is constructed.
 	UIDoc string
+	// UICSP is the Content-Security-Policy served with the docs HTML
+	// page. It travels with the UI: each UI sub-package sets the policy
+	// its bundle needs from its WithUI option, and the default is the
+	// strict policy for the built-in page (see defaultDocsCSP). Emitted
+	// only when DocsSecurityHeaders is true.
+	UICSP string
+	// DocsSecurityHeaders controls whether the docs handler sends the
+	// CSP and the other hardening headers (nosniff, Referrer-Policy,
+	// X-Frame-Options, Permissions-Policy). On by default; set via
+	// WithDocsSecurityHeaders(false) for callers who set their own
+	// headers or front the mux with their own middleware.
+	DocsSecurityHeaders bool
 	// Hooks is the list of post-build callbacks registered via
 	// WithOpenAPI. Each is called once per spec build, with the
 	// emitted spec as a map[string]any, and may mutate it in place.
@@ -147,6 +159,41 @@ type Option func(*Config)
 func WithCleanOutput(enabled bool) Option {
 	return func(c *Config) {
 		c.CleanOutput = enabled
+	}
+}
+
+// WithDocsSecurityHeaders controls the hardening headers the docs
+// handler sends with the UI page and the spec endpoints: a
+// Content-Security-Policy on the HTML, plus X-Content-Type-Options,
+// Referrer-Policy, X-Frame-Options, and Permissions-Policy.
+//
+// It is ON by default. The CSP is scoped to whichever UI is active —
+// the built-in page gets a strict default-src 'none' policy with its
+// inline script and style pinned by hash; each rich UI sub-package
+// ships the policy its bundle needs. Pass WithDocsSecurityHeaders(false)
+// when the docs are served behind your own header middleware, or when
+// you embed the page cross-origin, which the frame-ancestors 'self'
+// policy blocks. There is intentionally no Strict-Transport-Security header:
+// HSTS governs the whole origin over TLS, which is the server's or the
+// edge's job, not a docs sub-handler's.
+func WithDocsSecurityHeaders(enabled bool) Option {
+	return func(c *Config) {
+		c.DocsSecurityHeaders = enabled
+	}
+}
+
+// WithCSP replaces the Content-Security-Policy served with the docs
+// HTML page. The default is the policy for the active UI; pass this to
+// tighten it, to widen it for an extra source (an analytics endpoint,
+// say), or to match a policy you enforce elsewhere. Apply it after the
+// UI option, since the UI sets its own policy:
+//
+//	mux := stdocs.New(scalar.WithUI(), stdocs.WithCSP(myPolicy))
+//
+// It has no effect when WithDocsSecurityHeaders(false) is set.
+func WithCSP(policy string) Option {
+	return func(c *Config) {
+		c.UICSP = policy
 	}
 }
 
@@ -571,11 +618,13 @@ func newConfig() *Config {
 			Title:   "API",
 			Version: "0.0.0",
 		},
-		Servers:     []Server{{URL: "/"}},
-		DocsPrefix:  "/docs",
-		Version:     OpenAPI30,
-		UIDoc:       defaultUIDoc,
-		CleanOutput: true,
+		Servers:             []Server{{URL: "/"}},
+		DocsPrefix:          "/docs",
+		Version:             OpenAPI30,
+		UIDoc:               defaultUIDoc,
+		UICSP:               defaultDocsCSP,
+		DocsSecurityHeaders: true,
+		CleanOutput:         true,
 	}
 }
 
