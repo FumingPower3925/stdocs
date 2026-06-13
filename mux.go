@@ -111,7 +111,7 @@ func New(opts ...Option) *Mux {
 func (m *Mux) HandleFunc(p string, h func(http.ResponseWriter, *http.Request), opts ...RouteOpt) {
 	parsed, err := pattern.ParsePattern(p)
 	if err != nil {
-		panic("stdocs: " + err.Error())
+		panic(err.Error())
 	}
 	// Register on the ServeMux first: it is the authoritative
 	// validator, and its panic on conflicts must fire before the
@@ -137,7 +137,7 @@ func (m *Mux) HandleFunc(p string, h func(http.ResponseWriter, *http.Request), o
 func (m *Mux) Handle(p string, h http.Handler, opts ...RouteOpt) {
 	parsed, err := pattern.ParsePattern(p)
 	if err != nil {
-		panic("stdocs: " + err.Error())
+		panic(err.Error())
 	}
 	m.ServeMux.Handle(p, h)
 	if m.underDocsPrefix(parsed.Path()) {
