@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.6.5] - 2026-06-14
+
+### Added
+
+- The built-in docs page now shows a small dismissable notice that it is
+  the minimal default UI, with a one-line pointer to the richer ones
+  (import a UI sub-package and pass its `WithUI()` option). Dismissing it
+  is remembered in `localStorage`. The notice respects the page's strict
+  CSP — it is shown and hidden through the `hidden` attribute, with no
+  inline style, and its script/style hashes are re-pinned.
+
 ## [0.6.4] - 2026-06-13
 
 Security headers on the served docs page.
@@ -587,7 +598,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/FumingPower3925/stdocs/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/FumingPower3925/stdocs/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/FumingPower3925/stdocs/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/FumingPower3925/stdocs/compare/v0.6.1...v0.6.2
