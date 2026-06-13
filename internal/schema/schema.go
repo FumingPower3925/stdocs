@@ -909,14 +909,17 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 	// A declared default is a claimed-valid value; if it violates the
 	// field's own constraints the document contradicts itself. Catch
 	// it at build time like the other constraint mistakes.
-	validateDefault(fieldSchema, fieldName)
+	ValidateDefault(fieldSchema, fieldName)
 }
 
 // validateDefault panics when a field's default value does not
 // satisfy its own enum, numeric-bound, length, or pattern
 // constraints. Default and the enum members share one parsed type
 // (parseScalar), so the comparison is exact.
-func validateDefault(s *Schema, fieldName string) {
+// ValidateDefault is exported so the functional-option params path
+// (routeopt.go) can run the same default-vs-constraints check the
+// struct-tag path gets through applyFieldTags.
+func ValidateDefault(s *Schema, fieldName string) {
 	if s.Default == nil {
 		return
 	}
