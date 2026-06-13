@@ -614,3 +614,20 @@ func TestDocsHandler_DefaultSucceeds(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
 }
+
+func TestBadPatternPanicSinglePrefix(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("bad pattern must panic")
+		}
+		msg, _ := r.(string)
+		if strings.Contains(msg, "stdocs: stdocs:") {
+			t.Errorf("doubled prefix: %q", msg)
+		}
+		if !strings.HasPrefix(msg, "stdocs: ") {
+			t.Errorf("want a single stdocs: prefix: %q", msg)
+		}
+	}()
+	New().HandleFunc("GET", func(http.ResponseWriter, *http.Request) {}) // no path -> ParsePattern error
+}
