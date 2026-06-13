@@ -135,7 +135,7 @@ jobs:
           cat > go.mod <<'EOF'
           module specgen
 
-          go 1.25.0
+          go 1.24.0
 
           require github.com/FumingPower3925/stdocs v0.0.0
 
