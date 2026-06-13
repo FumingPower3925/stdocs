@@ -87,7 +87,8 @@ type Config struct {
 	// only — routing is unaffected. Set via WithPathPrefix.
 	PathPrefix string
 	// CleanOutput strips stdocs vendor noise from the generated
-	// document. Set via WithCleanOutput.
+	// document. On by default; set via WithCleanOutput(false) to keep
+	// the annotations.
 	CleanOutput bool
 	// ExternalDocs is the document-level externalDocumentation
 	// object. Set via WithExternalDocs.
@@ -125,15 +126,20 @@ type DefaultResponse struct {
 // New and DocsHandler at construction time.
 type Option func(*Config)
 
-// WithCleanOutput strips stdocs vendor noise from the generated
-// document, for contracts consumed by client generators, linters,
-// and API portals rather than humans browsing the docs page:
+// WithCleanOutput controls whether stdocs strips its own annotation
+// noise from the generated document:
 //
 //   - the "Generated from Go type main.T." fallback schema
-//     descriptions (user-supplied doc: tags are kept), and
+//     descriptions (user-supplied doc: tags are always kept), and
 //   - the x-stdocs-type and x-stdocs-warning annotation extensions.
 //
-// The x-stdocs-additionalOperations extension is NOT stripped: on
+// It is ON by default — the published document is a contract for
+// client generators, linters, and API portals, and the annotations
+// leak package layout into it. Pass WithCleanOutput(false) to keep
+// the annotations, useful when debugging which Go types produced
+// which schemas.
+//
+// The x-stdocs-additionalOperations extension is NEVER stripped: on
 // 3.0/3.1 it is the only representation of custom-method operations,
 // and removing it would silently drop documented routes. Hooks
 // registered with WithOpenAPI run after cleaning and may add
@@ -565,10 +571,11 @@ func newConfig() *Config {
 			Title:   "API",
 			Version: "0.0.0",
 		},
-		Servers:    []Server{{URL: "/"}},
-		DocsPrefix: "/docs",
-		Version:    OpenAPI30,
-		UIDoc:      defaultUIDoc,
+		Servers:     []Server{{URL: "/"}},
+		DocsPrefix:  "/docs",
+		Version:     OpenAPI30,
+		UIDoc:       defaultUIDoc,
+		CleanOutput: true,
 	}
 }
 
