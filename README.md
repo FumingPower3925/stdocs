@@ -36,7 +36,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 
 ## Features
 
-- **Five UIs** — a tiny dependency-free default (~1.6 KB), plus Scalar, Swagger UI, Redoc, and Stoplight Elements — each CDN-pinned with SRI integrity hashes or fully embedded for air-gapped builds.
+- **Five UIs** — four rich consoles (Scalar, Swagger UI, Redoc, Stoplight Elements), each CDN-pinned with SRI integrity hashes or fully embedded for air-gapped builds, plus a tiny dependency-free default (~1.6 KB).
 - **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all externally validated.
 - **Reflection** — Go types become JSON Schemas following the `encoding/json` contract, with documentation and validation rules (`minimum`, `maxLength`, `pattern`, `enum`, `default`, …) read from struct tags.
 - **Typed parameters** — declare query/header/cookie parameters from a struct or inline with typed, validated modifiers.

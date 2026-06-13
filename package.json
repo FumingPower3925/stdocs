@@ -1,6 +1,6 @@
 {
   "name": "stdocs",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "private": true,
   "description": "Dev-only manifest. Used by Dependabot to track upstream versions of the docs UI bundles and the typescript release CI type-checks tsgen output against; the Go source in ui/*/*.go is the source of truth for the bundle versions that ship. Do not 'npm install' — the runtime does not import any npm package.",
   "devDependencies": {
