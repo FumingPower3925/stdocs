@@ -112,11 +112,12 @@ redundant and can be deleted (Mount tolerates it either way).
 
 **Upgrading to v0.6.1 — clean output is now the default.** The
 generated document no longer carries the `Generated from Go type ...`
-descriptions or the `x-stdocs-*` annotation extensions. If you commit
-the spec as a golden file, expect a one-time diff dropping those; if
-you relied on the annotations (e.g. reading `x-stdocs-type` to see
-which Go types were untypeable), add `WithCleanOutput(false)` to keep
-them.
+descriptions or the `x-stdocs-type`/`x-stdocs-warning` annotation
+extensions (`x-stdocs-additionalOperations` stays — it is how
+custom-method routes appear on 3.0/3.1). If you commit the spec as a
+golden file, expect a one-time diff dropping those; if you relied on
+the annotations (e.g. reading `x-stdocs-type` to see which Go types
+were untypeable), add `WithCleanOutput(false)` to keep them.
 
 **Upgrading DriftWarn to v0.5.0.** Drift logs get more accurate, so
 expect them to change on upgrade: body sampling now looks one level
