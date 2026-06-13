@@ -16,7 +16,7 @@ log.Fatal(http.ListenAndServe(":8080", mux))
 
 That's it. `stdocs` walks your registered routes, generates an OpenAPI spec from your Go types, and serves a docs UI at `/docs/`. Coming from swaggo/swag, FastAPI, or a typed-handler framework? [MIGRATING.md](MIGRATING.md) maps your habits onto stdocs.
 
-> **Scope:** stdocs documents the standard library `net/http.ServeMux` — not chi, gin, echo, or fiber. If your router isn't the stdlib mux, this isn't the tool for you. It's also young and pre-1.0: the API may still change before v1.
+> **Scope:** stdocs documents the standard library `net/http.ServeMux` — not chi, gin, echo, or fiber. If your router isn't the stdlib mux, this isn't the tool for you. It *documents* your handlers; it does not validate requests or enforce the contract at runtime — if you want typed binding and runtime validation, reach for a framework like [huma](https://github.com/danielgtaylor/huma). It's also young and pre-1.0: the API may still change before v1.
 
 ![The four rich UIs — Scalar, Swagger UI, Redoc, and Stoplight Elements — rendering the same generated spec](.github/uis.png)
 
