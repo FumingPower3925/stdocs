@@ -253,3 +253,45 @@ func TestUISmoke(t *testing.T) {
 		})
 	}
 }
+
+// TestDefaultUINoticeDismiss drives the built-in page's dismissable
+// notice in a real browser, under its enforced CSP: a same-origin
+// driver frames /docs/, clicks the dismiss button, and reports whether
+// the notice hid and the preference landed in localStorage.
+func TestDefaultUINoticeDismiss(t *testing.T) {
+	bin := chromeBin(t)
+	const driver = `<!doctype html><html><body><div id="out">PENDING</div>
+<iframe id="f" src="/docs/" style="width:900px;height:500px"></iframe>
+<script>
+var f=document.getElementById('f'),n=0;
+var timer=setInterval(function(){
+  n++;
+  try{
+    var doc=f.contentDocument, win=f.contentWindow;
+    var note=doc.getElementById('stdocs-note');
+    if(note && note.hidden===false){
+      doc.getElementById('stdocs-note-x').click();
+      var hiddenAfter=doc.getElementById('stdocs-note').hidden;
+      var ls=win.localStorage.getItem('stdocs-docs-notice-dismissed');
+      document.getElementById('out').textContent='RESULT hiddenAfterClick='+hiddenAfter+' localStorage='+ls;
+      clearInterval(timer);
+    }
+  }catch(e){}
+  if(n>60){document.getElementById('out').textContent='TIMEOUT';clearInterval(timer);}
+},250);
+</script></body></html>`
+	mux := stdocs.New(stdocs.WithTitle("Notice"))
+	mux.HandleFunc("GET /x", func(w http.ResponseWriter, r *http.Request) {}, stdocs.Summary("x"))
+	mux.HandleFunc("GET /driver", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(driver))
+	}, stdocs.Hidden())
+	mux.Mount()
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	dom := renderDOM(t, bin, srv.URL+"/driver")
+	if !strings.Contains(dom, "RESULT hiddenAfterClick=true localStorage=1") {
+		t.Fatalf("notice dismiss flow failed; DOM %d bytes: %.400s", len(dom), dom)
+	}
+}

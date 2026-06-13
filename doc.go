@@ -243,7 +243,9 @@
 //
 // # Docs UIs
 //
-// The default docs page is a dependency-free ~1.6 KB route list.
+// The default docs page is a dependency-free route list. It shows a
+// dismissable notice that it is the minimal built-in UI and points at
+// the richer ones; the dismissal is remembered in localStorage.
 // Four rich UIs ship as sub-packages, each in two flavors: a CDN
 // variant pinning exact versions with sha384 subresource-integrity
 // hashes, and an embedded variant vendoring the npm bundle bytes for
