@@ -2325,3 +2325,36 @@ func TestLintNoRequestBody(t *testing.T) {
 		}
 	}
 }
+
+// v0.6.2 verification follow-up: the functional-option params path
+// validates a declared default against its own constraints too, not
+// just the struct-tag path.
+func TestParamDefaultMustSatisfyConstraints(t *testing.T) {
+	// The functional-option params build (and validate) at the
+	// QueryParam call site, so exercise that inside the recover scope.
+	panics := func(name string, build func()) {
+		t.Helper()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("%s: expected a panic, got none", name)
+			} else if !strings.Contains(r.(string), "default") {
+				t.Errorf("%s: panic %q does not mention the default", name, r)
+			}
+		}()
+		build()
+	}
+	ok := func(name string, build func()) {
+		t.Helper()
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("%s: unexpected panic %q on a valid default", name, r)
+			}
+		}()
+		build()
+	}
+	panics("default outside ParamEnum", func() { QueryParam("sort", "string", "d", ParamEnum("asc", "desc"), ParamDefault("sideways")) })
+	panics("default below ParamMinimum", func() { QueryParam("limit", "integer", "d", ParamMinimum(1), ParamDefault(0)) })
+	panics("default longer than ParamMaxLength", func() { QueryParam("code", "string", "d", ParamMaxLength(2), ParamDefault("long")) })
+	ok("default in ParamEnum", func() { QueryParam("sort", "string", "d", ParamEnum("asc", "desc"), ParamDefault("asc")) })
+	ok("default within ParamMinimum", func() { QueryParam("limit", "integer", "d", ParamMinimum(1), ParamMaximum(100), ParamDefault(20)) })
+}
