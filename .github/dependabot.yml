@@ -31,8 +31,8 @@
 # releases directly. The OpenAPI Initiative publishes new
 # versions on https://spec.openapis.org/oas/. Watch the releases
 # page or subscribe to https://github.com/OAI/OpenAPI-Specification
-# for new versions; bump stdocs/internal/version/version.go
-# manually when a release lands.
+# for new versions; bump internal/version/version.go manually
+# when a release lands.
 
 version: 2
 

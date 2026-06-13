@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.6.3] - 2026-06-13
+
+A consistency pass before going public: stale references and comments
+cleaned up, and the linter now covers both modules.
+
+### Fixed
+
+- Removed a stale `CONTRIBUTING.md` cross-reference from the README
+  that pointed at a section which is not there.
+- `golangci-lint` now also runs against the nested YAML round-trip
+  module in CI; the root invocation never reached it, so a regression
+  in that module could have slipped through.
+
+### Changed
+
+- The `swagger-ui` and `redoc` package docs described the
+  hash-recompute step as living in `CONTRIBUTING.md`; they now point at
+  the inline recipe and the `*emb` air-gapped option, matching the
+  `scalar` and `stoplight` packages.
+- The CI version-matrix comment no longer claims a "two most recent
+  releases" policy the 1.24 floor outgrew; it describes the
+  `go.mod`-floor behavior the job actually implements.
+- Corrected an internal file path in the Dependabot maintainer notes.
+
 ## [0.6.2] - 2026-06-13
 
 ### Fixed
@@ -105,7 +129,7 @@ natively, from the same model as the document.
   other side of that line. The previous wording read as a promise to
   never emit generated artifacts; this release would have quietly
   contradicted it, so the sentence changed in the open instead — in
-  the reference and in all three READMEs.
+  the reference and in the README.
 
 ### Fixed
 
@@ -421,9 +445,9 @@ study, fixed and pinned.
   run through openapi-spec-validator and 3.2.0 validates against the
   official OpenAPI 3.2 JSON Schema on every push.
 - The package documentation on pkg.go.dev is now the canonical
-  reference, organized by topic with runnable examples; the READMEs
-  (en/es/ca) are slimmed to hero, features, one worked example, the
-  UI table, and per-topic links into the reference.
+  reference, organized by topic with runnable examples; the README
+  is slimmed to hero, features, one worked example, the UI table, and
+  per-topic links into the reference.
 
 ## [0.2.0] - 2026-06-11
 
@@ -542,7 +566,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/FumingPower3925/stdocs/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/FumingPower3925/stdocs/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/FumingPower3925/stdocs/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/FumingPower3925/stdocs/compare/v0.5.1...v0.6.0

@@ -20,8 +20,10 @@
 // The CDN URLs are pinned to a specific version (5.32.6, the
 // current latest 5.x). Integrity hashes are pre-computed
 // (sha384) and pinned in the <link>/<script> tags. Bumping the
-// pinned version requires re-computing the hashes; see
-// CONTRIBUTING.md for the procedure.
+// pinned version requires re-computing the hashes (the recipe is
+// inlined above the hash constants below). For an air-gapped
+// build, use the ui/swaggeruiemb sub-package instead — it vendors
+// the bundle in-repo.
 package swaggerui
 
 import (

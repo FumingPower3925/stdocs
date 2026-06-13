@@ -19,8 +19,10 @@
 //
 // The CDN URL is pinned to a specific version (2.5.3, the current
 // latest 2.x). Integrity hashes (sha384) are pre-computed and pinned.
-// Bumping the pinned version requires re-computing the hashes; see
-// CONTRIBUTING.md for the procedure.
+// Bumping the pinned version requires re-computing the hash (the
+// recipe is inlined above the hash constant below). For an air-gapped
+// build, use the ui/redocemb sub-package instead — it vendors the
+// bundle in-repo.
 package redoc
 
 import (
