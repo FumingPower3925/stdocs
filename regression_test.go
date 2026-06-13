@@ -1089,7 +1089,8 @@ func schemaTagPanic(literal string) {
 	}
 }
 
-// WithCleanOutput strips vendor noise; default output is unchanged.
+// Clean output is the default; WithCleanOutput(false) keeps the
+// vendor annotations.
 func TestCleanOutput(t *testing.T) {
 	type Holder struct {
 		Value any `json:"value"` // produces x-stdocs-type
@@ -1107,7 +1108,7 @@ func TestCleanOutput(t *testing.T) {
 	dirty := build(false)
 	for _, marker := range []string{"x-stdocs-type", "x-stdocs-warning", "Generated from Go type"} {
 		if !strings.Contains(dirty, marker) {
-			t.Errorf("default output should contain %s", marker)
+			t.Errorf("WithCleanOutput(false) output should contain %s", marker)
 		}
 	}
 	clean := build(true)

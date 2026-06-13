@@ -50,6 +50,7 @@ func (w Warning) String() string { return w.Where + ": " + w.Message + " [" + w.
 //   - operations documenting no error response (no 4xx/5xx and no
 //     "default" entry),
 //   - operations without a summary,
+//   - POST/PUT/PATCH operations with no documented request body,
 //   - schema fields with no type (interfaces, json.RawMessage,
 //     custom marshalers), which consumers see as unconstrained,
 //   - component names that needed a collision suffix (User_2) —
@@ -181,7 +182,7 @@ func (m *Mux) lintRoutes() []Warning {
 			// so it counts as documented.
 			if rt.op.RequestBody == nil || (rt.op.RequestBody.BodyValue == nil && rt.op.RequestBody.Schema == nil) {
 				out = append(out, Warning{Code: "no-request-body", Where: where,
-					Message: "is a " + rt.op.Method + " with no documented request body; add WithBody (or WithMultipartBody) — a forgotten body documents the route as taking nothing"})
+					Message: "is a " + rt.op.Method + " with no documented request body; if it accepts one, declare it with WithBody or WithMultipartBody — otherwise it reads as taking nothing"})
 			}
 		}
 		if msg, ok := rt.op.Extensions["x-stdocs-warning"].(string); ok {
