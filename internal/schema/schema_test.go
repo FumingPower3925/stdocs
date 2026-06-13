@@ -1780,3 +1780,66 @@ func TestInvalidJSONTagNames(t *testing.T) {
 		}
 	}
 }
+
+// v0.6.2 (#83): a declared default must satisfy its own constraints —
+// a default that is not a valid value is a self-contradictory spec.
+func TestDefaultMustSatisfyConstraints(t *testing.T) {
+	panics := func(name string, v any) {
+		t.Helper()
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("%s: expected a panic, got none", name)
+			} else if !strings.Contains(r.(string), "default") {
+				t.Errorf("%s: panic %q does not mention the default", name, r)
+			}
+		}()
+		ReflectSchema(v)
+	}
+	ok := func(name string, v any) {
+		t.Helper()
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("%s: unexpected panic %q on a valid default", name, r)
+			}
+		}()
+		ReflectSchema(v)
+	}
+
+	panics("default outside enum", struct {
+		S string `json:"s" enum:"a,b,c" default:"z"`
+	}{})
+	panics("int default outside enum", struct {
+		N int `json:"n" enum:"1,2,3" default:"9"`
+	}{})
+	panics("default below minimum", struct {
+		N int `json:"n" minimum:"1" maximum:"5" default:"0"`
+	}{})
+	panics("default above maximum", struct {
+		N int `json:"n" minimum:"1" maximum:"5" default:"9"`
+	}{})
+	panics("default violates exclusiveMinimum", struct {
+		R float64 `json:"r" exclusiveMinimum:"0" default:"0"`
+	}{})
+	panics("default shorter than minLength", struct {
+		S string `json:"s" minLength:"3" default:"hi"`
+	}{})
+	panics("default longer than maxLength", struct {
+		S string `json:"s" maxLength:"2" default:"long"`
+	}{})
+	panics("default fails pattern", struct {
+		S string `json:"s" pattern:"^[a-z]+$" default:"ABC"`
+	}{})
+
+	ok("default in enum", struct {
+		S string `json:"s" enum:"a,b,c" default:"b"`
+	}{})
+	ok("default within bounds", struct {
+		N int `json:"n" minimum:"1" maximum:"5" default:"3"`
+	}{})
+	ok("default within length and pattern", struct {
+		S string `json:"s" minLength:"1" maxLength:"5" pattern:"^[a-z]+$" default:"ok"`
+	}{})
+	ok("no default", struct {
+		N int `json:"n" minimum:"1"`
+	}{})
+}

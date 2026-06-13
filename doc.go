@@ -102,9 +102,11 @@
 // enum, default, example, format (any scalar field). Values are
 // parsed according to the field's type — enum:"1,2,3" on an int
 // emits numbers — and validated against it; a misapplied or
-// unparseable constraint panics at registration ([WithParams]
-// structs) or document-build time (bodies, responses, webhooks).
-// Exclusive
+// unparseable constraint, or a default that violates its own
+// constraints (outside its enum, past a bound, failing a pattern),
+// panics at registration ([WithParams] structs) or document-build
+// time (bodies, responses, webhooks) rather than emitting a
+// self-contradictory document. Exclusive
 // bounds render per version: the boolean draft-4 form on 3.0,
 // numeric 2020-12 keywords on 3.1/3.2.
 //
