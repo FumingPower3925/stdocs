@@ -14,9 +14,8 @@ golangci-lint run ./...
 
 Requirements:
 
-- Go 1.25 or later. stdocs supports the two most recent Go releases
-  (the Go project's own support policy); CI runs the suite on every
-  supported patch release, and the lint/format jobs use the latest
+- Go 1.24 or later; CI runs the suite on every stable patch release
+  at or above that floor, and the lint/format jobs use the latest
   stable.
 - `golangci-lint` v2.12.2 (matches CI; `brew install golangci-lint` on macOS).
 
