@@ -266,6 +266,22 @@
 //	mux.ServeMux.Handle("GET /docs/_assets/",
 //	    http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
 //
+// # Security headers
+//
+// The docs responses carry hardening headers by default: a
+// Content-Security-Policy on the HTML page, plus X-Content-Type-Options,
+// Referrer-Policy, X-Frame-Options, and Permissions-Policy. The CSP is
+// scoped to the active UI — the built-in page gets a strict
+// default-src 'none' policy with its inline script and style pinned by
+// hash, and each rich UI ships the policy its bundle needs. The
+// policies pin scripts by source and hash with no 'unsafe-inline', allow
+// only same-origin framing, and do not permit any third-party
+// connection, so the page never phones home (the embedded UIs are fully
+// self-contained). Turn the set off with [WithDocsSecurityHeaders](false)
+// when you set your own headers, or replace just the policy with
+// [WithCSP]. There is no Strict-Transport-Security header: HSTS applies
+// to the whole origin over TLS, which is the server's or the edge's job.
+//
 // # Try-it requests and drift
 //
 // The rich UIs' try-it consoles send real requests. [FromDocs]
