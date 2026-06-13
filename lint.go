@@ -1,6 +1,7 @@
 package stdocs
 
 import (
+	"net/http"
 	"sort"
 	"strings"
 )
@@ -27,7 +28,7 @@ type Warning struct {
 	//	required-with-default field both required and defaulted
 	//	auto-descriptions     "Generated from Go type" text present
 	//	dangling-id-suffix    suffixed operationId without a base
-	//	vendor-extensions     x-stdocs-* present without CleanOutput
+	//	vendor-extensions     x-stdocs-* present (clean output off)
 	//
 	// Runtime drift findings follow the same discipline in
 	// [DriftFinding].Code.
@@ -122,11 +123,11 @@ func (m *Mux) Lint() []Warning {
 	}
 
 	if !m.cfg.CleanOutput && autoDescribed {
-		out = append(out, Warning{Code: "auto-descriptions", Where: "document", Message: `carries "Generated from Go type ..." fallback descriptions, which leak package layout into published docs; doc: tags or WithCleanOutput(true) replace them`})
+		out = append(out, Warning{Code: "auto-descriptions", Where: "document", Message: `carries "Generated from Go type ..." fallback descriptions (clean output is disabled), which leak package layout into published docs; add doc: tags or drop WithCleanOutput(false)`})
 	}
 	if !m.cfg.CleanOutput &&
 		(strings.Contains(string(raw), `"x-stdocs-type"`) || strings.Contains(string(raw), `"x-stdocs-warning"`)) {
-		out = append(out, Warning{Code: "vendor-extensions", Where: "document", Message: "carries x-stdocs-* annotation extensions; WithCleanOutput(true) strips them from published contracts"})
+		out = append(out, Warning{Code: "vendor-extensions", Where: "document", Message: "carries x-stdocs-* annotation extensions (clean output is disabled); the default clean output strips them from published contracts"})
 	}
 	return out
 }
@@ -175,7 +176,7 @@ func (m *Mux) lintRoutes() []Warning {
 		// forgotten WithBody — the operation reads as taking nothing,
 		// which no other check catches.
 		switch rt.op.Method {
-		case "POST", "PUT", "PATCH":
+		case http.MethodPost, http.MethodPut, http.MethodPatch:
 			// A multipart body sets a Schema rather than a BodyValue,
 			// so it counts as documented.
 			if rt.op.RequestBody == nil || (rt.op.RequestBody.BodyValue == nil && rt.op.RequestBody.Schema == nil) {
