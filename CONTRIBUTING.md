@@ -1,7 +1,7 @@
 # Contributing to stdocs
 
 Thanks for your interest in `stdocs`. This document covers the day-to-day
-mechanics of contributing: how to run the tests, how to file issues.
+mechanics of contributing: how to run the tests and how to file issues.
 
 ## Development setup
 
