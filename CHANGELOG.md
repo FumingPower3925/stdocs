@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.6.4] - 2026-06-13
+
+Security headers on the served docs page.
+
+### Added
+
+- The docs handler now sends hardening headers by default: a
+  Content-Security-Policy on the HTML page, and `X-Content-Type-Options`,
+  `Referrer-Policy`, `X-Frame-Options`, and `Permissions-Policy` on every
+  docs response. The CSP is scoped to the active UI — the built-in page
+  gets a strict `default-src 'none'` with its inline script and style
+  pinned by hash, and each rich UI ships the policy its bundle needs.
+  Scripts are pinned by source and hash with no `unsafe-inline`, only
+  same-origin framing is allowed, and no third-party connection is
+  permitted, so the page makes no off-origin calls (the embedded UIs are
+  fully self-contained, fonts and logos included). `WithDocsSecurityHeaders(false)`
+  turns the set off; `WithCSP` replaces just the policy. Every UI is
+  rendered under its enforced policy in the ui-smoke browser test. There
+  is no Strict-Transport-Security header: HSTS governs the whole origin
+  over TLS, which is the server's or the edge's job.
+
 ## [0.6.3] - 2026-06-13
 
 A consistency pass before going public: stale references and comments
@@ -566,7 +587,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/FumingPower3925/stdocs/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/FumingPower3925/stdocs/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/FumingPower3925/stdocs/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/FumingPower3925/stdocs/compare/v0.6.0...v0.6.1
