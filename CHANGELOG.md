@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.6.7] - 2026-06-14
+
+### Added
+
+- Operations on the built-in docs page are now expandable: clicking one
+  drops down its description, parameters, and a generated JSON example of
+  the request body and each response (schemas resolved through their
+  `$ref`s, recursion-capped). It stays dependency-free and under the same
+  strict CSP — the chevron is a cloned inline `<svg>`, examples render via
+  `textContent`, and the inline script/style hashes are re-pinned. The
+  page still opens collapsed and remains a flat, skim-first list.
+
 ## [0.6.6] - 2026-06-14
 
 ### Changed
@@ -611,7 +623,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.6...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.7...HEAD
+[0.6.7]: https://github.com/FumingPower3925/stdocs/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/FumingPower3925/stdocs/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/FumingPower3925/stdocs/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/FumingPower3925/stdocs/compare/v0.6.3...v0.6.4
