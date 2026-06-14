@@ -130,6 +130,9 @@ func TestDefaultUINotice(t *testing.T) {
 		`href="https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Docs_UIs"`,
 		`id="lock-tmpl"`,    // the auth padlock template (no emoji)
 		`<svg class="lock"`, // a real inline SVG, cloned per secured op
+		`id="chev-tmpl"`,    // the accordion chevron template
+		"op clickable",      // operations are expandable
+		"buildDetail",       // the expand panel builder
 		`href="openapi.json"`,
 		`href="openapi.yaml"`,
 	} {

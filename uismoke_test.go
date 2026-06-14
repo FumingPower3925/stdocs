@@ -295,3 +295,51 @@ var timer=setInterval(function(){
 		t.Fatalf("notice dismiss flow failed; DOM %d bytes: %.400s", len(dom), dom)
 	}
 }
+
+// TestDefaultUIExpand drives the built-in page's accordion in a real
+// browser, under its enforced CSP: a same-origin driver frames /docs/,
+// clicks the "Create widget" operation, and checks a detail panel with a
+// JSON example appears.
+func TestDefaultUIExpand(t *testing.T) {
+	bin := chromeBin(t)
+	const driver = `<!doctype html><html><body><div id="out">PENDING</div>
+<iframe id="f" src="/docs/" style="width:1000px;height:700px"></iframe>
+<script>
+var f=document.getElementById('f'),n=0;
+var timer=setInterval(function(){
+  n++;
+  try{
+    var doc=f.contentDocument;
+    var rows=doc.querySelectorAll('.op.clickable');
+    if(rows.length){
+      var target=null;
+      rows.forEach(function(r){if(r.textContent.indexOf('Create widget')>=0)target=r;});
+      (target||rows[0]).click();
+      var detail=doc.querySelector('.detail');
+      var pre=doc.querySelector('.detail pre');
+      var hasJSON=!!(pre&&pre.textContent.indexOf('{')>=0);
+      document.getElementById('out').textContent='RESULT detail='+!!detail+' pre='+!!pre+' json='+hasJSON;
+      clearInterval(timer);
+    }
+  }catch(e){}
+  if(n>60){document.getElementById('out').textContent='TIMEOUT';clearInterval(timer);}
+},250);
+</script></body></html>`
+	mux := stdocs.New(stdocs.WithTitle("Expand"))
+	mux.HandleFunc("POST /widgets", func(w http.ResponseWriter, r *http.Request) {},
+		stdocs.Summary("Create widget"), stdocs.WithBody(Widget{}), stdocs.WithResponse(201, Widget{}))
+	mux.HandleFunc("GET /widgets/{id}", func(w http.ResponseWriter, r *http.Request) {},
+		stdocs.Summary("Get widget by id"), stdocs.WithResponse(200, Widget{}))
+	mux.HandleFunc("GET /expanddriver", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(driver))
+	}, stdocs.Hidden())
+	mux.Mount()
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	dom := renderDOM(t, bin, srv.URL+"/expanddriver")
+	if !strings.Contains(dom, "RESULT detail=true pre=true json=true") {
+		t.Fatalf("accordion expand failed; DOM %d bytes: %.400s", len(dom), dom)
+	}
+}
