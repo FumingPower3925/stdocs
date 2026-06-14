@@ -128,6 +128,10 @@ func TestDefaultUINotice(t *testing.T) {
 		"WithUI()",
 		"Scalar",
 		`href="https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Docs_UIs"`,
+		`id="lock-tmpl"`,    // the auth padlock template (no emoji)
+		`<svg class="lock"`, // a real inline SVG, cloned per secured op
+		`href="openapi.json"`,
+		`href="openapi.yaml"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("default docs page missing %q", want)
