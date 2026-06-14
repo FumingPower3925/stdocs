@@ -11,8 +11,8 @@ import "net/http"
 // drift from the HTML without the test failing.
 const defaultDocsCSP = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
 	"frame-ancestors 'self'; connect-src 'self'; " +
-	"script-src 'sha256-hutH2bs5tHNPsMgpvbDEs4Hb49FijGJIzX4Cvuv0vxs='; " +
-	"style-src 'sha256-6TwjPVSd/wwIKoYJ4X2RZ+wzoi4gQUC80z79Tc52u/o='"
+	"script-src 'sha256-xEqNIg+VaDOhbJhVXRy3/0N4r7HncaW8QRmjmJXbUjo='; " +
+	"style-src 'sha256-xv3fOYGM+zpvtRpVkr1LCW8Zhk6AZpVZ5NfVev/Sv+I='"
 
 // docsPermissionsPolicy denies every powerful browser feature on the
 // docs page; an API reference needs none of them. Unrecognised feature
