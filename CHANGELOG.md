@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.6.6] - 2026-06-14
+
+### Changed
+
+- The built-in docs page got a light polish while staying tiny and
+  dependency-free. Operations now have coloured method badges (custom
+  methods included), a padlock marks the ones that require auth,
+  deprecated operations are dimmed and flagged, and the header carries
+  the API version, description, and links to `openapi.json` /
+  `openapi.yaml`. It is still a flat, no-build, no-CDN route list under
+  the same strict CSP — the padlock is an inline `<svg>`, not an emoji,
+  and the inline script/style hashes are re-pinned.
+
 ## [0.6.5] - 2026-06-14
 
 ### Added
@@ -598,7 +611,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.5...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.6...HEAD
+[0.6.6]: https://github.com/FumingPower3925/stdocs/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/FumingPower3925/stdocs/compare/v0.6.4...v0.6.5
 [0.6.4]: https://github.com/FumingPower3925/stdocs/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/FumingPower3925/stdocs/compare/v0.6.2...v0.6.3
