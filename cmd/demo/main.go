@@ -1,7 +1,8 @@
 // Package main is a demo of stdocs using a fictional Task Tracker API.
 //
-// Everything here uses the *stdocs.Mux path (what doc.go calls
-// Tier 2). It shows both levels of route documentation:
+// Everything here uses the *stdocs.Mux path — the one that builds the
+// document from your live routes (see "Two ways to use it" in the
+// package docs). It shows both levels of route documentation:
 //
 //   - zero-config: a route registered with no documentation opts gets
 //     a summary inferred from the function name and a tag from the
@@ -207,7 +208,7 @@ func main() {
 		scalar.WithUI(),
 	)
 
-	// Tier 2 examples: rich metadata. Each call uses per-route opts
+	// Documented examples: rich metadata. Each call uses per-route opts
 	// to document the response body and request body types.
 	mux.HandleFunc("GET /tasks", listTasks,
 		stdocs.Summary("List all tasks"),

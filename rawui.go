@@ -1,7 +1,7 @@
 package stdocs
 
 // defaultUIDoc is the default docs page HTML, served at the docs prefix
-// when no UI sub-package is imported. It is a small (~6 KB)
+// when no UI sub-package is imported. It is a small (~10 KB)
 // dependency-free page — no CDN, no external assets — whose inline
 // script fetches the JSON spec and renders the operations grouped by
 // path, with method badges, an auth padlock on secured operations, and

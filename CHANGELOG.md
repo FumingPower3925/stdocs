@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The README described the built-in docs page as ~1.6 KB — accurate at
+  v0.1.0, but it has grown to ~10 KB across the v0.6.x additions (the
+  security headers, the dismissable notice, method badges, and the
+  expandable operations). Corrected the figure and aligned it with the
+  source. Also tidied a couple of stale doc comments left over from
+  older "Tier" terminology.
 
 ## [0.6.7] - 2026-06-14
 
