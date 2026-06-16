@@ -36,7 +36,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 
 ## Features
 
-- **Five UIs** — four rich consoles (Scalar, Swagger UI, Redoc, Stoplight Elements), each CDN-pinned with SRI integrity hashes or fully embedded for air-gapped builds, plus a tiny dependency-free default (~1.6 KB).
+- **Five UIs** — four rich consoles (Scalar, Swagger UI, Redoc, Stoplight Elements), each CDN-pinned with SRI integrity hashes or fully embedded for air-gapped builds, plus a tiny dependency-free default (~10 KB).
 - **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all externally validated.
 - **Reflection** — Go types become JSON Schemas following the `encoding/json` contract, with documentation and validation rules (`minimum`, `maxLength`, `pattern`, `enum`, `default`, …) read from struct tags.
 - **Typed parameters** — declare query/header/cookie parameters from a struct or inline with typed, validated modifiers.
@@ -108,7 +108,7 @@ mux := stdocs.New(stdocs.WithTitle("My API"), scalar.WithUI())
 
 | UI                              | CDN sub-package                       | Embedded sub-package                       |
 | ------------------------------- | ------------------------------------- | ------------------------------------------ |
-| _(default)_ (built-in, ~1.6 KB) | —                                     | —                                          |
+| _(default)_ (built-in, ~10 KB)  | —                                     | —                                          |
 | Scalar                          | `ui/scalar` (~3.6 MB from the CDN)    | `ui/scalaremb` (~3.6 MB in your binary)    |
 | Swagger UI                      | `ui/swaggerui` (~1.7 MB from the CDN) | `ui/swaggeruiemb` (~1.7 MB in your binary) |
 | Redoc                           | `ui/redoc` (~1.1 MB from the CDN)     | `ui/redocemb` (~1.1 MB in your binary)     |
