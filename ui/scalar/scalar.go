@@ -17,7 +17,7 @@
 // Scalar JavaScript and CSS are loaded from cdn.jsdelivr.net at page
 // load time, so an internet connection is required.
 //
-// The CDN URL is pinned to a specific version (1.59.3) and points at
+// The CDN URL is pinned to a specific version (1.60.0) and points at
 // the verbatim dist/browser/standalone.js file from the npm package,
 // so its bytes are deterministic and the sha384 SRI hash below is
 // pinned in the <script> tag. Bumping the pinned version requires
@@ -34,14 +34,14 @@ import (
 // scalarVersion is the version of @scalar/api-reference this
 // package is pinned to. Bumping this requires updating the SRI
 // hash below and re-vendoring the bundle in ui/scalaremb.
-const scalarVersion = "1.59.3"
+const scalarVersion = "1.60.0"
 
 // scalarSRIHash is the sha384 SRI hash of dist/browser/standalone.js
 // at the pinned version. Re-compute with:
 //
 //	curl -fsSL "https://cdn.jsdelivr.net/npm/@scalar/api-reference@<ver>/dist/browser/standalone.js" \
 //	    | openssl dgst -sha384 -binary | openssl base64 -A
-const scalarSRIHash = "sha384-cIupCoQjF73k8Pd8cAp5J3dicczn0FqXBbC8Iyjd8UTSj8vqW+NUcD7jJWed81ko"
+const scalarSRIHash = "sha384-3sxnxyp7pbU2/o4+gs4EbvQ4YKyF60pWDL2LW8SoFZNQBTSiPah2xcHpxsndZEgF"
 
 // WithUI returns a stdocs.Option that replaces the default docs
 // page with the Scalar UI.
