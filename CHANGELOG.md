@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.8] - 2026-06-17
+
+### Changed
+
+- Updated the bundled Scalar UI (`ui/scalar` and `ui/scalaremb`) to
+  `@scalar/api-reference` 1.60.0 — an additive minor (a `content.start`
+  plugin slot and an opt-in sidebar for plugin views) plus a handful of
+  rendering fixes. The standalone build and the `data-url` bootstrap the
+  UIs rely on are unchanged, so the docs page and its CSP are untouched;
+  the CDN sha384 SRI and the vendored air-gapped bundle are re-pinned to
+  the new bytes, verified byte-identical between the npm tarball and the
+  pinned jsDelivr URL.
+
 ### Fixed
 
 - The README described the built-in docs page as ~1.6 KB — accurate at
@@ -630,7 +645,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.7...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.8...HEAD
+[0.6.8]: https://github.com/FumingPower3925/stdocs/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/FumingPower3925/stdocs/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/FumingPower3925/stdocs/compare/v0.6.5...v0.6.6
 [0.6.5]: https://github.com/FumingPower3925/stdocs/compare/v0.6.4...v0.6.5
