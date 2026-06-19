@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Nothing yet.
 
+## [0.7.0] - 2026-06-19
+
+### Added
+
+- Each bundled UI sub-package's `WithUI` now accepts options, with a
+  `WithConfiguration(map[string]any)` that forwards UI-native
+  configuration to the docs page without forking the template or its
+  CSP — Scalar's `configuration` (via `data-configuration`), Swagger UI's
+  `SwaggerUIBundle` options and Redoc's `Redoc.init` options (via a
+  non-executable JSON block read by a hash-pinned initializer), and
+  Stoplight's `<elements-api>` attributes. It is carried by a new
+  exported `Config.UIConfig` field.
+- The OpenAPI spec endpoint sends `Content-Disposition: inline` with a
+  filename (`openapi.json` / `openapi.yaml`), so a direct download gets a
+  sensible name while the document still opens in the browser.
+
+### Changed
+
+- The bundled Scalar and Swagger UI pages now disable, by default, the
+  features that cannot work under the strict docs CSP, so the page has no
+  dead chrome: Scalar's "Ask AI" and "Generate MCP" (they call
+  scalar.com) and its external web fonts, and Swagger UI's spec-validator
+  badge (it loads from validator.swagger.io). Their no-config output
+  therefore differs from v0.6.x. Re-enable any of them with
+  `WithConfiguration`, and relax the policy with
+  `WithDocsSecurityHeaders(false)` or `WithCSP` so the feature can reach
+  its service. Redoc now boots through an inline `Redoc.init` initializer
+  instead of the `<redoc>` web component.
+
+### Security
+
+- The Swagger UI inline initializer is re-pinned and Redoc's new inline
+  initializer is pinned by sha256 in its Content-Security-Policy; UI
+  configuration travels in a non-executable data block, so it never
+  affects those hashes or relaxes `script-src`.
+
 ## [0.6.8] - 2026-06-17
 
 ### Changed
@@ -645,7 +681,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.6.8...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/FumingPower3925/stdocs/compare/v0.6.8...v0.7.0
 [0.6.8]: https://github.com/FumingPower3925/stdocs/compare/v0.6.7...v0.6.8
 [0.6.7]: https://github.com/FumingPower3925/stdocs/compare/v0.6.6...v0.6.7
 [0.6.6]: https://github.com/FumingPower3925/stdocs/compare/v0.6.5...v0.6.6
