@@ -32,6 +32,7 @@ import (
 	"fmt"
 
 	"github.com/FumingPower3925/stdocs"
+	"github.com/FumingPower3925/stdocs/internal/uiopt"
 )
 
 // stoplightVersion is the version of @stoplight/elements this
@@ -51,12 +52,31 @@ const (
 	stoplightCSSHash = "sha384-iVQBHadsD+eV0M5+ubRCEVXrXEBj+BqcuwjUwPoVJc0Pb1fmrhYSAhL+BFProHdV"
 )
 
+// UIOption configures the Stoplight Elements UI installed by WithUI.
+type UIOption = uiopt.Option
+
+// WithConfiguration passes Stoplight Elements configuration to the docs
+// page. Stoplight Elements has no JSON configuration object — it is
+// configured through attributes on its <elements-api> element — so the
+// map's keys are rendered as element attributes and its values must be
+// strings, booleans, or numbers. Keys are Stoplight attribute names, for
+// example "hideTryItPanel", "hideSchemas", "tryItCredentialsPolicy", or
+// "logo". apiDescriptionUrl, router, and layout are set by stdocs and
+// cannot be overridden. See the Stoplight Elements configuration
+// reference: https://github.com/stoplightio/elements/blob/main/docs/getting-started/elements/elements-options.md
+func WithConfiguration(cfg map[string]any) UIOption {
+	return uiopt.Configuration(cfg)
+}
+
 // WithUI returns a stdocs.Option that replaces the default docs
-// page with Stoplight Elements.
-func WithUI() stdocs.Option {
+// page with Stoplight Elements. Pass WithConfiguration to forward
+// Stoplight-native options as element attributes.
+func WithUI(opts ...UIOption) stdocs.Option {
+	s := uiopt.Apply(opts)
 	return func(c *stdocs.Config) {
 		c.UIDoc = stoplightHTML
 		c.UICSP = cspPolicy
+		c.UIConfig = s.Config
 	}
 }
 
@@ -86,6 +106,6 @@ var stoplightHTML = fmt.Sprintf(`<!doctype html>
         crossorigin="anonymous"></script>
 </head>
 <body>
-<elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash" layout="sidebar"></elements-api>
+<elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash" layout="sidebar"{{if .ConfigAttrs}} {{.ConfigAttrs}}{{end}}></elements-api>
 </body>
 </html>`, stoplightVersion, stoplightJSHash, stoplightCSSHash)

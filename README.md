@@ -116,6 +116,18 @@ mux := stdocs.New(stdocs.WithTitle("My API"), scalar.WithUI())
 
 CDN URLs are pinned to exact versions with sha384 SRI hashes; sub-packages are not linked into your binary unless imported. Embedded setup details: [Docs UIs](https://pkg.go.dev/github.com/FumingPower3925/stdocs#hdr-Docs_UIs).
 
+Each `WithUI` accepts UI-native configuration via `WithConfiguration(map[string]any)` — a dependency-free pass-through stdocs forwards to the UI:
+
+```go
+mux := stdocs.New(stdocs.WithTitle("My API"), scalar.WithUI(
+    scalar.WithConfiguration(map[string]any{"theme": "purple", "layout": "modern"}),
+))
+```
+
+The map is the UI's own configuration: a JSON object for Scalar, Swagger UI, and Redoc, and `<elements-api>` element attributes for Stoplight (which has no JSON-config object). Each sub-package's `WithConfiguration` documents the keys it accepts and links the upstream reference.
+
+To match the strict default CSP, the UIs disable the features that can't work under it out of the box — Scalar's "Ask AI" / "Generate MCP" and external fonts, and Swagger UI's spec-validator badge — so there's no dead chrome. They're plain defaults: `WithConfiguration` overrides them at the top level (e.g. `{"agent": {"disabled": false}}` re-enables Scalar's "Ask AI" — a nested object replaces the default whole, so re-state any sub-key you want to keep), and you relax the CSP itself with `WithCSP` or `WithDocsSecurityHeaders(false)`.
+
 ## Documentation
 
 The full reference lives on [pkg.go.dev](https://pkg.go.dev/github.com/FumingPower3925/stdocs), organized by topic:

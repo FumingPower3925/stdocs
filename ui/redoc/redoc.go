@@ -29,6 +29,7 @@ import (
 	"fmt"
 
 	"github.com/FumingPower3925/stdocs"
+	"github.com/FumingPower3925/stdocs/internal/uiopt"
 )
 
 // redocVersion is the version of redoc this package is pinned to.
@@ -43,27 +44,46 @@ const redocVersion = "2.5.3"
 //	    | openssl dgst -sha384 -binary | openssl base64 -A
 const redocSRIHash = "sha384-xiEssMQFSpSfLbzRZCGfxxIM5QDb2DTrU6vyoZdp2sV1L6pmOMy6MpTtUoLbpC96"
 
+// UIOption configures the Redoc UI installed by WithUI.
+type UIOption = uiopt.Option
+
+// WithConfiguration passes Redoc options to the docs page. The map is
+// passed as the options object to Redoc.init, so its keys are Redoc's
+// options — for example a "theme" object, "disableSearch", or
+// "hideDownloadButtons". The spec URL is the first argument to Redoc.init
+// and is set by stdocs. See the Redoc options reference for the current
+// list: https://redocly.com/docs/redoc/config
+func WithConfiguration(cfg map[string]any) UIOption {
+	return uiopt.Configuration(cfg)
+}
+
 // WithUI returns a stdocs.Option that replaces the default docs
-// page with Redoc.
-func WithUI() stdocs.Option {
+// page with Redoc. Pass WithConfiguration to forward Redoc-native
+// options.
+func WithUI(opts ...UIOption) stdocs.Option {
+	s := uiopt.Apply(opts)
 	return func(c *stdocs.Config) {
 		c.UIDoc = redocHTML
 		c.UICSP = cspPolicy
+		c.UIConfig = s.Config
 	}
 }
 
 // cspPolicy is the Content-Security-Policy served with the Redoc docs
 // page. The bundle loads from jsdelivr; style-src keeps 'unsafe-inline'
 // for Redoc's runtime style injection, while script-src has no
-// 'unsafe-inline'. Redoc renders in a Web Worker, so worker-src blob:
-// is allowed. The external Redoc logo (cdn.redoc.ly) is not allowed, so
-// the page makes no third-party connections. Browser-verified by the
-// uismoke CSP test; override with stdocs.WithCSP.
+// 'unsafe-inline'. Redoc is started by an inline initializer that calls
+// Redoc.init, pinned by sha256 hash (recomputed from the served page by
+// the parity test, so it cannot drift). Redoc renders in a Web Worker,
+// so worker-src blob: is allowed. The external Redoc logo (cdn.redoc.ly)
+// is not allowed, so the page makes no third-party connections.
+// Browser-verified by the uismoke CSP test; override with stdocs.WithCSP.
 const cspPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
 	"frame-ancestors 'self'; img-src 'self' data:; font-src 'self' data:; " +
 	"connect-src 'self'; worker-src blob:; " +
 	"style-src https://cdn.jsdelivr.net 'unsafe-inline'; " +
-	"script-src https://cdn.jsdelivr.net"
+	"script-src https://cdn.jsdelivr.net " +
+	"'sha256-kRi52mjhMEGeaWrXVdIBpI5Asm1Mag/mrCt/TlEPDT8='"
 
 var redocHTML = fmt.Sprintf(`<!doctype html>
 <html>
@@ -74,9 +94,16 @@ var redocHTML = fmt.Sprintf(`<!doctype html>
 <style>body{margin:0;padding:0}</style>
 </head>
 <body>
-<redoc spec-url='{{.SpecURL}}'></redoc>
-<script src="https://cdn.jsdelivr.net/npm/redoc@%s/bundles/redoc.standalone.js"
+<div id="redoc"></div>
+{{if .ConfigJSON}}<script id="redoc-config" type="application/json">{{.ConfigJSON}}</script>
+{{end}}<script src="https://cdn.jsdelivr.net/npm/redoc@%s/bundles/redoc.standalone.js"
         integrity="%s"
         crossorigin="anonymous"></script>
+<script>
+window.onload = () => {
+  var el = document.getElementById('redoc-config');
+  Redoc.init('{{.SpecURL}}', el ? JSON.parse(el.textContent) : {}, document.getElementById('redoc'));
+};
+</script>
 </body>
 </html>`, redocVersion, redocSRIHash)

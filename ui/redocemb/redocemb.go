@@ -41,6 +41,7 @@ import (
 	"strings"
 
 	"github.com/FumingPower3925/stdocs"
+	"github.com/FumingPower3925/stdocs/internal/uiopt"
 )
 
 // Maintainer-only: re-vendors the pinned Redoc bundle into assets/.
@@ -61,27 +62,47 @@ var assetsFS embed.FS
 // assetsSubFS is the assets/ subdirectory as a rooted fs.FS.
 var assetsSubFS, _ = fs.Sub(assetsFS, "assets")
 
+// UIOption configures the embedded Redoc UI installed by WithUI.
+type UIOption = uiopt.Option
+
+// WithConfiguration passes Redoc options to the docs page. The map is
+// passed as the options object to Redoc.init, so its keys are Redoc's
+// options — for example a "theme" object, "disableSearch", or
+// "hideDownloadButtons". The spec URL is the first argument to Redoc.init
+// and is set by stdocs. See the Redoc options reference for the current
+// list: https://redocly.com/docs/redoc/config
+func WithConfiguration(cfg map[string]any) UIOption {
+	return uiopt.Configuration(cfg)
+}
+
 // WithUI returns a stdocs.Option that replaces the default docs
-// page with the embedded Redoc UI.
-func WithUI() stdocs.Option {
+// page with the embedded Redoc. Pass WithConfiguration to forward
+// Redoc-native options.
+func WithUI(opts ...UIOption) stdocs.Option {
+	s := uiopt.Apply(opts)
 	return func(c *stdocs.Config) {
 		c.UIDoc = html
 		c.Assets = AssetHandler()
 		c.UICSP = cspPolicy
+		c.UIConfig = s.Config
 	}
 }
 
 // cspPolicy is the Content-Security-Policy served with the embedded
 // Redoc docs page. Every asset is same-origin ('self'); style-src keeps
 // 'unsafe-inline' for Redoc's runtime style injection, while script-src
-// has no 'unsafe-inline'. Redoc renders in a Web Worker, so worker-src
-// blob: is allowed. The external Redoc logo (cdn.redoc.ly) is not
-// allowed, so the embedded page makes no network calls off the origin.
-// Browser-verified by the uismoke CSP test; override with stdocs.WithCSP.
+// has no 'unsafe-inline'. Redoc is started by an inline initializer that
+// calls Redoc.init, pinned by sha256 hash (recomputed from the served
+// page by the parity test, so it cannot drift). Redoc renders in a Web
+// Worker, so worker-src blob: is allowed. The external Redoc logo
+// (cdn.redoc.ly) is not allowed, so the embedded page makes no network
+// calls off the origin. Browser-verified by the uismoke CSP test;
+// override with stdocs.WithCSP.
 const cspPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
 	"frame-ancestors 'self'; img-src 'self' data:; font-src 'self' data:; " +
 	"connect-src 'self'; worker-src blob:; " +
-	"style-src 'self' 'unsafe-inline'; script-src 'self'"
+	"style-src 'self' 'unsafe-inline'; " +
+	"script-src 'self' 'sha256-kRi52mjhMEGeaWrXVdIBpI5Asm1Mag/mrCt/TlEPDT8='"
 
 // AssetHandler returns an http.Handler that serves the embedded
 // Redoc JavaScript bundle at the root. File responses carry an
@@ -120,7 +141,14 @@ const html = `<!doctype html>
 <style>body{margin:0;padding:0}</style>
 </head>
 <body>
-<redoc spec-url='{{.SpecURL}}'></redoc>
-<script src="_assets/redoc.standalone.js"></script>
+<div id="redoc"></div>
+{{if .ConfigJSON}}<script id="redoc-config" type="application/json">{{.ConfigJSON}}</script>
+{{end}}<script src="_assets/redoc.standalone.js"></script>
+<script>
+window.onload = () => {
+  var el = document.getElementById('redoc-config');
+  Redoc.init('{{.SpecURL}}', el ? JSON.parse(el.textContent) : {}, document.getElementById('redoc'));
+};
+</script>
 </body>
 </html>`

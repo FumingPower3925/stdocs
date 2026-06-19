@@ -96,6 +96,37 @@ func TestDocsSpecEndpointHeaders(t *testing.T) {
 	}
 }
 
+func TestDocsSpecContentDisposition(t *testing.T) {
+	for path, want := range map[string]string{
+		"/docs/openapi.json": `inline; filename="openapi.json"`,
+		"/docs/openapi.yaml": `inline; filename="openapi.yaml"`,
+	} {
+		resp := fetchDocs(t, path)
+		if got := resp.Header().Get("Content-Disposition"); got != want {
+			t.Errorf("%s Content-Disposition = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// TestDefaultUIIgnoresUIConfig pins the contract that the built-in docs
+// page ignores Config.UIConfig: the field is exported and a caller could
+// set it directly (not via a UI sub-package), but the default template
+// references none of the config carriers, so a value set there must not
+// reach the page, and the strict default CSP must be unchanged.
+func TestDefaultUIIgnoresUIConfig(t *testing.T) {
+	evil := "</script><script>alert(1)</script>"
+	resp := fetchDocs(t, "/docs/", func(c *Config) {
+		c.UIConfig = map[string]any{"evilkey": evil}
+	})
+	body := resp.Body.String()
+	if strings.Contains(body, "evilkey") || strings.Contains(body, "<script>alert(1)</script>") {
+		t.Error("built-in page leaked Config.UIConfig into the rendered page")
+	}
+	if got := resp.Header().Get("Content-Security-Policy"); got != defaultDocsCSP {
+		t.Errorf("built-in page CSP changed with UIConfig set: %q", got)
+	}
+}
+
 func TestDocsSecurityHeadersOff(t *testing.T) {
 	resp := fetchDocs(t, "/docs/", WithDocsSecurityHeaders(false))
 	for _, h := range []string{
