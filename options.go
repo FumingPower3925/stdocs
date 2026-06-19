@@ -52,6 +52,14 @@ type Config struct {
 	// strict policy for the built-in page (see defaultDocsCSP). Emitted
 	// only when DocsSecurityHeaders is true.
 	UICSP string
+	// UIConfig is UI-native configuration forwarded to the rendered docs
+	// page. A UI sub-package's WithConfiguration option populates it; it
+	// is nil by default and the default built-in page ignores it. Its
+	// meaning is per-UI (see each sub-package's godoc): a JSON
+	// configuration object for Scalar, Swagger UI, and Redoc, or a set of
+	// element attributes for Stoplight. The map is rendered once, when the
+	// docs handler is constructed.
+	UIConfig map[string]any
 	// DocsSecurityHeaders controls whether the docs handler sends the
 	// CSP and the other hardening headers (nosniff, Referrer-Policy,
 	// X-Frame-Options, Permissions-Policy). On by default; set via

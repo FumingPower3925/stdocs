@@ -40,6 +40,7 @@ import (
 	"strings"
 
 	"github.com/FumingPower3925/stdocs"
+	"github.com/FumingPower3925/stdocs/internal/uiopt"
 )
 
 // Maintainer-only: re-vendors the pinned Stoplight Elements bundle
@@ -62,13 +63,33 @@ var assetsFS embed.FS
 // assetsSubFS is the assets/ subdirectory as a rooted fs.FS.
 var assetsSubFS, _ = fs.Sub(assetsFS, "assets")
 
+// UIOption configures the embedded Stoplight Elements UI installed by
+// WithUI.
+type UIOption = uiopt.Option
+
+// WithConfiguration passes Stoplight Elements configuration to the docs
+// page. Stoplight Elements has no JSON configuration object — it is
+// configured through attributes on its <elements-api> element — so the
+// map's keys are rendered as element attributes and its values must be
+// strings, booleans, or numbers. Keys are Stoplight attribute names, for
+// example "hideTryItPanel", "hideSchemas", "tryItCredentialsPolicy", or
+// "logo". apiDescriptionUrl, router, and layout are set by stdocs and
+// cannot be overridden. See the Stoplight Elements configuration
+// reference: https://github.com/stoplightio/elements/blob/main/docs/getting-started/elements/elements-options.md
+func WithConfiguration(cfg map[string]any) UIOption {
+	return uiopt.Configuration(cfg)
+}
+
 // WithUI returns a stdocs.Option that replaces the default docs
-// page with the embedded Stoplight UI.
-func WithUI() stdocs.Option {
+// page with the embedded Stoplight UI. Pass WithConfiguration to
+// forward Stoplight-native options as element attributes.
+func WithUI(opts ...UIOption) stdocs.Option {
+	s := uiopt.Apply(opts)
 	return func(c *stdocs.Config) {
 		c.UIDoc = html
 		c.Assets = AssetHandler()
 		c.UICSP = cspPolicy
+		c.UIConfig = s.Config
 	}
 }
 
@@ -121,6 +142,6 @@ const html = `<!doctype html>
 <script src="_assets/web-components.min.js"></script>
 </head>
 <body>
-<elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash" layout="sidebar"></elements-api>
+<elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash" layout="sidebar"{{if .ConfigAttrs}} {{.ConfigAttrs}}{{end}}></elements-api>
 </body>
 </html>`

@@ -43,6 +43,7 @@ import (
 	"strings"
 
 	"github.com/FumingPower3925/stdocs"
+	"github.com/FumingPower3925/stdocs/internal/uiopt"
 )
 
 // Maintainer-only: re-vendors the pinned Scalar bundle into assets/.
@@ -63,13 +64,54 @@ var assetsFS embed.FS
 // assetsSubFS is the assets/ subdirectory as a rooted fs.FS.
 var assetsSubFS, _ = fs.Sub(assetsFS, "assets")
 
+// UIOption configures the embedded Scalar UI installed by WithUI.
+type UIOption = uiopt.Option
+
+// WithConfiguration passes Scalar configuration to the docs page. The
+// map is serialized to JSON and placed in Scalar's data-configuration
+// attribute, so its keys are Scalar's configuration options — for
+// example "theme", "layout", "hideModels", "hideSearch", or
+// "documentDownloadType". The spec source is set by stdocs via data-url;
+// keys that also point at a spec are the caller's responsibility. Keys
+// override the CSP-safe defaults (see defaultConfig) at the TOP LEVEL
+// only: a nested object such as "agent" replaces the default wholesale,
+// so re-state any sub-key you want to keep. See the Scalar configuration
+// reference:
+// https://github.com/scalar/scalar/blob/main/documentation/configuration.md
+func WithConfiguration(cfg map[string]any) UIOption {
+	return uiopt.Configuration(cfg)
+}
+
+// defaultConfig disables the Scalar features that cannot work under the
+// strict default Content-Security-Policy, so the page has no dead chrome:
+// the "Ask AI" agent and "Generate MCP" button call scalar.com (blocked
+// by connect-src 'self'), and the default web fonts come from
+// fonts.scalar.com (blocked by font-src). The developer tools are hidden
+// too (they only appear on localhost by default). Every key is a plain
+// default that a caller's WithConfiguration overrides — pass, for
+// example, WithConfiguration(map[string]any{"agent": map[string]any{
+// "disabled": false}}) to bring "Ask AI" back (and relax the CSP with
+// stdocs.WithDocsSecurityHeaders(false) or stdocs.WithCSP so it can
+// reach scalar.com).
+func defaultConfig() map[string]any {
+	return map[string]any{
+		"showDeveloperTools": "never",
+		"agent":              map[string]any{"disabled": true},
+		"mcp":                map[string]any{"disabled": true},
+		"withDefaultFonts":   false,
+	}
+}
+
 // WithUI returns a stdocs.Option that replaces the default docs
-// page with the embedded Scalar UI.
-func WithUI() stdocs.Option {
+// page with the embedded Scalar UI. Pass WithConfiguration to forward
+// Scalar-native options; they override the CSP-safe defaults.
+func WithUI(opts ...UIOption) stdocs.Option {
+	s := uiopt.Apply(opts)
 	return func(c *stdocs.Config) {
 		c.UIDoc = html
 		c.Assets = AssetHandler()
 		c.UICSP = cspPolicy
+		c.UIConfig = uiopt.Merge(defaultConfig(), s.Config)
 	}
 }
 
@@ -122,7 +164,7 @@ const html = `<!doctype html>
 <style>body{margin:0}</style>
 </head>
 <body>
-<script id="api-reference" data-url="{{.SpecURL}}"></script>
+<script id="api-reference" data-url="{{.SpecURL}}"{{if .ConfigAttr}} data-configuration="{{.ConfigAttr}}"{{end}}></script>
 <script src="_assets/standalone.js"></script>
 </body>
 </html>`

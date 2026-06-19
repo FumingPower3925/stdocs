@@ -272,6 +272,21 @@
 //	mux.ServeMux.Handle("GET /docs/_assets/",
 //	    http.StripPrefix("/docs/_assets/", scalaremb.AssetHandler()))
 //
+// Each WithUI takes optional UI-native configuration via
+// WithConfiguration(map[string]any), a dependency-free pass-through that
+// stdocs forwards to the UI without modeling its schema:
+//
+//	mux := stdocs.New(scalar.WithUI(
+//	    scalar.WithConfiguration(map[string]any{"theme": "purple", "layout": "modern"}),
+//	))
+//
+// The map's meaning is the UI's own: a JSON configuration object for
+// Scalar, Swagger UI, and Redoc (Scalar's data-configuration, Swagger's
+// SwaggerUIBundle options, Redoc's Redoc.init options), and a set of
+// <elements-api> element attributes for Stoplight. stdocs always owns the
+// spec URL and mount point; see each sub-package's WithConfiguration for
+// the keys it accepts and a link to the upstream reference.
+//
 // # Security headers
 //
 // The docs responses carry hardening headers by default: a
@@ -283,10 +298,24 @@
 // policies pin scripts by source and hash with no 'unsafe-inline', allow
 // only same-origin framing, and do not permit any third-party
 // connection, so the page never phones home (the embedded UIs are fully
-// self-contained). Turn the set off with [WithDocsSecurityHeaders](false)
-// when you set your own headers, or replace just the policy with
-// [WithCSP]. There is no Strict-Transport-Security header: HSTS applies
-// to the whole origin over TLS, which is the server's or the edge's job.
+// self-contained). Swagger UI and Redoc boot from a small inline
+// initializer pinned by a sha256 hash; any UI configuration passed via
+// WithConfiguration travels in a non-executable data block, so it never
+// affects that hash.
+//
+// To match that policy, the UI sub-packages disable, by default, the
+// features that cannot work under it — Scalar's "Ask AI" and "Generate
+// MCP" (they call scalar.com) and its external web fonts, and Swagger
+// UI's spec-validator badge (an <img> from validator.swagger.io, which
+// fetches the spec to check it) — so the page has no dead chrome. These
+// are plain defaults that a caller's WithConfiguration overrides
+// key-by-key to re-enable a feature (then relax the CSP, below, so it can
+// reach those services).
+//
+// Turn the whole set off with [WithDocsSecurityHeaders](false) when you
+// set your own headers, or replace just the policy with [WithCSP]. There
+// is no Strict-Transport-Security header: HSTS applies to the whole
+// origin over TLS, which is the server's or the edge's job.
 //
 // # Try-it requests and drift
 //

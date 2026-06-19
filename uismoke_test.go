@@ -183,21 +183,25 @@ func TestUISmoke(t *testing.T) {
 	// parsed. Every other UI renders summaries directly.
 	opMarkers := []string{"Get widget by id", "Create widget"}
 	stoplightMarkers := []string{"Smoke API", "Widgets", "Widget"}
+	// Scalar's CSP-safe defaults must hide the phone-home chrome out of
+	// the box (no caller config), so the unconfigured page is clean.
+	scalarChromeAbsent := []string{"Ask AI", "Generate MCP", "Developer Tools"}
 	uis := []struct {
 		name    string
 		cdn     bool
 		option  stdocs.Option
 		markers []string
+		absent  []string // must NOT appear in the unconfigured page (default effect)
 	}{
-		{"builtin", false, nil, opMarkers},
-		{"scalaremb", false, scalaremb.WithUI(), opMarkers},
-		{"swaggeruiemb", false, swaggeruiemb.WithUI(), opMarkers},
-		{"redocemb", false, redocemb.WithUI(), opMarkers},
-		{"stoplightemb", false, stoplightemb.WithUI(), stoplightMarkers},
-		{"scalar", true, scalar.WithUI(), opMarkers},
-		{"swaggerui", true, swaggerui.WithUI(), opMarkers},
-		{"redoc", true, redoc.WithUI(), opMarkers},
-		{"stoplight", true, stoplight.WithUI(), stoplightMarkers},
+		{"builtin", false, nil, opMarkers, nil},
+		{"scalaremb", false, scalaremb.WithUI(), opMarkers, scalarChromeAbsent},
+		{"swaggeruiemb", false, swaggeruiemb.WithUI(), opMarkers, nil},
+		{"redocemb", false, redocemb.WithUI(), opMarkers, nil},
+		{"stoplightemb", false, stoplightemb.WithUI(), stoplightMarkers, nil},
+		{"scalar", true, scalar.WithUI(), opMarkers, scalarChromeAbsent},
+		{"swaggerui", true, swaggerui.WithUI(), opMarkers, nil},
+		{"redoc", true, redoc.WithUI(), opMarkers, nil},
+		{"stoplight", true, stoplight.WithUI(), stoplightMarkers, nil},
 	}
 	for _, ui := range uis {
 		t.Run(ui.name, func(t *testing.T) {
@@ -249,6 +253,96 @@ func TestUISmoke(t *testing.T) {
 			if bad := cspFailures(dom); len(bad) > 0 {
 				t.Errorf("%s: %d disallowed CSP violation(s) under its enforced policy; first: %s",
 					ui.name, len(bad), bad[0])
+			}
+			for _, m := range ui.absent {
+				if strings.Contains(dom, m) {
+					t.Errorf("%s: CSP-safe default should hide %q in the unconfigured page, but it is present", ui.name, m)
+				}
+			}
+		})
+	}
+}
+
+// TestUISmokeWithConfig renders each rich UI with a representative
+// WithConfiguration in a real browser: it must still boot (its markers
+// render) and raise no disallowed CSP violation. This is the end-to-end
+// gate for the per-UI config carriers — that Scalar honours
+// data-configuration, that Swagger UI and Redoc read their JSON carrier
+// under the re-pinned/new inline-init hash, and that Stoplight accepts
+// attributes — all under each UI's enforced policy.
+func TestUISmokeWithConfig(t *testing.T) {
+	bin := chromeBin(t)
+	offline := os.Getenv("STDOCS_UI_SMOKE_OFFLINE") == "1"
+	opMarkers := []string{"Get widget by id", "Create widget"}
+	stoplightMarkers := []string{"Smoke API", "Widgets", "Widget"}
+	// Configs chosen so their effect is assertable in the DOM: Scalar
+	// re-enables the chrome its defaults hide (present, proving overrides
+	// win); Swagger's displayOperationId adds visible text (present);
+	// Stoplight's hideExport removes visible text (absent). Redoc is
+	// boot+CSP only (its config effects are colour/layout, not text).
+	scalarReenable := map[string]any{
+		"showDeveloperTools": "always",
+		"mcp":                map[string]any{"disabled": false},
+		"agent":              map[string]any{"disabled": false},
+	}
+	uis := []struct {
+		name    string
+		cdn     bool
+		option  stdocs.Option
+		markers []string
+		present []string // config-effect text that must appear
+		absent  []string // config-effect text that must be gone
+	}{
+		{"scalaremb", false, scalaremb.WithUI(scalaremb.WithConfiguration(scalarReenable)), opMarkers, []string{"Ask AI", "Generate MCP"}, nil},
+		{"swaggeruiemb", false, swaggeruiemb.WithUI(swaggeruiemb.WithConfiguration(map[string]any{"filter": true, "displayOperationId": true})), opMarkers, []string{"post_widgets"}, nil},
+		{"redocemb", false, redocemb.WithUI(redocemb.WithConfiguration(map[string]any{"hideDownloadButton": true})), opMarkers, nil, nil},
+		{"stoplightemb", false, stoplightemb.WithUI(stoplightemb.WithConfiguration(map[string]any{"hideExport": true, "hideTryItPanel": true})), stoplightMarkers, nil, []string{"Export"}},
+		{"scalar", true, scalar.WithUI(scalar.WithConfiguration(scalarReenable)), opMarkers, []string{"Ask AI", "Generate MCP"}, nil},
+		{"swaggerui", true, swaggerui.WithUI(swaggerui.WithConfiguration(map[string]any{"filter": true, "displayOperationId": true})), opMarkers, []string{"post_widgets"}, nil},
+		{"redoc", true, redoc.WithUI(redoc.WithConfiguration(map[string]any{"hideDownloadButton": true})), opMarkers, nil, nil},
+		{"stoplight", true, stoplight.WithUI(stoplight.WithConfiguration(map[string]any{"hideExport": true, "hideTryItPanel": true})), stoplightMarkers, nil, []string{"Export"}},
+	}
+	for _, ui := range uis {
+		t.Run(ui.name, func(t *testing.T) {
+			if ui.cdn && offline {
+				t.Skip("offline run")
+			}
+			srv := httptest.NewServer(corpusMux(ui.option))
+			defer srv.Close()
+			allFound := func(dom string) bool {
+				for _, m := range ui.markers {
+					if !strings.Contains(dom, m) {
+						return false
+					}
+				}
+				return true
+			}
+			deadline := time.Now().Add(60 * time.Second)
+			var dom string
+			for time.Now().Before(deadline) {
+				dom = renderDOM(t, bin, srv.URL+"/smoketest")
+				if allFound(dom) {
+					break
+				}
+				time.Sleep(2 * time.Second)
+			}
+			if !allFound(dom) {
+				t.Fatalf("%s did not render its markers %v with config; DOM %d bytes: %.600s",
+					ui.name, ui.markers, len(dom), dom)
+			}
+			if bad := cspFailures(dom); len(bad) > 0 {
+				t.Errorf("%s with config: %d disallowed CSP violation(s); first: %s",
+					ui.name, len(bad), bad[0])
+			}
+			for _, m := range ui.present {
+				if !strings.Contains(dom, m) {
+					t.Errorf("%s with config: expected effect %q to be present, but it is not", ui.name, m)
+				}
+			}
+			for _, m := range ui.absent {
+				if strings.Contains(dom, m) {
+					t.Errorf("%s with config: expected config to hide %q, but it is still present", ui.name, m)
+				}
 			}
 		})
 	}

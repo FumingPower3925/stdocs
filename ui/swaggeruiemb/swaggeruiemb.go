@@ -41,6 +41,7 @@ import (
 	"strings"
 
 	"github.com/FumingPower3925/stdocs"
+	"github.com/FumingPower3925/stdocs/internal/uiopt"
 )
 
 // Maintainer-only: re-vendors the pinned Swagger UI bundle into
@@ -63,13 +64,43 @@ var assetsFS embed.FS
 // assetsSubFS is the assets/ subdirectory as a rooted fs.FS.
 var assetsSubFS, _ = fs.Sub(assetsFS, "assets")
 
+// UIOption configures the embedded Swagger UI installed by WithUI.
+type UIOption = uiopt.Option
+
+// WithConfiguration passes Swagger UI configuration to the docs page.
+// The map is merged over Swagger UI's SwaggerUIBundle({...}) options, so
+// its keys are Swagger UI's parameters — for example "docExpansion",
+// "filter", "defaultModelsExpandDepth", "tryItOutEnabled", or
+// "displayRequestDuration". The "url" and "dom_id" are set by stdocs and
+// always win. See the Swagger UI configuration reference:
+// https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/
+func WithConfiguration(cfg map[string]any) UIOption {
+	return uiopt.Configuration(cfg)
+}
+
+// defaultConfig disables the one Swagger UI feature that cannot work
+// under the strict default Content-Security-Policy: the spec validator
+// badge, an <img> loaded from validator.swagger.io (Swagger UI passes
+// the spec URL so the validator can fetch and check it), blocked by
+// img-src 'self'. It is a plain default a caller's WithConfiguration
+// overrides — set
+// WithConfiguration(map[string]any{"validatorUrl": "https://validator.swagger.io/validator"})
+// to restore it (and relax the CSP with stdocs.WithDocsSecurityHeaders(false)
+// or stdocs.WithCSP so it can be reached).
+func defaultConfig() map[string]any {
+	return map[string]any{"validatorUrl": nil}
+}
+
 // WithUI returns a stdocs.Option that replaces the default docs
-// page with the embedded Swagger UI.
-func WithUI() stdocs.Option {
+// page with the embedded Swagger UI. Pass WithConfiguration to forward
+// Swagger UI-native options; they override the CSP-safe defaults.
+func WithUI(opts ...UIOption) stdocs.Option {
+	s := uiopt.Apply(opts)
 	return func(c *stdocs.Config) {
 		c.UIDoc = html
 		c.Assets = AssetHandler()
 		c.UICSP = cspPolicy
+		c.UIConfig = uiopt.Merge(defaultConfig(), s.Config)
 	}
 }
 
@@ -83,7 +114,7 @@ func WithUI() stdocs.Option {
 const cspPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
 	"frame-ancestors 'self'; img-src 'self' data:; font-src 'self' data:; " +
 	"connect-src 'self'; style-src 'self' 'unsafe-inline'; " +
-	"script-src 'self' 'sha256-A2pv4aNbzbAB9h1aXMLcWSgRQk1bEP9SOF3HQeOW1ls='"
+	"script-src 'self' 'sha256-/hiYqyotivZTycRdrHOvvzeU3mmFj2BujPaMeU4hReg='"
 
 // AssetHandler returns an http.Handler that serves the embedded
 // Swagger UI bundle at the root. File responses carry an immutable
@@ -123,16 +154,16 @@ const html = `<!doctype html>
 </head>
 <body>
 <div id="swagger-ui"></div>
-<script src="_assets/swagger-ui-bundle.js"></script>
+{{if .ConfigJSON}}<script id="swagger-config" type="application/json">{{.ConfigJSON}}</script>
+{{end}}<script src="_assets/swagger-ui-bundle.js"></script>
 <script>
 window.onload = () => {
-  SwaggerUIBundle({
-    url: '{{.SpecURL}}',
-    dom_id: '#swagger-ui',
-    presets: [SwaggerUIBundle.presets.apis],
-    layout: 'BaseLayout',
-    deepLinking: true,
-  });
+  var el = document.getElementById('swagger-config');
+  var extra = el ? JSON.parse(el.textContent) : {};
+  SwaggerUIBundle(Object.assign(
+    {presets: [SwaggerUIBundle.presets.apis], layout: 'BaseLayout', deepLinking: true},
+    extra,
+    {url: '{{.SpecURL}}', dom_id: '#swagger-ui'}));
 };
 </script>
 </body>
