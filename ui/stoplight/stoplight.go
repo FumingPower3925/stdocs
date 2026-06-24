@@ -19,7 +19,7 @@
 // cdn.jsdelivr.net at page load time, so an internet connection is
 // required.
 //
-// The CDN URLs are pinned to a specific version (9.0.22) and point
+// The CDN URLs are pinned to a specific version (9.0.23) and point
 // at the verbatim web-components.min.js and styles.min.css files
 // from the npm package, so their bytes are deterministic and the
 // sha384 SRI hashes below are pinned in the <script>/<link> tags.
@@ -38,7 +38,7 @@ import (
 // stoplightVersion is the version of @stoplight/elements this
 // package is pinned to. Bumping this requires updating the SRI
 // hashes below and re-vendoring the bundle in ui/stoplightemb.
-const stoplightVersion = "9.0.22"
+const stoplightVersion = "9.0.23"
 
 // SRI hashes (sha384) for the pinned Stoplight Elements assets.
 // Re-compute with:

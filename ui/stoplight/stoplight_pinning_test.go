@@ -14,8 +14,8 @@ import (
 // files from the npm tarball, so their sha384 SRI hashes are
 // pinned too.
 func TestPinnedVersion(t *testing.T) {
-	if stoplightVersion != "9.0.22" {
-		t.Errorf("stoplightVersion = %q, want 9.0.22", stoplightVersion)
+	if stoplightVersion != "9.0.23" {
+		t.Errorf("stoplightVersion = %q, want 9.0.23", stoplightVersion)
 	}
 	wantJS := fmt.Sprintf("https://cdn.jsdelivr.net/npm/@stoplight/elements@%s/web-components.min.js", stoplightVersion)
 	if !strings.Contains(stoplightHTML, `src="`+wantJS+`"`) {

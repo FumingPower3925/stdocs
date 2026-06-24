@@ -11,10 +11,10 @@ import (
 )
 
 // sha384 hashes of the vendored assets, verified byte-identical to
-// the files in the swagger-ui-dist@5.32.6 npm tarball (and to the
+// the files in the swagger-ui-dist@5.32.8 npm tarball (and to the
 // pinned jsDelivr URLs). They match the SRI hashes in ui/swaggerui.
 const (
-	bundleJSHash = "sha384-EYdOaiRwn44zNjrw+Tfs06qYz9BGQVo2f4/pLY5i7VorbjnZNhdplAbTBk8FXHUJ"
+	bundleJSHash = "sha384-IKpAWwsTL0pcw7/Amtnt2eXF4P1BK64WNuY2E/RG15SWLUW5HXzFuyqCSAr/DP8C"
 	cssHash      = "sha384-9Q2fpS+xeS4ffJy6CagnwoUl+4ldAYhOs9pgZuEKxypVModhmZFzeMlvVsAjf7uT"
 )
 
