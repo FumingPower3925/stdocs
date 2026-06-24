@@ -13,8 +13,8 @@ import (
 // UI CDN version. Bumping the version requires also updating the
 // SRI hashes in swaggerui.go.
 func TestPinnedVersion(t *testing.T) {
-	if swaggerUIVersion != "5.32.6" {
-		t.Errorf("swaggerUIVersion = %q, want 5.32.6 (re-run SRI hash update)", swaggerUIVersion)
+	if swaggerUIVersion != "5.32.8" {
+		t.Errorf("swaggerUIVersion = %q, want 5.32.8 (re-run SRI hash update)", swaggerUIVersion)
 	}
 	wantJS := fmt.Sprintf("https://cdn.jsdelivr.net/npm/swagger-ui-dist@%s/swagger-ui-bundle.js", swaggerUIVersion)
 	if !strings.Contains(swaggerHTML, `src="`+wantJS+`"`) {
