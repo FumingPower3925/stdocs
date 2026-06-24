@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Bumped the bundled UI versions: Scalar (`@scalar/api-reference`) to
+  1.61.0, Swagger UI (`swagger-ui-dist`) to 5.32.8, and Stoplight
+  Elements (`@stoplight/elements`) to 9.0.23 — across the CDN pins, the
+  embedded bundles, and the `package.json` tracker. All three are
+  additive/patch upstream releases that preserve the configuration and
+  CSP contracts stdocs relies on; the CDN SRI hashes and vendored bytes
+  are re-pinned (Scalar's bundle and Swagger UI's JS changed; Swagger
+  UI's CSS and Stoplight's assets are byte-identical to the prior pin).
 
 ## [0.7.0] - 2026-06-19
 

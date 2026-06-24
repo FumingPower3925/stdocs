@@ -6,7 +6,7 @@
 // bundle in your binary so the docs UI works without an internet
 // connection.
 //
-// The vendored bundle is pinned to @scalar/api-reference@1.60.0 and
+// The vendored bundle is pinned to @scalar/api-reference@1.61.0 and
 // ships in-repo, so importing this package is all you need; the
 // //go:generate directive below is a maintainer-only convenience for
 // re-vendoring the bundle on a version bump.
@@ -51,12 +51,12 @@ import (
 // `go generate` cannot run inside the module cache anyway). Bumping
 // the version requires updating scalarVersion, the URL below, the
 // SRI hash in ui/scalar, and the hash pin in the tests.
-//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.60.0/dist/browser/standalone.js -o assets/standalone.js"
+//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.61.0/dist/browser/standalone.js -o assets/standalone.js"
 
 // scalarVersion is the version of @scalar/api-reference vendored
 // under assets/. It must match the devDependencies entry in the
 // repo-root package.json.
-const scalarVersion = "1.60.0"
+const scalarVersion = "1.61.0"
 
 //go:embed assets/*
 var assetsFS embed.FS

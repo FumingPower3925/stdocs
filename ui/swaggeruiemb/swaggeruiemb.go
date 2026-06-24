@@ -6,7 +6,7 @@
 // UI JavaScript and CSS in your binary so the docs UI works
 // without an internet connection.
 //
-// The vendored bundle is pinned to swagger-ui-dist@5.32.6 and its
+// The vendored bundle is pinned to swagger-ui-dist@5.32.8 and its
 // sha384 SRI hash is set in the sibling ui/swaggerui package.
 //
 // To use it:
@@ -50,13 +50,13 @@ import (
 // anyway). Bumping the version requires updating swaggerUIVersion,
 // the URLs below, the SRI hashes in ui/swaggerui, and the hash pins
 // in the tests.
-//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui-bundle.js -o assets/swagger-ui-bundle.js"
-//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui.css -o assets/swagger-ui.css"
+//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.8/swagger-ui-bundle.js -o assets/swagger-ui-bundle.js"
+//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.8/swagger-ui.css -o assets/swagger-ui.css"
 
 // swaggerUIVersion is the version of swagger-ui-dist vendored under
 // assets/. It must match the devDependencies entry in the repo-root
 // package.json.
-const swaggerUIVersion = "5.32.6"
+const swaggerUIVersion = "5.32.8"
 
 //go:embed assets/*
 var assetsFS embed.FS
