@@ -75,6 +75,7 @@ function example(schema,depth,seen){
   var d=deref(schema),s=d.s;
   if(d.name){if(seen.indexOf(d.name)>=0)return{};seen=seen.concat([d.name]);}
   if(s.example!==undefined)return s.example;
+  if(s.examples&&s.examples.length)return s.examples[0];
   if(s.default!==undefined)return s.default;
   if(s.enum&&s.enum.length)return s.enum[0];
   var comp=s.allOf||s.oneOf||s.anyOf;

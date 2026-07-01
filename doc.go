@@ -123,7 +123,13 @@
 // from the document (JSON serialization is unaffected),
 // openapi:"type=string,format=date-time" replaces the reflected
 // schema entirely — constraint and doc tags still compose on top —
-// and a bare openapi:"nullable" stacks with reflection, decoupling
+// openapi:"schema=json-schema" documents a json.RawMessage or any
+// field that carries a JSON Schema document as a free-form object
+// (stdocs does not validate the embedded schema; a doc: tag
+// overrides its default description, and — uniquely for these
+// fields — an example: tag takes a JSON literal, so an author can
+// show a representative schema instead of an empty object), and a
+// bare openapi:"nullable" stacks with reflection, decoupling
 // wire-level null from Go pointers (with required:"true", that is
 // required-but-nullable without changing the Go type).
 //

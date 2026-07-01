@@ -832,6 +832,14 @@ var constraintTags = []string{
 	"enum", "default", "format",
 }
 
+// isJSONSchemaDocument reports whether s was produced by the
+// openapi:"schema=json-schema" override. The marker distinguishes a
+// JSON-Schema-document field (whose example is a JSON value) from an
+// ordinary object schema. Reading a nil Extensions map is safe.
+func isJSONSchemaDocument(s *Schema) bool {
+	return s != nil && s.Extensions["x-stdocs-type"] == "json-schema"
+}
+
 // applyFieldTags transfers the documentation and constraint struct
 // tags onto the field's schema. Mutates fieldSchema. fieldName is
 // used only in panic messages.
@@ -866,8 +874,22 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 	rejectStringEncodedNumericBounds(fieldSchema, tag, fieldName)
 
 	if ex := tag.Get("example"); ex != "" && fieldSchema.Example == nil {
-		requireScalar(fieldSchema.Type, "example", fieldName)
-		fieldSchema.Example = parseScalar(ex, fieldSchema.Type, "example", fieldName)
+		if isJSONSchemaDocument(fieldSchema) {
+			// A schema=json-schema field holds a JSON Schema document, so
+			// its example is a JSON value (typically an object), not a
+			// scalar. Parse the tag as a JSON literal; invalid JSON is a
+			// fail-fast panic like every other malformed tag. This is the
+			// author's own illustrative schema — stdocs never injects one.
+			var v any
+			if err := json.Unmarshal([]byte(ex), &v); err != nil {
+				panic("stdocs: example on json-schema field " + fieldName +
+					" must be a JSON literal: " + err.Error())
+			}
+			fieldSchema.Example = v
+		} else {
+			requireScalar(fieldSchema.Type, "example", fieldName)
+			fieldSchema.Example = parseScalar(ex, fieldSchema.Type, "example", fieldName)
+		}
 	}
 	if def := tag.Get("default"); def != "" {
 		requireScalar(fieldSchema.Type, "default", fieldName)
@@ -1085,13 +1107,20 @@ func splitNullableEntry(override, fieldName string) (nullable bool, rest string)
 	return nullable, strings.Join(kept, ",")
 }
 
-// overrideSchema parses an openapi:"type=...[,format=...]" field
-// override into a fresh schema. Unknown keys, missing type, and
-// non-scalar types panic — the override exists to state a wire
-// format reflection cannot infer, and a half-applied one would
-// publish a wrong contract.
+// overrideSchema parses an openapi:"type=...[,format=...]" or
+// openapi:"schema=json-schema" field override into a fresh schema.
+// Unknown keys, missing type, non-scalar types, and an unknown schema
+// value panic — the override exists to state a wire format reflection
+// cannot infer, and a half-applied one would publish a wrong contract.
+//
+// schema=json-schema documents a field (typically json.RawMessage or
+// any) as containing a JSON Schema document: it emits an open object
+// with a description, without stdocs validating the embedded schema. It
+// is standalone — it cannot combine with type= or format= — while a
+// bare nullable still stacks via the caller (splitNullableEntry).
 func overrideSchema(override, fieldName string) *Schema {
 	s := &Schema{}
+	sawSchema, sawTypeOrFormat := false, false
 	for _, kv := range strings.Split(override, ",") {
 		key, value, found := strings.Cut(strings.TrimSpace(kv), "=")
 		value = strings.TrimSpace(value)
@@ -1100,6 +1129,7 @@ func overrideSchema(override, fieldName string) *Schema {
 		}
 		switch key {
 		case "type":
+			sawTypeOrFormat = true
 			switch value {
 			case "string", "integer", "number", "boolean":
 				s.Type = value
@@ -1107,12 +1137,25 @@ func overrideSchema(override, fieldName string) *Schema {
 				panic("stdocs: openapi tag on field " + fieldName + " has unsupported type " + strconv.Quote(value) + `; use "string", "integer", "number", or "boolean"`)
 			}
 		case "format":
+			sawTypeOrFormat = true
 			s.Format = value
+		case "schema":
+			if value != "json-schema" {
+				panic("stdocs: openapi tag on field " + fieldName + " has unsupported schema " + strconv.Quote(value) + `; the only supported value is "json-schema"`)
+			}
+			sawSchema = true
+			s.Type = "object"
+			s.Description = "A JSON Schema document."
+			s.AdditionalProperties = &Schema{}
+			s.Extensions = map[string]any{"x-stdocs-type": "json-schema"}
 		case "nullable":
 			panic("stdocs: openapi nullable takes no value; write openapi:\"nullable\" (field " + fieldName + ")")
 		default:
-			panic("stdocs: openapi tag on field " + fieldName + " has unknown key " + strconv.Quote(key) + `; supported keys are "type" and "format"`)
+			panic("stdocs: openapi tag on field " + fieldName + " has unknown key " + strconv.Quote(key) + `; supported keys are "type", "format", and "schema"`)
 		}
+	}
+	if sawSchema && sawTypeOrFormat {
+		panic("stdocs: openapi schema=json-schema on field " + fieldName + " is standalone; it cannot combine with type= or format=")
 	}
 	if s.Type == "" {
 		panic("stdocs: openapi tag on field " + fieldName + " must set type")

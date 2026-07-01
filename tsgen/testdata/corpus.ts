@@ -22,6 +22,11 @@ export interface CorpusTask {
 	anything?: unknown /* Go: interface */;
 	/** @format byte */
 	blob?: string;
+	/**
+	 * Backend-driven form schema
+	 * @example {"properties":{"host":{"type":"string"}},"type":"object"}
+	 */
+	config_schema?: Record<string, unknown>;
 	count: string;
 	/** @format date-time */
 	due_at: string | null;

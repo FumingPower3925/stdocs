@@ -81,6 +81,39 @@ func ExampleWithResponse() {
 	// Output: components.schemas has User
 }
 
+// A json.RawMessage field that carries a JSON Schema document is
+// documented with openapi:"schema=json-schema": a free-form object
+// stdocs does not itself validate. On such a field the example: tag
+// takes a JSON literal, so an author can show a representative schema.
+func Example_jsonSchemaDocumentField() {
+	type PlatformResponse struct {
+		Name         string          `json:"name"`
+		ConfigSchema json.RawMessage `json:"config_schema" openapi:"schema=json-schema" example:"{\"type\":\"object\",\"properties\":{\"host\":{\"type\":\"string\"}},\"required\":[\"host\"]}"`
+	}
+
+	mux := stdocs.New(stdocs.WithTitle("Platform API"))
+	mux.HandleFunc("GET /platforms/{id}", func(w http.ResponseWriter, r *http.Request) {},
+		stdocs.Summary("Get a platform"),
+		stdocs.WithResponse(200, PlatformResponse{}),
+	)
+
+	b, _ := mux.JSON()
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Type        string `json:"type"`
+					Description string `json:"description"`
+				} `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	_ = json.Unmarshal(b, &doc)
+	cs := doc.Components.Schemas["PlatformResponse"].Properties["config_schema"]
+	fmt.Printf("config_schema: %s — %s\n", cs.Type, cs.Description)
+	// Output: config_schema: object — A JSON Schema document.
+}
+
 // Registering a security scheme and requiring it on a route.
 func ExampleWithBearerAuth() {
 	mux := stdocs.New(

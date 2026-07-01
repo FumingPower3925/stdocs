@@ -1089,6 +1089,67 @@ func schemaTagPanic(literal string) {
 	}
 }
 
+// schema=json-schema documents a json.RawMessage field as an open
+// object across all three versions, strips the vendor marker under the
+// default clean output, and lets doc: override the description.
+func TestJSONSchemaDocumentField(t *testing.T) {
+	type Resp struct {
+		Config json.RawMessage  `json:"config" openapi:"schema=json-schema"`
+		Creds  *json.RawMessage `json:"creds" openapi:"schema=json-schema"`
+		Note   json.RawMessage  `json:"note" openapi:"schema=json-schema" doc:"Backend form schema"`
+		Ex     json.RawMessage  `json:"ex" openapi:"schema=json-schema" example:"{\"type\":\"object\",\"properties\":{\"host\":{\"type\":\"string\"}}}"`
+	}
+	for _, v := range []SpecVersion{OpenAPI30, OpenAPI31, OpenAPI32} {
+		m := New(WithTitle("T"), WithVersion(v))
+		m.HandleFunc("GET /x", noop, WithResponse(200, Resp{}))
+		raw, err := m.JSON()
+		if err != nil {
+			t.Fatalf("%s: %v", v, err)
+		}
+		if strings.Contains(string(raw), "x-stdocs-type") {
+			t.Errorf("%s: clean output must strip x-stdocs-type", v)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		props := doc["components"].(map[string]any)["schemas"].(map[string]any)["Resp"].(map[string]any)["properties"].(map[string]any)
+		config := props["config"].(map[string]any)
+		if config["type"] != "object" || config["description"] != "A JSON Schema document." {
+			t.Errorf("%s: config = %v", v, config)
+		}
+		if _, ok := config["additionalProperties"]; !ok {
+			t.Errorf("%s: config missing additionalProperties", v)
+		}
+		if props["note"].(map[string]any)["description"] != "Backend form schema" {
+			t.Errorf("%s: doc: override lost: %v", v, props["note"])
+		}
+		creds := props["creds"].(map[string]any)
+		if v == OpenAPI30 {
+			if creds["nullable"] != true || creds["type"] != "object" {
+				t.Errorf("3.0 nullable creds = %v", creds)
+			}
+		} else if _, ok := creds["anyOf"]; !ok {
+			t.Errorf("%s nullable creds must use anyOf: %v", v, creds)
+		}
+		// An author-supplied example is carried per version: 3.0 uses the
+		// singular example keyword, 3.1/3.2 the JSON Schema examples array.
+		ex := props["ex"].(map[string]any)
+		var exVal map[string]any
+		if v == OpenAPI30 {
+			exVal, _ = ex["example"].(map[string]any)
+		} else {
+			arr, _ := ex["examples"].([]any)
+			if len(arr) == 1 {
+				exVal, _ = arr[0].(map[string]any)
+			}
+		}
+		if exVal == nil || exVal["type"] != "object" || exVal["properties"] == nil {
+			t.Errorf("%s: author example did not carry a JSON Schema: %v", v, ex)
+		}
+	}
+}
+
 // Clean output is the default; WithCleanOutput(false) keeps the
 // vendor annotations.
 func TestCleanOutput(t *testing.T) {

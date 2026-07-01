@@ -1152,10 +1152,14 @@ func TestOpenAPIFieldOverride(t *testing.T) {
 		Inner string `json:"inner"`
 	}
 	type T struct {
-		At      Custom  `json:"at" openapi:"type=string,format=date-time" doc:"RFC 3339"`
-		Skipped string  `json:"secret" openapi:"-"`
-		Bounded Custom  `json:"bounded" openapi:"type=integer" minimum:"1"`
-		Ptr     *Custom `json:"ptr" openapi:"type=string"`
+		At      Custom           `json:"at" openapi:"type=string,format=date-time" doc:"RFC 3339"`
+		Skipped string           `json:"secret" openapi:"-"`
+		Bounded Custom           `json:"bounded" openapi:"type=integer" minimum:"1"`
+		Ptr     *Custom          `json:"ptr" openapi:"type=string"`
+		Raw     json.RawMessage  `json:"raw" openapi:"schema=json-schema"`
+		RawPtr  *json.RawMessage `json:"raw_ptr" openapi:"schema=json-schema"`
+		RawDoc  json.RawMessage  `json:"raw_doc" openapi:"schema=json-schema" doc:"Backend form schema"`
+		RawEx   json.RawMessage  `json:"raw_ex" openapi:"schema=json-schema" example:"{\"type\":\"object\",\"properties\":{\"host\":{\"type\":\"string\"}}}"`
 	}
 	_, out := schema30(t, T{})
 	comp := out["T"]
@@ -1181,6 +1185,26 @@ func TestOpenAPIFieldOverride(t *testing.T) {
 	// The overridden struct type must not leak a component.
 	if _, ok := out["Custom"]; ok {
 		t.Errorf("overridden struct field registered a phantom Custom component")
+	}
+	// schema=json-schema documents a json.RawMessage as an open object.
+	if raw := comp.Properties["raw"]; raw.Type != "object" || raw.AdditionalProperties == nil ||
+		raw.Description != "A JSON Schema document." || raw.Extensions["x-stdocs-type"] != "json-schema" {
+		t.Errorf("raw schema=json-schema = %+v", raw)
+	}
+	if !comp.Properties["raw_ptr"].Nullable {
+		t.Errorf("*json.RawMessage schema=json-schema must stay nullable")
+	}
+	if got := comp.Properties["raw_doc"].Description; got != "Backend form schema" {
+		t.Errorf("doc: must override the default JSON-Schema-document description, got %q", got)
+	}
+	// An author-supplied example: on a json-schema field is parsed as a
+	// JSON literal (not a scalar), so it can be a whole JSON Schema.
+	rawEx, ok := comp.Properties["raw_ex"].Example.(map[string]any)
+	if !ok {
+		t.Fatalf("raw_ex example must be a JSON object, got %T", comp.Properties["raw_ex"].Example)
+	}
+	if rawEx["type"] != "object" || rawEx["properties"] == nil {
+		t.Errorf("raw_ex example did not round-trip as a JSON Schema: %+v", rawEx)
 	}
 }
 
@@ -1210,6 +1234,30 @@ func TestOpenAPIFieldOverridePanics(t *testing.T) {
 		{"bare value", func() {
 			type T struct {
 				X string `json:"x" openapi:"string"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"schema unknown value", func() {
+			type T struct {
+				X json.RawMessage `json:"x" openapi:"schema=foo"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"schema combined with type", func() {
+			type T struct {
+				X json.RawMessage `json:"x" openapi:"schema=json-schema,type=string"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"constraint on json-schema object", func() {
+			type T struct {
+				X json.RawMessage `json:"x" openapi:"schema=json-schema" minLength:"1"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"invalid json example on json-schema field", func() {
+			type T struct {
+				X json.RawMessage `json:"x" openapi:"schema=json-schema" example:"{not json"`
 			}
 			ReflectSchema(T{})
 		}},

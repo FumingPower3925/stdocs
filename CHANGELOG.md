@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `openapi:"schema=json-schema"` documents a `json.RawMessage` (or `any`)
+  field as a JSON Schema document — a free-form object carrying the
+  description "A JSON Schema document." — instead of the opaque schema
+  reflection produces for raw bytes. It flows into the component schemas
+  and the `tsgen` types (as `Record<string, unknown>`); a `doc:` tag
+  overrides the default description, a pointer or `openapi:"nullable"`
+  makes it nullable, and stdocs does not validate the embedded schema.
+  On these fields the `example:` tag takes a JSON literal (not a scalar),
+  so an author can show a representative schema in the docs; stdocs never
+  injects a default example of its own.
+
+### Fixed
+
+- The built-in docs page now renders the `examples` array (the form
+  OpenAPI 3.1/3.2 emit), so a field's example — including one on a
+  `schema=json-schema` field — appears there and not only in the richer
+  UIs; previously the page read only the singular `example` keyword and
+  silently dropped examples under 3.1/3.2.
+
+### Security
+
+- The built-in docs page's inline script is re-pinned by sha256 in the
+  default Content-Security-Policy (its example handling changed);
+  `TestDefaultDocsCSP` recomputes the hash from the served page, so the
+  policy cannot drift from the script it secures.
 
 ## [0.7.1] - 2026-06-24
 
