@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.8.0] - 2026-07-01
+
 ### Added
 
 - `openapi:"schema=json-schema"` documents a `json.RawMessage` (or `any`)
@@ -720,7 +724,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/FumingPower3925/stdocs/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/FumingPower3925/stdocs/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/FumingPower3925/stdocs/compare/v0.6.8...v0.7.0
 [0.6.8]: https://github.com/FumingPower3925/stdocs/compare/v0.6.7...v0.6.8
