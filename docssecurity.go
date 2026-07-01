@@ -11,7 +11,7 @@ import "net/http"
 // drift from the HTML without the test failing.
 const defaultDocsCSP = "default-src 'none'; base-uri 'none'; form-action 'none'; " +
 	"frame-ancestors 'self'; connect-src 'self'; " +
-	"script-src 'sha256-TeImXr1dPfRNv+CKJj62lJVU+wbhddNuurUbK+5ufUo='; " +
+	"script-src 'sha256-hkb2WAiMIQEpsqqZAM+FnfWltUN2gDZ9EEOrXIqVilc='; " +
 	"style-src 'sha256-/SFcV+ex7HY6oZdNT1/wTczfG1nny/Vemyk5AjoKUMg='"
 
 // docsPermissionsPolicy denies every powerful browser feature on the

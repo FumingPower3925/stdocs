@@ -144,6 +144,7 @@ jobs:
           package main
 
           import (
+          	"encoding/json"
           	"net/http"
           	"os"
 
@@ -157,6 +158,8 @@ jobs:
           	Status   *string  `json:"status" enum:"pending,active,done"`
           	Tags     []string `json:"tags" minItems:"1" maxItems:"10" uniqueItems:"true"`
           	Email    string   `json:"email" format:"email"`
+          	Config   json.RawMessage  `json:"config_schema" openapi:"schema=json-schema" example:"{\"type\":\"object\",\"properties\":{\"host\":{\"type\":\"string\"}},\"required\":[\"host\"]}"`
+          	Creds    *json.RawMessage `json:"credentials_schema" openapi:"schema=json-schema"`
           }
 
           type Task struct{ ID string `json:"id"` }

@@ -35,6 +35,7 @@ type CorpusTask struct {
 	Note     string          `json:"note" openapi:"nullable"`
 	Blob     []byte          `json:"blob,omitempty"`
 	Raw      json.RawMessage `json:"raw,omitempty"`
+	Schema   json.RawMessage `json:"config_schema,omitempty" openapi:"schema=json-schema" doc:"Backend-driven form schema" example:"{\"type\":\"object\",\"properties\":{\"host\":{\"type\":\"string\"}}}"`
 	Anything any             `json:"anything,omitempty"`
 	Count    int64           `json:"count,string"`
 	WeirdKey string          `json:"weird-key,omitempty" doc:"Hyphens need quoting */ and comments need escaping"`
