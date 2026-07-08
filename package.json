@@ -4,7 +4,7 @@
   "private": true,
   "description": "Dev-only manifest. Used by Dependabot to track upstream versions of the docs UI bundles and the typescript release CI type-checks tsgen output against; the Go source in ui/*/*.go is the source of truth for the bundle versions that ship. Do not 'npm install' — the runtime does not import any npm package.",
   "devDependencies": {
-    "@scalar/api-reference": "1.62.1",
+    "@scalar/api-reference": "1.62.5",
     "@stoplight/elements": "9.0.23",
     "redoc": "2.5.3",
     "swagger-ui-dist": "5.32.8",
