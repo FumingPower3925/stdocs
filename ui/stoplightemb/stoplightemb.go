@@ -6,7 +6,7 @@
 // Stoplight web-component bundle in your binary so the docs UI
 // works without an internet connection.
 //
-// The vendored bundle is pinned to @stoplight/elements@9.0.23.
+// The vendored bundle is pinned to @stoplight/elements@9.0.24.
 //
 // To use it:
 //
@@ -49,13 +49,13 @@ import (
 // anyway). Bumping the version requires updating stoplightVersion,
 // the URLs below, the SRI hashes in ui/stoplight, and the hash pins
 // in the tests.
-//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/@stoplight/elements@9.0.23/web-components.min.js -o assets/web-components.min.js"
-//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/@stoplight/elements@9.0.23/styles.min.css -o assets/styles.min.css"
+//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/@stoplight/elements@9.0.24/web-components.min.js -o assets/web-components.min.js"
+//go:generate bash -c "curl -fsSL https://cdn.jsdelivr.net/npm/@stoplight/elements@9.0.24/styles.min.css -o assets/styles.min.css"
 
 // stoplightVersion is the version of @stoplight/elements vendored
 // under assets/. It must match the devDependencies entry in the
 // repo-root package.json.
-const stoplightVersion = "9.0.23"
+const stoplightVersion = "9.0.24"
 
 //go:embed assets/*
 var assetsFS embed.FS
