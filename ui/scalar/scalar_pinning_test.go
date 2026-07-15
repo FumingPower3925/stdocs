@@ -14,8 +14,8 @@ import (
 // dist/browser/standalone.js file, so its sha384 SRI hash is
 // pinned too.
 func TestPinnedVersion(t *testing.T) {
-	if scalarVersion != "1.62.5" {
-		t.Errorf("scalarVersion = %q, want 1.62.5 (re-vendor the bundle in ui/scalaremb)", scalarVersion)
+	if scalarVersion != "1.62.6" {
+		t.Errorf("scalarVersion = %q, want 1.62.6 (re-vendor the bundle in ui/scalaremb)", scalarVersion)
 	}
 	wantURL := fmt.Sprintf("https://cdn.jsdelivr.net/npm/@scalar/api-reference@%s/dist/browser/standalone.js", scalarVersion)
 	if !strings.Contains(scalarHTML, `src="`+wantURL+`"`) {

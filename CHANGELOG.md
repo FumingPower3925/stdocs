@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Bumped the bundled Scalar UI (`@scalar/api-reference`) from 1.62.5 to
+  1.62.6 — across the CDN pin, the embedded bundle, and the
+  `package.json` tracker. The patch renders document-wide authentication
+  for AsyncAPI documents and fixes a plugin auth accessor; it preserves
+  the configuration and CSP contracts stdocs relies on. The CDN SRI hash
+  and the vendored bytes are re-pinned to the 1.62.6 bundle, verified
+  byte-identical across the npm tarball and jsDelivr.
+- Bumped the bundled Stoplight Elements (`@stoplight/elements`) from
+  9.0.23 to 9.0.24. Both vendored assets are byte-identical to 9.0.23, so
+  only the pinned version moved and the SRI hashes are unchanged.
 
 ## [0.8.2] - 2026-07-08
 

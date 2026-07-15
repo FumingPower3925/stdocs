@@ -11,7 +11,7 @@ import (
 )
 
 // sha384 hashes of the vendored assets, verified byte-identical to
-// the files in the @stoplight/elements@9.0.23 npm tarball (and to
+// the files in the @stoplight/elements@9.0.24 npm tarball (and to
 // the pinned jsDelivr URLs). They match the SRI hashes in
 // ui/stoplight.
 const (
