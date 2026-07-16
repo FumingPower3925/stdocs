@@ -832,6 +832,67 @@ var constraintTags = []string{
 	"enum", "default", "format",
 }
 
+// itemConstraintTags are the constraint tags that, on a slice or array
+// field, describe the ELEMENTS rather than the field itself: an array
+// has no enum, format, pattern, length, or bound of its own to carry,
+// and the flat tag vocabulary has no syntax to tell "the array" from
+// "its elements". minItems, maxItems, and uniqueItems keep describing
+// the array; default and example stay rejected (see requireScalar).
+var itemConstraintTags = []string{
+	"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+	"minLength", "maxLength", "pattern",
+	"enum", "format",
+}
+
+// firstItemConstraintTag names the first element-describing tag present,
+// in itemConstraintTags order, for constraintTarget's panic messages. A
+// present-but-empty tag does not count: the appliers read
+// tag.Get(name) != "", so an empty value applies nothing and must not
+// trip the guard either.
+func firstItemConstraintTag(tag reflect.StructTag) (string, bool) {
+	for _, name := range itemConstraintTags {
+		if tag.Get(name) != "" {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// constraintTarget returns the schema the element-describing tags apply
+// to: the field's own schema for a scalar field, its element schema for
+// a slice or array field. Elements that cannot carry a constraint (a
+// struct $ref, a nested slice, a map, or a type with no JSON form)
+// panic here rather than downstream, because requireScalar would
+// describe the ELEMENT type as though it were the field's and send the
+// author looking in the wrong place.
+func constraintTarget(fieldSchema *Schema, tag reflect.StructTag, fieldName string) *Schema {
+	if fieldSchema.Type != "array" {
+		return fieldSchema
+	}
+	name, ok := firstItemConstraintTag(tag)
+	if !ok {
+		// Nothing to place on the elements. The array-level tags read
+		// fieldSchema either way, so the field's own schema is fine.
+		return fieldSchema
+	}
+	items := fieldSchema.Items
+	switch {
+	case items == nil:
+		// Slices of chan/func/unsafe.Pointer reflect to a nil element
+		// schema; without this the retarget would dereference nil.
+		panic("stdocs: constraint tag " + name + " on field " + fieldName +
+			" applies to the field's elements, whose type has no JSON representation")
+	case items.Ref != "":
+		panic("stdocs: constraint tag " + name + " on field " + fieldName +
+			" applies to the field's elements, which are structs; constrain the struct's own fields instead")
+	case items.Type == "array" || items.Type == "object":
+		panic("stdocs: constraint tag " + name + " on field " + fieldName +
+			" applies to the field's elements, which are " + items.Type +
+			"s; only scalar elements can carry constraints")
+	}
+	return items
+}
+
 // isJSONSchemaDocument reports whether s was produced by the
 // openapi:"schema=json-schema" override. The marker distinguishes a
 // JSON-Schema-document field (whose example is a JSON value) from an
@@ -895,24 +956,30 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 		requireScalar(fieldSchema.Type, "default", fieldName)
 		fieldSchema.Default = parseScalar(def, fieldSchema.Type, "default", fieldName)
 	}
+	// On a slice or array field the scalar constraints describe the
+	// ELEMENTS: `Severity []string `enum:"info,low"`` means every
+	// element is "info" or "low", and emits items.enum. The array-length
+	// tags below keep describing the array itself.
+	target := constraintTarget(fieldSchema, tag, fieldName)
+
 	if format := tag.Get("format"); format != "" {
-		requireScalar(fieldSchema.Type, "format", fieldName)
-		fieldSchema.Format = format
+		requireScalar(target.Type, "format", fieldName)
+		target.Format = format
 	}
 	if enum := tag.Get("enum"); enum != "" {
-		requireScalar(fieldSchema.Type, "enum", fieldName)
-		fieldSchema.Enum = parseEnumTag(enum, fieldSchema.Type, fieldName)
+		requireScalar(target.Type, "enum", fieldName)
+		target.Enum = parseEnumTag(enum, target.Type, fieldName)
 	}
 
-	applyNumericBounds(fieldSchema, tag, fieldName)
+	applyNumericBounds(target, tag, fieldName)
 
-	fieldSchema.MinLength = lengthConstraint(tag, "minLength", "string", fieldSchema.Type, fieldName)
-	fieldSchema.MaxLength = lengthConstraint(tag, "maxLength", "string", fieldSchema.Type, fieldName)
+	target.MinLength = lengthConstraint(tag, "minLength", "string", target.Type, fieldName)
+	target.MaxLength = lengthConstraint(tag, "maxLength", "string", target.Type, fieldName)
 	if pattern := tag.Get("pattern"); pattern != "" {
-		if fieldSchema.Type != "string" {
-			panic("stdocs: pattern tag on field " + fieldName + " requires a string field, not " + describeType(fieldSchema.Type))
+		if target.Type != "string" {
+			panic("stdocs: pattern tag on field " + fieldName + " requires a string field, not " + describeType(target.Type))
 		}
-		fieldSchema.Pattern = pattern
+		target.Pattern = pattern
 	}
 
 	fieldSchema.MinItems = lengthConstraint(tag, "minItems", "array", fieldSchema.Type, fieldName)
@@ -941,6 +1008,13 @@ func applyFieldTags(fieldSchema *Schema, tag reflect.StructTag, fieldName string
 // ValidateDefault is exported so the functional-option params path
 // (routeopt.go) can run the same default-vs-constraints check the
 // struct-tag path gets through applyFieldTags.
+//
+// It deliberately does not recurse into Items: an element cannot carry
+// a default today (the default tag is rejected on slices, and there is
+// no ItemDefault), so an item enum never has a default to contradict.
+// Should an element-level default ever land, validate it where the
+// element schema is complete — at the end of ParamItems — rather than
+// recursing here.
 func ValidateDefault(s *Schema, fieldName string) {
 	if s.Default == nil {
 		return
@@ -1195,14 +1269,21 @@ func parseEnumTag(enum, schemaType, fieldName string) []any {
 	return values
 }
 
-// requireScalar panics unless the schema type is a scalar. The
-// json-string-encoded case gets its own message: the Go field is
-// numeric, but the ,string option makes its wire form a JSON string,
-// so typed constraints cannot apply.
+// requireScalar panics unless the schema type is a scalar.
+//
+// The array case is reachable only from the value tags (default and
+// example): every other caller passes the ELEMENT type, because on a
+// slice or array field the scalar constraints describe the elements
+// (see constraintTarget). Those two do not follow, because a lone value
+// cannot say which level it belongs to.
 func requireScalar(schemaType, tagName, fieldName string) {
 	switch schemaType {
 	case "string", "integer", "number", "boolean":
 		return
+	case "array":
+		panic("stdocs: " + tagName + " tag on field " + fieldName +
+			" is ambiguous on a slice or array field: it cannot say whether the value is the" +
+			" whole array or one element; describe it with doc: instead")
 	}
 	panic("stdocs: " + tagName + " tag on field " + fieldName + " requires a scalar field, not " + describeType(schemaType))
 }

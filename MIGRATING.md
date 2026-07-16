@@ -20,6 +20,7 @@ committed or regenerated.
 | `@ID get-user` | `stdocs.OperationID("get-user")` (mux-wide style: `WithOperationIDFunc`) |
 | `@Param id path string true "User ID"` | nothing — path params come from the `{id}` pattern wildcard |
 | `@Param limit query int false "Page size" minimum(1) maximum(100) default(20)` | `stdocs.QueryParam("limit", "integer", "Page size", stdocs.ParamMinimum(1), stdocs.ParamMaximum(100), stdocs.ParamDefault(20))` — or a `WithParams` struct with `minimum:"1" maximum:"100" default:"20"` tags |
+| `@Param severity query []string false "Filter" Enums(info, low, high)` | `stdocs.QueryParam("severity", "array", "Filter", stdocs.ParamItems("string", stdocs.ItemEnum("info", "low", "high")))` — or a `WithParams` struct field `Severity []string \`query:"severity" enum:"info,low,high"\`` |
 | `@Accept json` | the default; `stdocs.WithBodyContentType` overrides |
 | `@Produce json` | the default; `stdocs.WithResponseContentType` overrides |
 | `@Success 200 {object} model.User` | `stdocs.WithResponse(200, User{})` |
@@ -56,6 +57,7 @@ your handler's job (see "Scope and non-goals" in the reference).
 | `Field(min_length=1, pattern=r"...")` | `minLength:"1" pattern:"..."` |
 | `Literal["a", "b"]` / `Enum` | `enum:"a,b"` |
 | `Query(default=20, ge=1)` parameters | a `WithParams` struct: `Limit int \`query:"limit" default:"20" minimum:"1"\`` |
+| `list[Literal["a", "b"]]` query parameters | `Severity []string \`query:"severity" enum:"a,b"\`` — the scalar constraints describe the elements, emitting `items.enum` |
 | `Header()` / `Cookie()` parameters | `header:"X-Trace-Id"` / `cookie:"session"` tags in the same struct |
 | `tags=["tasks"]`, router prefixes | `stdocs.Tags(...)`; reusable bundles via `stdocs.Opts(...)`; public prefixes via `stdocs.WithPathPrefix` |
 | `responses={500: {"model": Error}}` shared errors | `stdocs.WithDefaultResponse(500, APIError{})`, once per mux |

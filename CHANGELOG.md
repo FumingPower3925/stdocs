@@ -7,7 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- Array parameters and slice fields can document their **elements**. A
+  repeated query filter — `?severity=high&severity=low` — now carries a
+  machine-readable element enum instead of an opaque `items: {type}`:
+
+  ```go
+  stdocs.QueryParam("severity", "array", "Repeated severity filter",
+      stdocs.ParamItems("string", stdocs.ItemEnum("info", "low", "high")))
+  ```
+
+  A new `ItemOpt` family — `ItemEnum`, `ItemFormat`, `ItemPattern`,
+  `ItemMinLength`, `ItemMaxLength`, `ItemMinimum`, `ItemMaximum`,
+  `ItemExclusiveMinimum`, `ItemExclusiveMaximum` — nests inside
+  `ParamItems`, which owns the element schema. There is deliberately no
+  `ItemDefault` or `ItemExample`: a default or an example is a value for
+  the parameter, not for one of its elements.
+- On a slice or array field the scalar constraint tags now describe the
+  **elements** rather than panicking, so `Severity []string
+  \`query:"severity" enum:"info,low,high"\`` emits `items.enum`. This
+  covers request bodies, responses, and webhook payloads as well as
+  parameters, and the two parameter paths produce the same document.
+  Only `minItems`, `maxItems`, and `uniqueItems` describe the array, so
+  `minLength` on a `[]string` means "each element is at least that
+  long"; "at least that many elements" is `minItems`. Elements that
+  cannot carry a constraint (slices of structs, of slices, or of maps)
+  panic and name the elements. `tsgen` renders an element enum as a
+  union array (`("info" | "low" | "high")[]`).
+
+### Changed
+
+- `ParamItems` now takes optional `ItemOpt` modifiers. Existing direct
+  calls are unaffected; a reference to `ParamItems` as a function
+  *value* is not, as with `WithUI` in v0.7.0.
+- `ParamFormat` now rejects an array parameter: an array has no format
+  of its own, and its elements' format comes from `ItemFormat`. This
+  aligns the modifier with the `format:` tag, which describes the
+  elements.
+- Declaring `ParamItems` twice on one parameter panics when the first
+  call carried element options — the second call replaces the element
+  schema and would silently discard them. Re-declaring the element type
+  alone stays the no-op it has always been.
+- `default:` and `example:` on a slice or array field now explain why
+  they are rejected (a lone value cannot say whether it is the whole
+  array or one element), and `ParamEnum` on an array parameter points at
+  `ParamItems`/`ItemEnum`.
+- `enum`, `format`, and the bounds on a `[N]byte` field now apply to its
+  integer elements instead of panicking. A byte array is an array of
+  numbers on the wire; to document one as a string, use
+  `openapi:"type=string,format=uuid"`.
+
+### Fixed
+
+- `Lint` now inspects array element schemas, so the `exclusive-bounds`
+  advisory sees an exclusive bound on a slice field's elements. It was
+  blind to them, which would have let the generator-hostile numeric
+  3.1/3.2 form ship unreported.
+- A `WithParams` struct field whose elements have no JSON representation
+  (a slice of functions or channels) is rejected as a parameter instead
+  of being accepted with an empty element schema.
 
 ## [0.8.3] - 2026-07-15
 

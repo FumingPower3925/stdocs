@@ -26,6 +26,35 @@ import (
 // declarations are also available as a [WithParams] struct.
 type ParamOpt func(p *Param)
 
+// ItemOpt refines the elements of an "array" parameter. Item options
+// are passed to [ParamItems], which owns the element schema:
+//
+//	stdocs.QueryParam("severity", "array", "Repeated severity filter",
+//	    stdocs.ParamItems("string",
+//	        stdocs.ItemEnum("info", "low", "medium", "high", "critical"),
+//	    ),
+//	)
+//
+// emits schema.items.enum, documenting ?severity=high&severity=low. The
+// set mirrors the scalar [ParamOpt] modifiers that describe a value's
+// shape; values are validated against the declared element type at
+// registration time, and a mismatch (ItemMinLength on integer elements)
+// panics.
+//
+// There is deliberately no ItemDefault or ItemExample: a default or an
+// example is a value for the parameter, not for one of its elements.
+type ItemOpt func(it *paramItems)
+
+// paramItems is the element view of an array parameter handed to
+// [ItemOpt] modifiers: the element schema plus the owning parameter's
+// name for panic messages. It is unexported — like route behind
+// [RouteOpt] — so the item-option set stays closed: every element
+// constraint stdocs supports has a constructor in this file.
+type paramItems struct {
+	name   string
+	schema *schema.Schema
+}
+
 // ParamRequired marks the parameter required. Path parameters are
 // always required; query, header, and cookie parameters default to
 // optional.
@@ -59,7 +88,7 @@ func ParamEnum(values ...any) ParamOpt {
 func ParamMinimum(n float64) ParamOpt {
 	return func(p *Param) {
 		requireNumericParam(p, "ParamMinimum")
-		p.Schema.Minimum = finiteNumber(n, p, "ParamMinimum")
+		p.Schema.Minimum = finiteNumber(n, p.Name, "ParamMinimum")
 	}
 }
 
@@ -68,15 +97,17 @@ func ParamMinimum(n float64) ParamOpt {
 func ParamMaximum(n float64) ParamOpt {
 	return func(p *Param) {
 		requireNumericParam(p, "ParamMaximum")
-		p.Schema.Maximum = finiteNumber(n, p, "ParamMaximum")
+		p.Schema.Maximum = finiteNumber(n, p.Name, "ParamMaximum")
 	}
 }
 
 // finiteNumber renders a bound as a JSON number; NaN and infinities
-// have no JSON representation and panic.
-func finiteNumber(n float64, p *Param, what string) json.Number {
+// have no JSON representation and panic. It takes the parameter's name
+// rather than the Param so the element options, which carry the owning
+// parameter's name, can reuse it.
+func finiteNumber(n float64, name, what string) json.Number {
 	if math.IsNaN(n) || math.IsInf(n, 0) {
-		panic("stdocs: " + what + " value for parameter " + strconv.Quote(p.Name) + " must be finite")
+		panic("stdocs: " + what + " value for parameter " + strconv.Quote(name) + " must be finite")
 	}
 	return json.Number(strconv.FormatFloat(n, 'f', -1, 64))
 }
@@ -109,9 +140,16 @@ func ParamPattern(pattern string) ParamOpt {
 }
 
 // ParamFormat overrides the parameter's format hint (e.g. "uuid",
-// "date-time", "email").
+// "date-time", "email"). An array parameter has no format of its own —
+// its elements do — so use [ItemFormat] inside [ParamItems] for those.
 func ParamFormat(format string) ParamOpt {
-	return func(p *Param) { p.Schema.Format = format }
+	return func(p *Param) {
+		if p.Schema.Type == "array" {
+			panic("stdocs: ParamFormat is not supported on array parameter " + strconv.Quote(p.Name) +
+				`; format the elements instead: ParamItems("string", ItemFormat(...))`)
+		}
+		p.Schema.Format = format
+	}
 }
 
 // ParamExclusiveMinimum documents the parameter's exclusive lower
@@ -123,7 +161,7 @@ func ParamExclusiveMinimum(n float64) ParamOpt {
 		if p.Schema.Minimum != "" {
 			panic("stdocs: parameter " + strconv.Quote(p.Name) + " sets both ParamMinimum and ParamExclusiveMinimum; use one")
 		}
-		p.Schema.ExclusiveMinimum = finiteNumber(n, p, "ParamExclusiveMinimum")
+		p.Schema.ExclusiveMinimum = finiteNumber(n, p.Name, "ParamExclusiveMinimum")
 	}
 }
 
@@ -136,7 +174,7 @@ func ParamExclusiveMaximum(n float64) ParamOpt {
 		if p.Schema.Maximum != "" {
 			panic("stdocs: parameter " + strconv.Quote(p.Name) + " sets both ParamMaximum and ParamExclusiveMaximum; use one")
 		}
-		p.Schema.ExclusiveMaximum = finiteNumber(n, p, "ParamExclusiveMaximum")
+		p.Schema.ExclusiveMaximum = finiteNumber(n, p.Name, "ParamExclusiveMaximum")
 	}
 }
 
@@ -166,9 +204,18 @@ func ParamUniqueItems() ParamOpt {
 }
 
 // ParamItems sets the element type of an "array" parameter, which
-// otherwise defaults to string items. typ is one of "string",
-// "integer", "number", or "boolean".
-func ParamItems(typ string) ParamOpt {
+// otherwise defaults to string items, and refines the elements with
+// [ItemOpt] modifiers. typ is one of "string", "integer", "number", or
+// "boolean".
+//
+//	stdocs.QueryParam("severity", "array", "Repeated severity filter",
+//	    stdocs.ParamItems("string", stdocs.ItemEnum("info", "low")))
+//
+// The element options nest here because ParamItems owns the element
+// schema: a sibling option could not survive a later ParamItems
+// replacing it. For the same reason, declaring ParamItems twice on one
+// parameter panics when the earlier call carried element options.
+func ParamItems(typ string, opts ...ItemOpt) ParamOpt {
 	return func(p *Param) {
 		requireArrayParam(p, "ParamItems")
 		switch typ {
@@ -176,7 +223,143 @@ func ParamItems(typ string) ParamOpt {
 		default:
 			panic("stdocs: ParamItems type must be \"string\", \"integer\", \"number\", or \"boolean\"; got " + strconv.Quote(typ))
 		}
-		p.Schema.Items = schemaForType(typ)
+		if itemsConstrained(p.Schema.Items) {
+			panic("stdocs: parameter " + strconv.Quote(p.Name) + " declares ParamItems more than once;" +
+				" the later call replaces the element schema and would discard the earlier element options")
+		}
+		// Refine before installing, so the guards run against the
+		// element type just declared and nothing observes a half-built
+		// element schema.
+		it := &paramItems{name: p.Name, schema: schemaForType(typ)}
+		for _, o := range opts {
+			if o != nil {
+				o(it)
+			}
+		}
+		p.Schema.Items = it.schema
+	}
+}
+
+// itemsConstrained reports whether an element schema carries anything
+// beyond its type — i.e. whether replacing it would silently drop an
+// element option. A bare schemaForType result (the default installed by
+// WithParam, or a previous option-free ParamItems) is not constrained,
+// so re-declaring the element type alone stays the harmless no-op it
+// has always been.
+func itemsConstrained(s *schema.Schema) bool {
+	if s == nil {
+		return false
+	}
+	return len(s.Enum) > 0 || s.Format != "" || s.Pattern != "" ||
+		s.MinLength != nil || s.MaxLength != nil ||
+		s.Minimum != "" || s.Maximum != "" ||
+		s.ExclusiveMinimum != "" || s.ExclusiveMaximum != ""
+}
+
+// requireStringItems panics unless the array parameter's elements are
+// string typed.
+func requireStringItems(it *paramItems, what string) {
+	if it.schema.Type != "string" {
+		panic("stdocs: " + what + " requires string items; parameter " +
+			strconv.Quote(it.name) + " has " + describeSchemaType(it.schema) + " items")
+	}
+}
+
+// requireNumericItems panics unless the array parameter's elements are
+// integer or number typed.
+func requireNumericItems(it *paramItems, what string) {
+	if it.schema.Type != "integer" && it.schema.Type != "number" {
+		panic("stdocs: " + what + " requires numeric items; parameter " +
+			strconv.Quote(it.name) + " has " + describeSchemaType(it.schema) + " items")
+	}
+}
+
+// ItemEnum restricts the array parameter's elements to a fixed set of
+// values, emitting schema.items.enum.
+func ItemEnum(values ...any) ItemOpt {
+	return func(it *paramItems) {
+		enum := make([]any, len(values))
+		for i, v := range values {
+			enum[i] = schemaValue(v, it.schema, it.name, "ItemEnum")
+		}
+		it.schema.Enum = enum
+	}
+}
+
+// ItemFormat sets the elements' format hint (e.g. "uuid", "date-time",
+// "email").
+func ItemFormat(format string) ItemOpt {
+	return func(it *paramItems) { it.schema.Format = format }
+}
+
+// ItemPattern documents an ECMA-262 regular expression every element
+// must match. String elements only.
+func ItemPattern(pattern string) ItemOpt {
+	return func(it *paramItems) {
+		requireStringItems(it, "ItemPattern")
+		it.schema.Pattern = pattern
+	}
+}
+
+// ItemMinLength documents the elements' minimum string length. String
+// elements only.
+func ItemMinLength(n uint64) ItemOpt {
+	return func(it *paramItems) {
+		requireStringItems(it, "ItemMinLength")
+		it.schema.MinLength = &n
+	}
+}
+
+// ItemMaxLength documents the elements' maximum string length. String
+// elements only.
+func ItemMaxLength(n uint64) ItemOpt {
+	return func(it *paramItems) {
+		requireStringItems(it, "ItemMaxLength")
+		it.schema.MaxLength = &n
+	}
+}
+
+// ItemMinimum documents the elements' inclusive lower bound. Numeric
+// elements only.
+func ItemMinimum(n float64) ItemOpt {
+	return func(it *paramItems) {
+		requireNumericItems(it, "ItemMinimum")
+		it.schema.Minimum = finiteNumber(n, it.name, "ItemMinimum")
+	}
+}
+
+// ItemMaximum documents the elements' inclusive upper bound. Numeric
+// elements only.
+func ItemMaximum(n float64) ItemOpt {
+	return func(it *paramItems) {
+		requireNumericItems(it, "ItemMaximum")
+		it.schema.Maximum = finiteNumber(n, it.name, "ItemMaximum")
+	}
+}
+
+// ItemExclusiveMinimum documents the elements' exclusive lower bound.
+// Numeric elements only; mutually exclusive with ItemMinimum.
+func ItemExclusiveMinimum(n float64) ItemOpt {
+	return func(it *paramItems) {
+		requireNumericItems(it, "ItemExclusiveMinimum")
+		if it.schema.Minimum != "" {
+			panic("stdocs: parameter " + strconv.Quote(it.name) +
+				" sets both ItemMinimum and ItemExclusiveMinimum; use one")
+		}
+		it.schema.ExclusiveMinimum = finiteNumber(n, it.name, "ItemExclusiveMinimum")
+	}
+}
+
+// ItemExclusiveMaximum documents the elements' exclusive upper bound.
+// Numeric elements only; mutually exclusive with ItemMaximum.
+func ItemExclusiveMaximum(n float64) ItemOpt {
+	return func(it *paramItems) {
+		requireNumericItems(it, "ItemExclusiveMaximum")
+		if it.schema.Maximum != "" {
+			panic("stdocs: parameter " + strconv.Quote(it.name) +
+				" sets both ItemMaximum and ItemExclusiveMaximum; use one")
+		}
+		it.schema.ExclusiveMaximum = finiteNumber(n, it.name, "ItemExclusiveMaximum")
 	}
 }
 
@@ -218,8 +401,16 @@ func WithParams(v any) RouteOpt {
 // paramValue validates v against the parameter's schema type and
 // returns its canonical form (int64, float64, bool, or string).
 func paramValue(v any, p *Param, what string) any {
+	return schemaValue(v, p.Schema, p.Name, what)
+}
+
+// schemaValue validates v against s's type and returns its canonical
+// form (int64, float64, bool, or string). name is the parameter's name:
+// the element options carry the owning parameter's name, so every
+// message still names something the caller wrote.
+func schemaValue(v any, s *schema.Schema, name, what string) any {
 	rv := reflect.ValueOf(v)
-	switch p.Schema.Type {
+	switch s.Type {
 	case "integer":
 		switch rv.Kind() {
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -227,7 +418,7 @@ func paramValue(v any, p *Param, what string) any {
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 			u := rv.Uint()
 			if u > math.MaxInt64 {
-				panic("stdocs: " + what + " value for parameter " + strconv.Quote(p.Name) + " exceeds the int64 range")
+				panic("stdocs: " + what + " value for parameter " + strconv.Quote(name) + " exceeds the int64 range")
 			}
 			return int64(u)
 		}
@@ -240,7 +431,7 @@ func paramValue(v any, p *Param, what string) any {
 		case reflect.Float32, reflect.Float64:
 			f := rv.Float()
 			if math.IsNaN(f) || math.IsInf(f, 0) {
-				panic("stdocs: " + what + " value for parameter " + strconv.Quote(p.Name) + " must be finite")
+				panic("stdocs: " + what + " value for parameter " + strconv.Quote(name) + " must be finite")
 			}
 			return f
 		}
@@ -253,9 +444,24 @@ func paramValue(v any, p *Param, what string) any {
 			return rv.String()
 		}
 	default:
-		panic("stdocs: " + what + " is not supported on " + describeParamType(p) + " parameter " + strconv.Quote(p.Name))
+		panic("stdocs: " + what + " is not supported on " + describeSchemaType(s) +
+			" parameter " + strconv.Quote(name) + arrayValueHint(s, what))
 	}
-	panic("stdocs: " + what + " value for parameter " + strconv.Quote(p.Name) + " does not match its " + p.Schema.Type + " type")
+	panic("stdocs: " + what + " value for parameter " + strconv.Quote(name) + " does not match its " + s.Type + " type")
+}
+
+// arrayValueHint points a whole-parameter value option at the element
+// form. ParamEnum has one (ItemEnum); ParamDefault and ParamExample
+// deliberately do not — a lone value cannot say whether it is the array
+// or one element, which is why an array parameter has no default.
+func arrayValueHint(s *schema.Schema, what string) string {
+	if s == nil || s.Type != "array" {
+		return ""
+	}
+	if what == "ParamEnum" {
+		return `; restrict the elements instead: ParamItems("string", ItemEnum(...))`
+	}
+	return "; a value for an array parameter is ambiguous — the array itself or one element"
 }
 
 // requireNumericParam panics unless the parameter is integer or
@@ -282,9 +488,14 @@ func requireStringParam(p *Param, what string) {
 
 // describeParamType renders the parameter's schema type for panic
 // messages.
-func describeParamType(p *Param) string {
-	if p.Schema == nil || p.Schema.Type == "" {
+func describeParamType(p *Param) string { return describeSchemaType(p.Schema) }
+
+// describeSchemaType renders a schema's type for panic messages. It
+// takes the schema rather than the Param so the element guards, which
+// describe an element schema, can reuse it.
+func describeSchemaType(s *schema.Schema) string {
+	if s == nil || s.Type == "" {
 		return "an untyped"
 	}
-	return p.Schema.Type
+	return s.Type
 }

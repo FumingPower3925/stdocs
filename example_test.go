@@ -224,6 +224,43 @@ func ExampleWithParams() {
 	// limit (integer) default=20 max=100
 }
 
+// A repeated query filter — ?severity=high&severity=low — documents as
+// an array parameter whose elements carry the enum. Item options nest
+// inside ParamItems, which owns the element schema; the same contract
+// comes from a WithParams struct field tagged
+// `query:"severity" enum:"info,low,high"`.
+func ExampleParamItems() {
+	mux := stdocs.New(stdocs.WithTitle("My API"))
+	mux.HandleFunc("GET /resources", func(w http.ResponseWriter, r *http.Request) {},
+		stdocs.QueryParam("severity", "array", "Repeated severity filter",
+			stdocs.ParamItems("string", stdocs.ItemEnum("info", "low", "high")),
+			stdocs.ParamUniqueItems(),
+		),
+	)
+	raw, _ := mux.JSON()
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name   string `json:"name"`
+				Schema struct {
+					Type        string `json:"type"`
+					UniqueItems bool   `json:"uniqueItems"`
+					Items       struct {
+						Type string   `json:"type"`
+						Enum []string `json:"enum"`
+					} `json:"items"`
+				} `json:"schema"`
+			} `json:"parameters"`
+		} `json:"paths"`
+	}
+	json.Unmarshal(raw, &doc)
+	p := doc.Paths["/resources"]["get"].Parameters[0]
+	fmt.Printf("%s (%s of %s) enum=%v uniqueItems=%v\n",
+		p.Name, p.Schema.Type, p.Schema.Items.Type, p.Schema.Items.Enum, p.Schema.UniqueItems)
+	// Output:
+	// severity (array of string) enum=[info low high] uniqueItems=true
+}
+
 // The shared error envelope is declared once at the mux level; every
 // operation documents it unless it declares the status itself.
 func ExampleWithDefaultResponse() {
