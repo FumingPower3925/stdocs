@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.9.0] - 2026-07-17
+
 ### Added
 
 - Array parameters and slice fields can document their **elements**. A
@@ -825,7 +829,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/FumingPower3925/stdocs/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/FumingPower3925/stdocs/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/FumingPower3925/stdocs/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/FumingPower3925/stdocs/compare/v0.8.0...v0.8.1
