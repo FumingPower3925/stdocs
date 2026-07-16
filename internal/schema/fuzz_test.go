@@ -22,6 +22,11 @@ var fieldKinds = []reflect.Type{
 	reflect.TypeOf(map[string]int{}),
 	reflect.TypeOf(json.RawMessage{}),
 	reflect.TypeOf([]byte{}),
+	// Elements with no JSON form reflect to a nil element schema; the
+	// scalar constraints retarget onto the elements, so this keeps the
+	// nil case honest (it must panic, not dereference).
+	reflect.TypeOf([]func(){}),
+	reflect.TypeOf([][]string{}),
 }
 
 // fuzzTags are tag fragments the fuzzer mixes onto fields — a blend of

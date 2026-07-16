@@ -92,23 +92,37 @@
 //	    Priority int      `json:"priority" minimum:"1" maximum:"5" default:"3" example:"2"`
 //	    Status   string   `json:"status" enum:"pending,active,done"`
 //	    Tags     []string `json:"tags" maxItems:"10" uniqueItems:"true"`
+//	    Severity []string `json:"severity" enum:"info,low,high"`
 //	    Email    string   `json:"email" format:"email"`
 //	}
 //
 // doc: (or description:) sets the schema description. The constraint
 // vocabulary is minimum, maximum, exclusiveMinimum, exclusiveMaximum
-// (numeric fields), minLength, maxLength, pattern (string fields),
-// minItems, maxItems, uniqueItems (slice and array fields), and
-// enum, default, example, format (any scalar field). Values are
-// parsed according to the field's type — enum:"1,2,3" on an int
-// emits numbers — and validated against it; a misapplied or
-// unparseable constraint, or a default that violates its own
-// constraints (outside its enum, past a bound, failing a pattern),
-// panics at registration ([WithParams] structs) or document-build
-// time (bodies, responses, webhooks) rather than emitting a
-// self-contradictory document. Exclusive
+// (numeric values), minLength, maxLength, pattern (string values),
+// enum and format (any scalar value), and minItems, maxItems,
+// uniqueItems (slice and array fields). Values are parsed according to
+// the value's type — enum:"1,2,3" on an int emits numbers — and
+// validated against it; a misapplied or unparseable constraint, or a
+// default that violates its own constraints (outside its enum, past a
+// bound, failing a pattern), panics at registration ([WithParams]
+// structs) or document-build time (bodies, responses, webhooks) rather
+// than emitting a self-contradictory document. Exclusive
 // bounds render per version: the boolean draft-4 form on 3.0,
 // numeric 2020-12 keywords on 3.1/3.2.
+//
+// On a slice or array field the scalar constraints describe its
+// ELEMENTS, because an array has no enum, format, pattern, length, or
+// bound of its own: Severity above emits items.enum, documenting a
+// repeated query filter such as ?severity=high&severity=low. Only
+// minItems, maxItems, and uniqueItems describe the array itself — so
+// minLength:"2" on a []string means "each element is at least two
+// characters", and "at least two elements" is minItems:"2". Elements
+// that cannot carry a constraint (a slice of structs, of slices, or of
+// maps) panic and name the elements. default: and example: are not
+// supported on a slice: a lone value cannot say whether it is the whole
+// array or one element, so describe it with doc: instead. A Go array's
+// elements count too — the elements of a [16]byte are integers, so
+// document it as a string with openapi:"type=string,format=uuid".
 //
 // Required-ness follows the encoding/json contract: every
 // non-pointer field without omitempty/omitzero is required. An
@@ -179,6 +193,22 @@
 //	    Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
 //	    Trace  string `header:"X-Trace-Id" required:"true"`
 //	}
+//
+// A repeated key — ?severity=high&severity=low — is an "array"
+// parameter. [ParamItems] declares the element type and refines the
+// elements with [ItemOpt] modifiers, while [ParamMinItems],
+// [ParamMaxItems], and [ParamUniqueItems] describe the array:
+//
+//	stdocs.QueryParam("severity", "array", "Repeated severity filter",
+//	    stdocs.ParamItems("string", stdocs.ItemEnum("info", "low", "high")),
+//	    stdocs.ParamUniqueItems())
+//
+// emits schema.items.enum. The element options nest inside ParamItems
+// because it owns the element schema. The same contract comes from a
+// struct field, where the scalar constraints already describe the
+// elements:
+//
+//	Severity []string `query:"severity" enum:"info,low,high" uniqueItems:"true"`
 //
 // # Responses
 //

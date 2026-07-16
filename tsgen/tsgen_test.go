@@ -42,6 +42,7 @@ type CorpusTask struct {
 	Parent   *CorpusTask     `json:"parent,omitempty"`
 	Labels   map[string]int  `json:"labels,omitempty"`
 	Tags     []string        `json:"tags,omitempty" uniqueItems:"true" minItems:"1"`
+	Severity []string        `json:"severity,omitempty" enum:"info,low,high" doc:"Element enums render as a union array"`
 	Links    []*CorpusRef    `json:"links,omitempty"`
 }
 
@@ -64,10 +65,11 @@ type CorpusError struct {
 }
 
 type CorpusListParams struct {
-	Cursor string `query:"cursor" doc:"Opaque cursor"`
-	Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
-	Trace  string `header:"X-Trace-Id"`
-	Theme  string `cookie:"theme"`
+	Cursor   string   `query:"cursor" doc:"Opaque cursor"`
+	Limit    int      `query:"limit" default:"20" minimum:"1" maximum:"100"`
+	Severity []string `query:"severity" enum:"info,low,high" doc:"Repeated filter: ?severity=high&severity=low"`
+	Trace    string   `header:"X-Trace-Id"`
+	Theme    string   `cookie:"theme"`
 }
 
 type CorpusEvent struct {

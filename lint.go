@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+
+	"github.com/FumingPower3925/stdocs/internal/schema"
 )
 
 // Warning is one advisory finding from [Mux.Lint].
@@ -222,6 +224,16 @@ type lintReport struct {
 // performs — route bodies and responses, then webhooks, in the same
 // order — so component names, renames, and field findings match the
 // emitted document.
+// hasExclusiveBound reports whether a field or its elements carry an
+// exclusive bound. A slice field's bounds describe its elements, so the
+// numeric 3.1/3.2 form that generators reject hides one level down.
+func hasExclusiveBound(s *schema.Schema) bool {
+	if s.ExclusiveMinimum != "" || s.ExclusiveMaximum != "" {
+		return true
+	}
+	return s.Items != nil && (s.Items.ExclusiveMinimum != "" || s.Items.ExclusiveMaximum != "")
+}
+
 func (m *Mux) lintComponents() lintReport {
 	visible := &registry{routes: m.visibleRoutes()}
 	ref := newConfiguredReflector(m.cfg)
@@ -259,7 +271,7 @@ func (m *Mux) lintComponents() lintReport {
 			if p.Type == "" && p.Ref == "" {
 				report.untyped[name] = append(report.untyped[name], fieldName)
 			}
-			if exclusiveMatters && (p.ExclusiveMinimum != "" || p.ExclusiveMaximum != "") {
+			if exclusiveMatters && hasExclusiveBound(p) {
 				report.exclusive[name] = append(report.exclusive[name], fieldName)
 			}
 			if exclusiveMatters && p.Nullable &&

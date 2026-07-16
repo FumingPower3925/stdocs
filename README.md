@@ -39,7 +39,7 @@ The same generated document, rendered by each of the four bundled rich UIs — e
 - **Five UIs** — four rich consoles (Scalar, Swagger UI, Redoc, Stoplight Elements), each CDN-pinned with SRI integrity hashes or fully embedded for air-gapped builds, plus a tiny dependency-free default (~10 KB).
 - **Three OpenAPI versions** — 3.0.4 (default), 3.1.2, and 3.2.0, all externally validated.
 - **Reflection** — Go types become JSON Schemas following the `encoding/json` contract, with documentation and validation rules (`minimum`, `maxLength`, `pattern`, `enum`, `default`, …) read from struct tags; `openapi:"schema=json-schema"` documents a `json.RawMessage` (or `any`) field that carries a JSON Schema document.
-- **Typed parameters** — declare query/header/cookie parameters from a struct or inline with typed, validated modifiers.
+- **Typed parameters** — declare query/header/cookie parameters from a struct or inline with typed, validated modifiers; repeated filters (`?severity=high&severity=low`) document their element enum.
 - **Smart defaults** — function names become summaries, path segments become tags, path params and a 200 are auto-documented, secured routes document their 401, and the shared error envelope is declared once mux-wide.
 - **Environment control** — turn docs on/off per environment, hide individual routes, and detect try-it console traffic, all without touching registered routes.
 - **Honest by default** — invalid documentation input panics instead of publishing a wrong contract, and an opt-in dev middleware warns when handlers drift from the document.

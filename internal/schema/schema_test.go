@@ -984,6 +984,87 @@ func TestReflectSchema_ConstraintTags(t *testing.T) {
 	}
 }
 
+// v0.9.0 (#116): on a slice or array field the scalar constraints
+// describe the ELEMENTS, so they land on Items; the array-length tags
+// keep describing the array itself.
+func TestReflectSchema_ItemConstraintTags(t *testing.T) {
+	type T struct {
+		Sev    []string  `json:"sev" enum:"info,low,high"`
+		Codes  []int     `json:"codes" enum:"1,2,3"`
+		Mails  []string  `json:"mails" format:"email"`
+		Names  []string  `json:"names" minLength:"2" maxLength:"8" pattern:"^[a-z]+$"`
+		Ratios []float64 `json:"ratios" minimum:"0" maximum:"1"`
+		Ports  []uint16  `json:"ports" exclusiveMinimum:"0"`
+		Tags   []string  `json:"tags" minItems:"1" maxItems:"5" uniqueItems:"true"`
+		Fixed  [3]int    `json:"fixed" minimum:"1"`
+	}
+	_, out := schema30(t, T{})
+	comp := out["T"]
+	if comp == nil {
+		t.Fatal("T component missing")
+	}
+
+	sev := comp.Properties["sev"]
+	if sev.Type != "array" || len(sev.Enum) != 0 {
+		t.Errorf("the enum must not land on the array itself: %+v", sev)
+	}
+	if len(sev.Items.Enum) != 3 || sev.Items.Enum[0] != "info" {
+		t.Errorf("sev items enum = %#v", sev.Items.Enum)
+	}
+	// The element type — not "array" — must reach parseScalar, or an int
+	// slice's members would silently emit as JSON strings.
+	if got := comp.Properties["codes"].Items.Enum; len(got) != 3 || got[0] != int64(1) {
+		t.Errorf("codes items enum = %#v, want typed int64 members", got)
+	}
+	if got := comp.Properties["mails"].Items.Format; got != "email" {
+		t.Errorf("mails items format = %q", got)
+	}
+	names := comp.Properties["names"].Items
+	if *names.MinLength != 2 || *names.MaxLength != 8 || names.Pattern != "^[a-z]+$" {
+		t.Errorf("names items constraints = %v/%v/%q", names.MinLength, names.MaxLength, names.Pattern)
+	}
+	ratios := comp.Properties["ratios"].Items
+	if ratios.Minimum != "0" || ratios.Maximum != "1" {
+		t.Errorf("ratios items bounds = %q/%q", ratios.Minimum, ratios.Maximum)
+	}
+	// The unsigned auto-minimum lives on the element schema too, so an
+	// exclusive bound displaces it there.
+	ports := comp.Properties["ports"].Items
+	if ports.ExclusiveMinimum != "0" || ports.Minimum != "" {
+		t.Errorf("ports items = exclusiveMinimum %q, minimum %q; want the auto-minimum displaced",
+			ports.ExclusiveMinimum, ports.Minimum)
+	}
+
+	// The array-length tags stay on the array.
+	tags := comp.Properties["tags"]
+	if *tags.MinItems != 1 || *tags.MaxItems != 5 || !tags.UniqueItems {
+		t.Errorf("tags array constraints = %v/%v/%v", tags.MinItems, tags.MaxItems, tags.UniqueItems)
+	}
+	if tags.Items.MinLength != nil {
+		t.Errorf("minItems must not leak onto the elements: %+v", tags.Items)
+	}
+	// A Go array's elements count too.
+	if got := comp.Properties["fixed"].Items.Minimum; got != "1" {
+		t.Errorf("fixed items minimum = %q", got)
+	}
+}
+
+// An array-length tag on a slice of structs carries no element
+// constraint, so the element guard must not fire on it.
+func TestReflectSchema_ArrayLengthOnStructSlice(t *testing.T) {
+	type Inner struct {
+		X string `json:"x"`
+	}
+	type T struct {
+		Items []Inner `json:"items" maxItems:"3"`
+	}
+	_, out := schema30(t, T{})
+	got := out["T"].Properties["items"]
+	if got.MaxItems == nil || *got.MaxItems != 3 {
+		t.Errorf("maxItems on a struct slice = %v, want 3", got.MaxItems)
+	}
+}
+
 // Misapplied or unparseable constraint tags panic at build time.
 func TestReflectSchema_ConstraintTagPanics(t *testing.T) {
 	cases := []struct {
@@ -1044,18 +1125,68 @@ func TestReflectSchema_ConstraintTagPanics(t *testing.T) {
 			}
 			ReflectSchema(T{})
 		}},
-		{"enum on slice", func() {
-			type T struct {
-				V []string `json:"v" enum:"a,b"`
-			}
-			ReflectSchema(T{})
-		}},
 		{"constraint on struct-typed field", func() {
 			type Inner struct {
 				X string `json:"x"`
 			}
 			type T struct {
 				I Inner `json:"i" minimum:"1"`
+			}
+			ReflectSchema(T{})
+		}},
+		// v0.9.0 (#116): scalar constraints retarget to a slice's
+		// elements, so the rejections move to the elements that cannot
+		// carry them — and to the two value tags that cannot say which
+		// level they mean.
+		{"default on slice is ambiguous", func() {
+			type T struct {
+				V []string `json:"v" default:"a"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"example on slice is ambiguous", func() {
+			type T struct {
+				V []string `json:"v" example:"a"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"enum on slice of structs", func() {
+			type Inner struct {
+				X string `json:"x"`
+			}
+			type T struct {
+				V []Inner `json:"v" enum:"a,b"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"enum on slice of slices", func() {
+			type T struct {
+				V [][]string `json:"v" enum:"a,b"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"format on slice of maps", func() {
+			type T struct {
+				V []map[string]int `json:"v" format:"email"`
+			}
+			ReflectSchema(T{})
+		}},
+		// A nil element schema must not be dereferenced.
+		{"enum on slice of funcs", func() {
+			type T struct {
+				V []func() `json:"v" enum:"a,b"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"minLength on int elements", func() {
+			type T struct {
+				V []int `json:"v" minLength:"1"`
+			}
+			ReflectSchema(T{})
+		}},
+		{"pattern on int elements", func() {
+			type T struct {
+				V []int `json:"v" pattern:"^a$"`
 			}
 			ReflectSchema(T{})
 		}},

@@ -1799,6 +1799,21 @@ func TestTagInferenceAndParamVocabulary(t *testing.T) {
 		func() { QueryParam("x", "integer", "", ParamMinimum(1), ParamExclusiveMinimum(0)) },
 		func() { QueryParam("x", "string", "", ParamMinItems(1)) },
 		func() { QueryParam("x", "array", "", ParamItems("object")) },
+		// v0.9.0 (#116): the element options are typed against the
+		// declared element type, and the whole-parameter value options
+		// stay rejected on an array.
+		func() { QueryParam("x", "array", "", ParamItems("integer", ItemEnum("nope"))) },
+		func() { QueryParam("x", "array", "", ParamItems("integer", ItemMinLength(1))) },
+		func() { QueryParam("x", "array", "", ParamItems("string", ItemMinimum(1))) },
+		func() { QueryParam("x", "array", "", ParamItems("string", ItemPattern("^a$"), ItemMaximum(1))) },
+		func() {
+			QueryParam("x", "array", "", ParamItems("integer", ItemMinimum(1), ItemExclusiveMinimum(2)))
+		},
+		func() { QueryParam("x", "array", "", ParamItems("string"), ParamEnum("a")) },
+		func() { QueryParam("x", "array", "", ParamFormat("uuid")) },
+		// A second ParamItems replaces the element schema, so it must
+		// not silently discard the first call's element options.
+		func() { QueryParam("x", "array", "", ParamItems("string", ItemEnum("a")), ParamItems("integer")) },
 	} {
 		func() {
 			defer func() {
@@ -1808,6 +1823,80 @@ func TestTagInferenceAndParamVocabulary(t *testing.T) {
 			}()
 			f()
 		}()
+	}
+}
+
+// v0.9.0 (#116): item-level constraints reach the document from both
+// authoring paths, and the two paths agree — a repeated query filter
+// documents as schema.items.enum either way.
+func TestItemConstraintsBothParamPaths(t *testing.T) {
+	type ListParams struct {
+		Severity []string `query:"severity" doc:"Repeated severity filter" enum:"info,low,high"`
+	}
+
+	optMux := New(WithTitle("T"))
+	optMux.HandleFunc("GET /opt", noop, Summary("Opt"),
+		QueryParam("severity", "array", "Repeated severity filter",
+			ParamItems("string", ItemEnum("info", "low", "high"))))
+
+	tagMux := New(WithTitle("T"))
+	tagMux.HandleFunc("GET /tag", noop, Summary("Tag"), WithParams(ListParams{}))
+
+	schemaOf := func(mux *Mux, path string) map[string]any {
+		doc := buildDocMap(t, mux)
+		params := doc["paths"].(map[string]any)[path].(map[string]any)["get"].(map[string]any)["parameters"].([]any)
+		return params[0].(map[string]any)["schema"].(map[string]any)
+	}
+	opt, tag := schemaOf(optMux, "/opt"), schemaOf(tagMux, "/tag")
+
+	for label, got := range map[string]map[string]any{"ParamItems": opt, "WithParams": tag} {
+		if got["type"] != "array" {
+			t.Errorf("%s: type = %v, want array", label, got["type"])
+		}
+		items, ok := got["items"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: no items in %#v", label, got)
+		}
+		if items["type"] != "string" {
+			t.Errorf("%s: items type = %v", label, items["type"])
+		}
+		enum, ok := items["enum"].([]any)
+		if !ok || len(enum) != 3 || enum[0] != "info" {
+			t.Errorf("%s: items enum = %#v, want the three severities", label, items["enum"])
+		}
+		if _, leaked := got["enum"]; leaked {
+			t.Errorf("%s: the enum must describe the elements, not the array: %#v", label, got)
+		}
+	}
+	// The modifier set mirrors the tag vocabulary, so the same intent
+	// must produce the same document from either path.
+	if !reflect.DeepEqual(opt, tag) {
+		t.Errorf("the two param paths disagree:\n  ParamItems: %#v\n  WithParams: %#v", opt, tag)
+	}
+}
+
+// Item enums survive the 3.1/3.2 nullable anyOf wrapper: they belong to
+// the elements, so they stay inside the typed branch's items rather
+// than hoisting onto the wrapper.
+func TestItemEnumNullableArray(t *testing.T) {
+	type Body struct {
+		Sev []string `json:"sev" openapi:"nullable" enum:"info,low"`
+	}
+	mux := New(WithTitle("T"), WithVersion(OpenAPI31))
+	mux.HandleFunc("POST /x", noop, Summary("X"), WithBody(Body{}))
+	doc := buildDocMap(t, mux)
+	sev := doc["components"].(map[string]any)["schemas"].(map[string]any)["Body"].(map[string]any)["properties"].(map[string]any)["sev"].(map[string]any)
+	if _, hoisted := sev["enum"]; hoisted {
+		t.Errorf("an item enum must not hoist onto the nullable wrapper: %#v", sev)
+	}
+	branches, ok := sev["anyOf"].([]any)
+	if !ok || len(branches) != 2 {
+		t.Fatalf("nullable array should use anyOf: %#v", sev)
+	}
+	typed := branches[0].(map[string]any)
+	items, ok := typed["items"].(map[string]any)
+	if !ok || len(items["enum"].([]any)) != 2 {
+		t.Errorf("items enum lost inside the anyOf branch: %#v", typed)
 	}
 }
 

@@ -123,7 +123,12 @@ func paramSchemaOK(s *Schema) bool {
 	if s.Ref != "" || s.Type == "object" {
 		return false
 	}
-	if s.Type == "array" && s.Items != nil {
+	if s.Type == "array" {
+		// A nil element schema means the element type has no JSON form
+		// (a slice of chan or func), which is not a parameter either.
+		if s.Items == nil {
+			return false
+		}
 		return s.Items.Ref == "" && s.Items.Type != "object" && s.Items.Type != "array"
 	}
 	return true

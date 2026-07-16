@@ -52,6 +52,8 @@ export interface CorpusTask {
 	 */
 	ratio: number;
 	raw?: unknown /* Go: json.RawMessage */;
+	/** Element enums render as a union array */
+	severity?: ("info" | "low" | "high")[];
 	/** @default "pending" */
 	status: "pending" | "active" | "done";
 	/**
@@ -157,6 +159,8 @@ export interface operations {
 				 * @default 20
 				 */
 				limit?: number;
+				/** Repeated filter: ?severity=high&severity=low */
+				severity?: ("info" | "low" | "high")[];
 			};
 			header?: {
 				"X-Trace-Id"?: string;

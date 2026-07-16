@@ -166,8 +166,9 @@ jobs:
           type APIError struct{ Message string `json:"message"` }
 
           type ListParams struct {
-          	Cursor string `query:"cursor" doc:"Opaque cursor"`
-          	Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100"`
+          	Cursor   string   `query:"cursor" doc:"Opaque cursor"`
+          	Limit    int      `query:"limit" default:"20" minimum:"1" maximum:"100"`
+          	Severity []string `query:"severity" doc:"Repeated filter: ?severity=high&severity=low" enum:"info,low,medium,high,critical" uniqueItems:"true"`
           }
 
           // GenTask is CreateTask without exclusive bounds: Go client
