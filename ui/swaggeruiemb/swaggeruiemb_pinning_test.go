@@ -11,11 +11,11 @@ import (
 )
 
 // sha384 hashes of the vendored assets, verified byte-identical to
-// the files in the swagger-ui-dist@5.32.8 npm tarball (and to the
+// the files in the swagger-ui-dist@5.32.13 npm tarball (and to the
 // pinned jsDelivr URLs). They match the SRI hashes in ui/swaggerui.
 const (
-	bundleJSHash = "sha384-IKpAWwsTL0pcw7/Amtnt2eXF4P1BK64WNuY2E/RG15SWLUW5HXzFuyqCSAr/DP8C"
-	cssHash      = "sha384-9Q2fpS+xeS4ffJy6CagnwoUl+4ldAYhOs9pgZuEKxypVModhmZFzeMlvVsAjf7uT"
+	bundleJSHash = "sha384-PsJla434CobCNv3y1K4wRavOqkUAvwGEQEfbUmI98CCqqGCJsmuDsgIjM6ZQQODP"
+	cssHash      = "sha384-tRpWwikYYdk1+1Mu0osh0Tz/Ay5xgS+s/Nf2Aa7GVAFtZLFdJlAbozfrq4g+xHBK"
 )
 
 func sri384(data []byte) string {
