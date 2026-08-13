@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Bumped the bundled Scalar UI (`@scalar/api-reference`) from 1.62.6 to
+  1.65.0 and Swagger UI (`swagger-ui-dist`) from 5.32.8 to 5.32.13 —
+  across the CDN pins, the embedded bundles, and the `package.json`
+  tracker. The Scalar 1.63–1.65 line adds component exports and print
+  styles; the Swagger 5.32.9–5.32.13 patches are bug fixes and
+  dependency bumps (including dompurify and axios). Both preserve the
+  configuration and CSP contracts stdocs relies on. The CDN SRI hashes
+  and the vendored bytes are re-pinned, verified byte-identical across
+  the npm tarballs and jsDelivr with SLSA build provenance from the
+  upstream repositories.
 
 ## [0.9.0] - 2026-07-17
 
