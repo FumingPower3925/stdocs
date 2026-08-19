@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Bumped the bundled Scalar UI (`@scalar/api-reference`) from 1.65.0 to
+  1.65.1 — across the CDN pin, the embedded bundle, and the
+  `package.json` tracker. The patch carries a single upstream fix, in the
+  object-diff helper that compares an array against an object, and
+  preserves the configuration and CSP contracts stdocs relies on. The CDN
+  SRI hash and the vendored bytes are re-pinned to the 1.65.1 bundle,
+  verified byte-identical across the npm tarball and jsDelivr.
 
 ## [0.9.1] - 2026-08-14
 
