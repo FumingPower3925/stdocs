@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.9.2] - 2026-08-19
+
 ### Changed
 
 - Bumped the bundled Scalar UI (`@scalar/api-reference`) from 1.65.0 to
@@ -852,7 +856,8 @@ Initial release.
   Dependabot for gomod/actions/npm with per-package version-parity
   tests, and a runnable demo (`cmd/demo`).
 
-[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/FumingPower3925/stdocs/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/FumingPower3925/stdocs/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/FumingPower3925/stdocs/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/FumingPower3925/stdocs/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/FumingPower3925/stdocs/compare/v0.8.2...v0.8.3
