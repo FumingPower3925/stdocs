@@ -12,10 +12,10 @@ import (
 
 // standaloneJSHash is the sha384 hash of the vendored
 // assets/standalone.js, verified byte-identical to
-// dist/browser/standalone.js in the @scalar/api-reference@1.65.1
+// dist/browser/standalone.js in the @scalar/api-reference@1.66.1
 // npm tarball (and to the pinned jsDelivr URL). It matches
 // scalarSRIHash in ui/scalar.
-const standaloneJSHash = "sha384-G6dkutu2k5IYVyNESLoFIpgaHx38IJTZ/HhrwN0fecTle9te75y8Kru3rJEJ0ZJV"
+const standaloneJSHash = "sha384-RkhHYpdjsrJH9sH8RmczPchxNiHEhmW300QwMB/8yg6feduTZu9FBN4W0DJnp50Z"
 
 func sri384(data []byte) string {
 	sum := sha512.Sum384(data)
