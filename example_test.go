@@ -207,9 +207,9 @@ func ExampleWithParams() {
 			Parameters []struct {
 				Name   string `json:"name"`
 				Schema struct {
-					Type    string          `json:"type"`
-					Default json.RawMessage `json:"default"`
-					Maximum json.RawMessage `json:"maximum"`
+					Type    string      `json:"type"`
+					Default json.Number `json:"default"`
+					Maximum json.Number `json:"maximum"`
 				} `json:"schema"`
 			} `json:"parameters"`
 		} `json:"paths"`

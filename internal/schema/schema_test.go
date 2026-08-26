@@ -1925,22 +1925,78 @@ type emHideB struct {
 	V int `json:"v"`
 }
 
-// v0.6.0 verification: invalid json tag names fall back to the Go
-// field name, exactly as encoding/json's isValidTag does — the
-// document must describe the keys json.Marshal actually emits.
-func TestInvalidJSONTagNames(t *testing.T) {
-	type T struct {
-		Emoji string `json:"🚀"`
-		Ctrl  string `json:"a\tb"`
-		Cafe  string `json:"café"`
-		Punct string `json:"ok$_-"`
+// v0.6.0 verification, extended in v0.9.3: the documented keys must
+// equal the keys encoding/json actually writes, whatever the running
+// toolchain decides those are. Go 1.27
+// accepts tag names its predecessors rejected and stops reading others
+// at a quote or backslash. The comparison is therefore made against a
+// live marshal rather than a fixed expectation, so this keeps passing
+// on both sides of that change.
+func TestTagNamesTrackEncodingJSON(t *testing.T) {
+	type Inner struct {
+		A string `json:"a"`
+		B string `json:"inner_b"`
 	}
-	root, comps := ReflectSchema(T{})
+	cases := []struct {
+		name string
+		v    any
+	}{
+		{"ordinary tags", struct {
+			Named string `json:"named"`
+			Bare  string
+			Opts  string `json:"withopts,omitempty"`
+			Skip  string `json:"-"`
+			Dash  string `json:"-,"` //nolint:staticcheck // SA5008: naming the key "-" is the point of this case
+		}{"1", "2", "3", "4", "5"}},
+		{"punctuation and unicode", struct {
+			Cafe  string `json:"café"`
+			Punct string `json:"ok$_-"`
+			Space string `json:"a b"`
+			Emoji string `json:"🚀"`
+			Ctrl  string `json:"a\tb"`
+		}{"1", "2", "3", "4", "5"}},
+		{"names that collide once truncated", struct {
+			Quote string `json:"a\"b"` //nolint:staticcheck // SA5008: a malformed name is the point; Go 1.27 truncates it
+			Back  string `json:"a\\b"` //nolint:staticcheck // SA5008: as above, with a backslash
+		}{"1", "2"}},
+		{"embedded", struct {
+			Inner
+			Own string `json:"own"`
+		}{Inner{"1", "2"}, "3"}},
+		{"embedded field shadowed by an outer tag", struct {
+			Inner
+			A string `json:"a"`
+		}{Inner{"1", "2"}, "3"}},
+		// A tag may legitimately spell a name the probe itself uses;
+		// that must not read as "encoding/json fell back".
+		{"a tag spelling a probe field name", struct {
+			Probe string `json:"StdocsWireProbe"`
+			A     string `json:"StdocsWireProbeA"`
+			B     string `json:"StdocsWireProbeB"`
+			Ctl   string `json:"ctl"`
+		}{"1", "2", "3", "4"}},
+		{"embedded tagged with a probe field name", struct {
+			Inner `json:"StdocsWireProbe"`
+			Ctl   string `json:"ctl"`
+		}{Inner{"1", "2"}, "3"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertSchemaMatchesWire(t, tc.v)
+		})
+	}
+}
+
+// assertSchemaMatchesWire marshals v with the real encoding/json and
+// checks the reflected schema documents exactly the keys that appear.
+func assertSchemaMatchesWire(t *testing.T, v any) {
+	t.Helper()
+	root, comps := ReflectSchema(v)
 	s := root
 	if s.Ref != "" {
 		s = comps[strings.TrimPrefix(s.Ref, "#/components/schemas/")]
 	}
-	raw, err := json.Marshal(T{"e", "c", "k", "p"})
+	raw, err := json.Marshal(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1950,7 +2006,8 @@ func TestInvalidJSONTagNames(t *testing.T) {
 	}
 	for k := range wire {
 		if s.Properties[k] == nil {
-			t.Errorf("wire key %q missing from the schema (props %v)", k, slices.Sorted(maps.Keys(s.Properties)))
+			t.Errorf("wire key %q missing from the schema (schema has %v)",
+				k, slices.Sorted(maps.Keys(s.Properties)))
 		}
 	}
 	for k := range s.Properties {
