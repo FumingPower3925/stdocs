@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped the bundled Scalar UI (`@scalar/api-reference`) from 1.65.1 to
+  1.66.1 and Swagger UI (`swagger-ui-dist`) from 5.32.13 to 5.32.14 —
+  across the CDN pins, the embedded bundles, and the `package.json`
+  tracker. Scalar 1.66 renders its sidebar as anchor links and exposes
+  every entry to crawlers in server-rendered HTML, supports OpenAPI 3.2
+  nested tags, and shows a schema `pattern` on hover; 1.66.1 republished
+  the packages through npm trusted publishing with no functional change.
+  Swagger 5.32.14 adds accessible button names and a dark color-scheme
+  hint for native controls. Both preserve the configuration and CSP
+  contracts stdocs relies on. The CDN SRI hashes and the vendored bytes
+  are re-pinned, verified byte-identical across the npm tarballs and
+  jsDelivr with SLSA build provenance from the upstream repositories.
+
 ### Fixed
 
 - Property names again match what `encoding/json` writes on Go 1.27.

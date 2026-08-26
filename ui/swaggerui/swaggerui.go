@@ -17,7 +17,7 @@
 // Swagger UI JavaScript and CSS are loaded from cdn.jsdelivr.net at
 // page load time, so an internet connection is required.
 //
-// The CDN URLs are pinned to a specific version (5.32.13, the
+// The CDN URLs are pinned to a specific version (5.32.14, the
 // current latest 5.x). Integrity hashes are pre-computed
 // (sha384) and pinned in the <link>/<script> tags. Bumping the
 // pinned version requires re-computing the hashes (the recipe is
@@ -36,7 +36,7 @@ import (
 // swaggerUIVersion is the version of swagger-ui-dist this package
 // is pinned to. Bumping this requires updating the integrity
 // hashes below and re-vendoring the bundle in ui/swaggeruiemb.
-const swaggerUIVersion = "5.32.13"
+const swaggerUIVersion = "5.32.14"
 
 // SRI hashes (sha384) for the pinned Swagger UI assets. These
 // were computed from the published jsDelivr release (verified
@@ -49,8 +49,8 @@ const swaggerUIVersion = "5.32.13"
 //
 // (and the same for swagger-ui.css).
 const (
-	swaggerUIBundleHash = "sha384-PsJla434CobCNv3y1K4wRavOqkUAvwGEQEfbUmI98CCqqGCJsmuDsgIjM6ZQQODP"
-	swaggerUICSSHash    = "sha384-tRpWwikYYdk1+1Mu0osh0Tz/Ay5xgS+s/Nf2Aa7GVAFtZLFdJlAbozfrq4g+xHBK"
+	swaggerUIBundleHash = "sha384-Dt83RhU85ZmX7werw9uTFCzmauXUoSyx3pdzTQMABtsnFmooJy4Vz9/ACh7n5m1A"
+	swaggerUICSSHash    = "sha384-fgyWYkUAamzuI8mJFu/xpRP0JWCJRwkwUwsYDoOYVHUJ8NQE5cENn8ib3ppwFFSX"
 )
 
 // UIOption configures the Swagger UI installed by WithUI.
