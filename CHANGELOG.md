@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- Property names again match what `encoding/json` writes on Go 1.27.
+  That release rewrote `encoding/json` on top of `encoding/json/v2` and
+  changed which `json:` tag names it accepts — an emoji or a control
+  character is now a valid name where it used to be ignored, and a name
+  containing a quote or a backslash is truncated there rather than
+  discarded. stdocs carried its own copy of the old rule, so on Go 1.27
+  it documented `Emoji` for a field the wire called `🚀`: a wrong
+  contract that still built, validated, and rendered.
+
+  The rule is no longer reimplemented. Each `json:` tag is resolved by
+  asking `encoding/json` itself what key it produces, so the schema
+  tracks whichever toolchain compiled the caller — Go 1.24 through 1.27
+  and whatever changes next. Answers are cached per tag.
+- The `WithParams` example reads its numbers as `json.Number` rather than
+  `json.RawMessage`. Go 1.27 aliases `json.RawMessage` to
+  `jsontext.Value`, whose nil value prints as `null` instead of nothing,
+  which changed the example's output on that release alone.
 
 ## [0.9.2] - 2026-08-19
 

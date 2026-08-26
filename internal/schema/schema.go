@@ -14,8 +14,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
-	"unicode"
 )
 
 // Schema is a version-agnostic JSON Schema (Draft 2020-12 / OpenAPI 3.1 flavour)
@@ -1358,31 +1358,115 @@ func dedupRequired(keys []string, props map[string]*Schema) []string {
 }
 
 // parseJSONTag splits a struct tag's json value into the field name and
-// the comma-separated options (e.g. "omitempty"). Invalid names are
-// dropped exactly as encoding/json drops them — the field falls back
-// to its Go name on the wire, so the schema must describe the same.
+// the comma-separated options (e.g. "omitempty"). A name encoding/json
+// refuses is dropped exactly as encoding/json drops it — the field falls
+// back to its Go name on the wire, so the schema must describe the same.
 func parseJSONTag(tag string) (name string, opts []string) {
 	if tag == "" {
 		return "", nil
 	}
 	parts := strings.Split(tag, ",")
-	name = parts[0]
-	if name != "" && !isValidTagName(name) {
-		name = ""
+	name, opts = parts[0], parts[1:]
+	if name == "" {
+		return "", opts
 	}
-	return name, parts[1:]
+	switch wire, ok := jsonWireName(tag); {
+	case !ok:
+		// encoding/json could not be asked: the tag carries an option it
+		// rejects outright (Go 1.27 refuses `format:`), which fails the
+		// probe's marshal exactly as it fails the caller's. The value is
+		// unserializable either way, so there is no wire key to match and
+		// the parsed name stands.
+	case wire == "":
+		// encoding/json ignored the name and fell back to the Go field
+		// name; the schema has to fall back with it.
+		name = ""
+	default:
+		name = wire
+	}
+	return name, opts
 }
 
-// isValidTagName mirrors encoding/json's isValidTag: letters, digits,
-// and its fixed punctuation set; anything else (control characters,
-// emoji) invalidates the name.
-func isValidTagName(s string) bool {
-	for _, c := range s {
-		switch {
-		case strings.ContainsRune("!#$%&()*+-./:;<=>?@[]^_{|}~ ", c):
-		case !unicode.IsLetter(c) && !unicode.IsDigit(c):
-			return false
-		}
+// wireProbeField prefixes the field names probeWireName marshals under.
+// Nothing depends on the prefix being unusual: the fallback is detected
+// by two differently named probes disagreeing, not by reserving a name.
+const wireProbeField = "StdocsWireProbe"
+
+// wireProbeValue is what that field holds while probing. It must be
+// non-empty, or an omitempty tag would drop the field and the probe
+// would read as "this tag omits the field".
+const wireProbeValue = "\x00stdocs-probe"
+
+// wireNames caches jsonWireName by tag. Tags come from source, so the
+// key set is bounded by the program's struct tags.
+var (
+	wireNamesMu sync.Mutex
+	wireNames   = map[string]wireNameResult{}
+)
+
+type wireNameResult struct {
+	name string
+	ok   bool
+}
+
+// jsonWireName reports the object key encoding/json actually gives a
+// field carrying this tag, and whether it emits the field at all.
+//
+// The rule is asked rather than reimplemented because it is not stable
+// across releases: Go 1.27 accepts names its predecessors rejected (an
+// emoji, a control character) and stops reading others at a quote or a
+// backslash. Since the answer comes from the encoding/json that will
+// marshal the caller's values, the schema keeps matching the wire on
+// every supported toolchain.
+func jsonWireName(tag string) (string, bool) {
+	wireNamesMu.Lock()
+	defer wireNamesMu.Unlock()
+	if r, hit := wireNames[tag]; hit {
+		return r.name, r.ok
 	}
-	return true
+	r := probeWireName(tag)
+	wireNames[tag] = r
+	return r.name, r.ok
+}
+
+// probeWireName marshals the tag under two differently named fields. A
+// tag that really names a key produces that key both times; one
+// encoding/json ignores produces each probe's own field name, and the
+// disagreement is the fallback signal. Comparing the two answers keeps a
+// field genuinely tagged with a probe's name from being mistaken for a
+// fallback — a reserved name could always be spelled by a real tag.
+func probeWireName(tag string) wireNameResult {
+	a, okA := probeTagUnder(wireProbeField+"A", tag)
+	b, okB := probeTagUnder(wireProbeField+"B", tag)
+	if !okA || !okB {
+		return wireNameResult{}
+	}
+	if a != b {
+		return wireNameResult{name: "", ok: true}
+	}
+	return wireNameResult{name: a, ok: true}
+}
+
+// probeTagUnder reports the key encoding/json gives a string field named
+// field and carrying tag, and whether it emits the field at all.
+func probeTagUnder(field, tag string) (string, bool) {
+	st := reflect.StructOf([]reflect.StructField{{
+		Name: field,
+		Type: reflect.TypeOf(""),
+		Tag:  reflect.StructTag("json:" + strconv.Quote(tag)),
+	}})
+	v := reflect.New(st).Elem()
+	v.Field(0).SetString(wireProbeValue)
+	raw, err := json.Marshal(v.Interface())
+	if err != nil {
+		return "", false
+	}
+	var obj map[string]string
+	if err := json.Unmarshal(raw, &obj); err != nil || len(obj) != 1 {
+		return "", false
+	}
+	for k := range obj {
+		return k, true
+	}
+	return "", false
 }
