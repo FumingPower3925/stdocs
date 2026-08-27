@@ -1987,6 +1987,99 @@ func TestTagNamesTrackEncodingJSON(t *testing.T) {
 	}
 }
 
+// A field encoding/json never writes must not be documented, and a
+// field it keeps only to resolve names must still be able to knock out
+// a same-named rival. Both shapes below built a document promising a
+// key the wire does not carry (#127).
+func TestDroppedFieldsMatchWire(t *testing.T) {
+	type inner struct {
+		E string `json:"e"`
+	}
+	cases := []struct {
+		name string
+		v    any
+	}{
+		// The bare tag drops the embed whether or not it is exported.
+		{"unexported embed tagged json:-", struct {
+			inner `json:"-"`
+			Ctl   string `json:"ctl"`
+		}{inner{"1"}, "2"}},
+		// json:"-," still names the key "-", and encoding/json really
+		// does write the embedded object under it.
+		{"unexported embed named -", struct {
+			inner `json:"-,"` //nolint:staticcheck // SA5008: naming the key "-" is the point of this case
+			Ctl   string      `json:"ctl"`
+		}{inner{"1"}, "2"}},
+		{"unexported embed tagged with a name", struct {
+			inner `json:"x"`
+			Ctl   string `json:"ctl"`
+		}{inner{"1"}, "2"}},
+		// A channel or a func has no wire form, but encoding/json still
+		// counts it when resolving names: both claim the key, both are
+		// dropped.
+		{"channel against a same-named rival", sameTagRivals(reflect.TypeOf(make(chan int)))},
+		{"func against a same-named rival", sameTagRivals(reflect.TypeOf(func() {}))},
+		// A subtree hidden with openapi:"-" is still on the wire, so it
+		// must still be able to collide a name away from a rival.
+		{"hidden subtree still collides with its rival", hiddenSubtreeRivals()},
+		// Dropped by the tag, so it never reaches the field set and the
+		// rival is documented unopposed.
+		{"channel dropped by json:- leaves its rival", struct {
+			Ch chan int `json:"-"`
+			S  string   `json:"dup"`
+		}{nil, "1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertSchemaMatchesWire(t, tc.v)
+		})
+	}
+}
+
+// sameTagRivals builds a value whose type gives the same json tag to a
+// field of the given non-representable type and to a string field. The
+// type is assembled at run time because a literal struct repeating a
+// tag does not get past go vet, which a nolint directive cannot quiet.
+func sameTagRivals(nonRepresentable reflect.Type) any {
+	st := reflect.StructOf([]reflect.StructField{
+		{Name: "Dead", Type: nonRepresentable, Tag: `json:"dup"`},
+		{Name: "Live", Type: reflect.TypeOf(""), Tag: `json:"dup"`},
+	})
+	v := reflect.New(st).Elem()
+	v.Field(1).SetString("1")
+	return v.Interface()
+}
+
+// HiddenDup and ShownDup are embedded by hiddenSubtreeRivals. They are
+// package-level named types because an embedded field takes its name
+// from its type, and only a named type can be embedded — reflect
+// cannot name one. The names are exported so the embeddings reach the
+// openapi tag; an unexported embed is handled well before that.
+type HiddenDup struct {
+	Dup string `json:"dup"`
+}
+
+// ShownDup is HiddenDup's rival; see HiddenDup.
+type ShownDup struct {
+	Dup string `json:"dup"`
+}
+
+// hiddenSubtreeRivals builds a value that embeds those two, hiding one
+// behind openapi:"-". Both still write "dup", so encoding/json drops
+// the key and the document must drop it too. Assembled at run time for
+// the same reason as sameTagRivals: a literal struct promoting one json
+// tag twice does not get past go vet.
+func hiddenSubtreeRivals() any {
+	st := reflect.StructOf([]reflect.StructField{
+		{Name: "HiddenDup", Type: reflect.TypeOf(HiddenDup{}), Anonymous: true, Tag: `openapi:"-"`},
+		{Name: "ShownDup", Type: reflect.TypeOf(ShownDup{}), Anonymous: true},
+	})
+	v := reflect.New(st).Elem()
+	v.Field(0).Field(0).SetString("1")
+	v.Field(1).Field(0).SetString("2")
+	return v.Interface()
+}
+
 // assertSchemaMatchesWire marshals v with the real encoding/json and
 // checks the reflected schema documents exactly the keys that appear.
 func assertSchemaMatchesWire(t *testing.T, v any) {

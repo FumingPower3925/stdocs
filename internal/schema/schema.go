@@ -567,7 +567,7 @@ type fieldEntry struct {
 func (r *Reflector) collectFields(t reflect.Type) ([]string, map[string]*fieldEntry) {
 	var order []string
 	byName := map[string]*fieldEntry{}
-	level := []reflect.Type{t}
+	level := []embeddedLevel{{t: t}}
 	visited := map[reflect.Type]bool{}
 	for depth := 0; len(level) > 0; depth++ {
 		level = r.walkLevel(level, depth, visited, byName, &order)
@@ -575,17 +575,27 @@ func (r *Reflector) collectFields(t reflect.Type) ([]string, map[string]*fieldEn
 	return order, byName
 }
 
+// embeddedLevel is one type queued for a depth of the walk, carrying
+// whether it was reached through an embedding the document hides. A
+// hidden subtree still resolves names — its fields exist on the wire —
+// so its candidates travel as excluded rather than being left out.
+type embeddedLevel struct {
+	t        reflect.Type
+	excluded bool
+}
+
 // walkLevel gathers one depth's candidates and returns the next
 // level's types. A type embedded twice at one depth has its fields
 // added twice, so the diamond ties with itself and drops — exactly
 // encoding/json's behavior.
-func (r *Reflector) walkLevel(level []reflect.Type, depth int, visited map[reflect.Type]bool, byName map[string]*fieldEntry, order *[]string) []reflect.Type {
-	var next []reflect.Type
+func (r *Reflector) walkLevel(level []embeddedLevel, depth int, visited map[reflect.Type]bool, byName map[string]*fieldEntry, order *[]string) []embeddedLevel {
+	var next []embeddedLevel
 	levelCount := map[reflect.Type]int{}
 	for _, lt := range level {
-		levelCount[lt]++
+		levelCount[lt.t]++
 	}
-	for _, lt := range level {
+	for _, el := range level {
+		lt := el.t
 		if visited[lt] {
 			continue
 		}
@@ -597,6 +607,7 @@ func (r *Reflector) walkLevel(level []reflect.Type, depth int, visited map[refle
 			if !ok {
 				continue
 			}
+			meta.excluded = meta.excluded || el.excluded
 			if meta.embedded {
 				if et, flattens := embeddedType(f); flattens {
 					// The next level sees the type once even when this
@@ -605,7 +616,7 @@ func (r *Reflector) walkLevel(level []reflect.Type, depth int, visited map[refle
 					// parent is scanned a single time), so a field below
 					// a shared join point survives while the parent's
 					// own leaves annihilate.
-					next = append(next, et)
+					next = append(next, embeddedLevel{t: et, excluded: meta.excluded})
 					continue
 				}
 				// An embedded non-struct (a named scalar, an
@@ -666,18 +677,50 @@ func dominantField(cands []fieldMeta) (fieldMeta, bool) {
 	return fieldMeta{}, false
 }
 
+// hasNoJSONForm reports whether a type is one encoding/json cannot
+// marshal at all, so a field of that type never reaches the wire.
+func hasNoJSONForm(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Chan, reflect.Func, reflect.UnsafePointer:
+		return true
+	}
+	return false
+}
+
+// nonRepresentableField describes a field whose type has no JSON form.
+// encoding/json still counts it when it resolves names, so it stays a
+// dominance candidate and is filtered out once dominance settles;
+// dropping it here would leave a same-named rival unopposed and
+// document a key the collision removes.
+func nonRepresentableField(f reflect.StructField, name, tagName string) (fieldMeta, bool) {
+	if tag := f.Tag.Get("openapi"); tag != "" && tag != "-" {
+		// The tag promises documentation the field cannot have —
+		// silent dropping would hide the mistake.
+		panic("stdocs: openapi tag on field " + f.Name + " cannot apply; the field type is not representable in JSON (tag it openapi:\"-\" to silence)")
+	}
+	return fieldMeta{
+		name:     name,
+		tagged:   tagName != "",
+		embedded: f.Anonymous && tagName == "",
+		excluded: true,
+	}, true
+}
+
 // inspectField returns a fieldMeta for a struct field, or
 // (zero, false) if the field should be skipped (unexported, "-"
 // tag, or non-representable kind).
 func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	tag := f.Tag.Get("json")
 	tagName, opts := parseJSONTag(tag)
+	if tag == "-" {
+		// Only the bare tag skips; json:"-," names the key "-". This
+		// precedes the unexported branch because encoding/json drops a
+		// json:"-" embedding whether or not it is exported, while
+		// json:"-," still writes the embedded object under that name.
+		return fieldMeta{}, false
+	}
 	if !f.IsExported() {
 		return r.unexportedEmbed(f, tagName, opts)
-	}
-	if tag == "-" {
-		// Only the bare tag skips; json:"-," names the key "-".
-		return fieldMeta{}, false
 	}
 	name := tagName
 	if name == "" {
@@ -687,13 +730,8 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 	for ft.Kind() == reflect.Ptr {
 		ft = ft.Elem()
 	}
-	if ft.Kind() == reflect.Chan || ft.Kind() == reflect.Func || ft.Kind() == reflect.UnsafePointer {
-		if tag := f.Tag.Get("openapi"); tag != "" && tag != "-" {
-			// The tag promises documentation the field cannot have —
-			// silent dropping would hide the mistake.
-			panic("stdocs: openapi tag on field " + f.Name + " cannot apply; the field type is not representable in JSON (tag it openapi:\"-\" to silence)")
-		}
-		return fieldMeta{}, false
+	if hasNoJSONForm(ft) {
+		return nonRepresentableField(f, name, tagName)
 	}
 	// The openapi tag is the per-field escape hatch: "-" excludes the
 	// field from the document (JSON serialization is unaffected), and
@@ -708,8 +746,11 @@ func (r *Reflector) inspectField(f reflect.StructField) (fieldMeta, bool) {
 		fieldSchema = r.reflect(f.Type)
 	case "-":
 		if flattens {
-			// Excluding a flattened embedding hides its whole subtree.
-			return fieldMeta{}, false
+			// The subtree stays out of the document, but its fields are
+			// still on the wire, so the walk continues through it with
+			// every candidate excluded — otherwise a name the embedding
+			// collides on would resurface its rival.
+			return fieldMeta{embedded: true, excluded: true}, true
 		}
 		// The field still exists on the wire, so it stays a dominance
 		// candidate — a same-name collision json drops must not
