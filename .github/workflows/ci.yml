@@ -363,13 +363,13 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
+          version: v2.13.1
       # The YAML round-trip module is a separate go module, so the
       # root invocation above does not reach it; lint it on its own.
       - name: golangci-lint (round-trip module)
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
+          version: v2.13.1
           working-directory: internal/spec/yaml/roundtrip_test
 
   coverage:
