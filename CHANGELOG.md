@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The document no longer promises property names `encoding/json` never
+  writes. Three struct shapes had drifted from the wire, all of them the
+  quiet kind: the document built, validated and rendered, and only a
+  consumer diffing it against real traffic would have noticed.
+
+  An unexported struct embedded under `json:"-"` grew a property
+  literally named `-` holding the nested object, because unexported
+  fields took their own path before the `-` check an exported field
+  would have hit. Only the bare tag drops the embedding — `json:"-,"`
+  genuinely names the key `-`, and still does.
+
+  A `chan`, `func` or `unsafe.Pointer` field that shares a `json:` tag
+  with an ordinary field used to leave that rival documented on its own.
+  `encoding/json` keeps such a field while it resolves names, so the two
+  collide and neither is written; stdocs removed it first and documented
+  the key the collision takes away. The field now stays in the running
+  for its name and drops out once dominance has settled.
+
+  The same held a level up: a struct embedded under `openapi:"-"` was
+  cut before its fields could collide with a name outside it, so a rival
+  it hides was documented unopposed. The hidden subtree is now walked
+  for names and left out of the document afterwards.
 
 ## [0.9.3] - 2026-08-27
 
